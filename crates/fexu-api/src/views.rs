@@ -87,7 +87,8 @@ pub fn redirect_to(target: &str) -> Result<Response, ViewError> {
 /// Redirects to `next` only when it stays under one allowed local prefix.
 ///
 /// An empty `next` uses `fallback`. The prefix `/` allows any already-local path.
-/// `https://`, protocol-relative paths, backslashes and encoded `..` are rejected.
+/// Schemes, protocol-relative paths, backslashes and encoded `.`, `/` or `\` are rejected,
+/// including when those separators are encoded more than once.
 pub fn redirect_next(
     next: Option<&str>,
     fallback: &str,
@@ -447,12 +448,54 @@ fn normalized_local(target: &str) -> Option<String> {
     {
         return None;
     }
+    if nested_separator(target) {
+        return None;
+    }
     let decoded = strict_decode(target)?;
     if is_local_path(&decoded) {
         Some(decoded)
     } else {
         None
     }
+}
+
+/// Rejects encoded `.`, `/` and `\` at every nesting depth without turning them into a path.
+fn nested_separator(value: &str) -> bool {
+    let mut current = value.to_owned();
+    for _ in 0..4 {
+        if encoded_separator(&current) {
+            return true;
+        }
+        if !current.as_bytes().contains(&b'%') {
+            return false;
+        }
+        let Some(decoded) = strict_decode(&current) else {
+            return true;
+        };
+        if decoded == current {
+            return false;
+        }
+        current = decoded;
+    }
+    true
+}
+
+fn encoded_separator(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    let mut index = 0;
+    while index + 2 < bytes.len() {
+        if bytes[index] == b'%' {
+            let hex = &bytes[index + 1..index + 3];
+            if hex.eq_ignore_ascii_case(b"2e")
+                || hex.eq_ignore_ascii_case(b"2f")
+                || hex.eq_ignore_ascii_case(b"5c")
+            {
+                return true;
+            }
+        }
+        index += 1;
+    }
+    false
 }
 
 fn is_local_path(target: &str) -> bool {
@@ -566,6 +609,17 @@ mod tests {
         assert!(redirect_to("/%2e%2e/secret").is_err());
         assert!(redirect_to("/%2f%2fevil.example").is_err());
         assert!(redirect_to("/\\evil.example").is_err());
+        assert!(redirect_to("/board/%255csecret").is_err());
+        assert!(redirect_to("/%252f%252fevil.example").is_err());
+        assert!(redirect_to("/board/%25252e%25252e/secret").is_err());
+        let doubled = redirect_next(
+            Some("/board/%252e%252e/secret"),
+            "/board/items",
+            &["/board"],
+        );
+        assert_eq!(doubled.unwrap_err().code, "view.redirect");
+        assert!(redirect_next(Some("/boardevil"), "/board/items", &["/board"]).is_err());
+        assert!(redirect_next(Some("/board"), "/board/items", &["/board"]).is_ok());
         let allowed = redirect_next(Some("/board/items/1"), "/board/items", &["/board"]).unwrap();
         assert_eq!(
             allowed.headers().get("location").unwrap().to_str().unwrap(),

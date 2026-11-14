@@ -227,9 +227,17 @@ fn xml_escape(value: &str) -> String {
 }
 
 fn strong_etag(body: &[u8]) -> String {
-    let mut hasher = Sha256::new();
-    hasher.update(body);
-    format!("\"{:x}\"", hasher.finalize())
+    format!("\"{}\"", hex_lower(Sha256::digest(body).as_ref()))
+}
+
+fn hex_lower(bytes: &[u8]) -> String {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let mut encoded = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        encoded.push(HEX[(byte >> 4) as usize] as char);
+        encoded.push(HEX[(byte & 0x0f) as usize] as char);
+    }
+    encoded
 }
 
 fn if_none_match(headers: &HeaderMap, etag: &str) -> bool {

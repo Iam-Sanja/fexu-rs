@@ -329,6 +329,19 @@ async fn sign_in(client: &mut TestClient, auth: &AuthService, email: &str) {
     client.set_cookie("fexu_session", &session.token);
 }
 
+#[test]
+fn omit_must_name_a_real_column() {
+    let mut resource = board::resource();
+    resource.omit = &["owner"];
+    let error = match fexu::views::crud_urls_with::<board::Note, board::NotePolicy, board::NoteStamp>(
+        resource,
+    ) {
+        Err(error) => error,
+        Ok(_) => panic!("unknown omit was accepted"),
+    };
+    assert_eq!(error.code, "crud.fields");
+}
+
 #[tokio::test]
 async fn sqlite_board_covers_crud_permissions_csrf_and_pages() {
     let db = fexu::db::connect("sqlite::memory:").await.expect("sqlite");

@@ -1116,6 +1116,15 @@ fn allows(user: &AuthUser, permitted: bool) -> bool {
 }
 
 fn prepare_fields<M: FexuModel>(create: bool, omit: &[&str]) -> Result<Vec<ModelField>, UrlError> {
+    let columns = M::columns();
+    for name in omit {
+        if !columns.iter().any(|column| column.name == *name) {
+            return Err(UrlError {
+                code: "crud.fields",
+                detail: format!("Omitted field {name} is not a model column."),
+            });
+        }
+    }
     let names = input_names::<M>(create, omit);
     if create && names.is_empty() {
         return Err(UrlError {

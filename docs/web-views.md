@@ -69,7 +69,7 @@ HTML CRUD pages put the consumed messages in `flashes` as `{ level, text }`. Ren
 | `canonical_url(origin, path)` | Joins a configured `http`/`https` origin and a local path. The origin cannot contain a user, a path or a query. `Host` is not read. |
 | `sitemap_xml(origin, paths)` | At most 1000 local paths. Locations are escaped. |
 | `robots_txt(origin, allow, disallow, sitemap)` | `User-agent: *` only. Paths must be local. |
-| `redirect_to` | Decodes the path once and allows a single local `/` path. Encoded `..`, `//`, backslashes and schemes are rejected. |
+| `redirect_to` | Allows one local `/` path. Encoded `.`, `/` and `\`, including repeated encodings, plus schemes and backslashes, are rejected. |
 | `redirect_next(next, fallback, prefixes)` | Uses `next` only when it stays under an allowed prefix. `/` means any local path. An empty `next` uses the fallback. |
 | `page_links` | Builds previous and next links with `pagination_href`. |
 | `conditional_response` | Sets a SHA-256 ETag. A matching `If-None-Match` on a 200 response is 304 with an empty body. The request's validator is not copied into the response. HTML CRUD uses `private, no-cache`. |
