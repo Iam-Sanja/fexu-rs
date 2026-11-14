@@ -1,7 +1,11 @@
 # Shared PostgreSQL guard for the embedded cold start.
 # A disposable name is not enough: the host must be loopback, and the URL user
-# must already be a disposable test role. User, password, host, and query never
-# satisfy the database-name rule. Unsupported or unclear URLs are refused.
+# must already be a disposable test role. The scripts do not read pg_roles and
+# do not verify that role's privileges. Any query string is refused, including
+# an empty query and parameters such as dbname, host, hostaddr, port, user,
+# password, options, and application_name. The query is not removed before this
+# decision. User, password, and host never satisfy the database-name rule.
+# Unsupported or unclear URLs are refused.
 
 function ConvertFrom-ColdStartPercentEncoding {
     param([string]$Value)
@@ -26,9 +30,11 @@ function Get-ColdStartDatabaseRejection {
     if ($scheme -ne "postgres" -and $scheme -ne "postgresql") {
         return "unsupported database URL scheme"
     }
+    if ($Url.Contains("?")) {
+        return "database URL query is not accepted"
+    }
 
     $rest = ($Url -split '://', 2)[1]
-    $rest = ($rest -split '\?', 2)[0]
     $slash = $rest.IndexOf("/")
     if ($slash -lt 0) {
         return "database URL has no database path"
@@ -84,7 +90,15 @@ function Get-ColdStartDatabaseRejection {
             $hostName = $hostPort
         }
     }
+    try {
+        $hostName = ConvertFrom-ColdStartPercentEncoding $hostName
+    } catch {
+        return "database URL host is not valid URL encoding"
+    }
     $hostName = $hostName.ToLowerInvariant()
+    if ($hostName.StartsWith("/")) {
+        return "a disposable database name does not make a socket path a cold-start test instance; only a loopback host is accepted, and the URL user must already be a disposable test role"
+    }
     if ($hostName -ne "127.0.0.1" -and $hostName -ne "localhost" -and $hostName -ne "::1") {
         return "a disposable database name does not make a remote PostgreSQL server a cold-start test instance; only a loopback host is accepted, and the URL user must already be a disposable test role"
     }

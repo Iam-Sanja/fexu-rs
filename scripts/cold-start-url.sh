@@ -1,7 +1,11 @@
 # Shared PostgreSQL guard for the embedded cold start.
 # A disposable name is not enough: the host must be loopback, and the URL user
-# must already be a disposable test role. User, password, host, and query never
-# satisfy the database-name rule. Unsupported or unclear URLs are refused.
+# must already be a disposable test role. The scripts do not read pg_roles and
+# do not verify that role's privileges. Any query string is refused, including
+# an empty query and parameters such as dbname, host, hostaddr, port, user,
+# password, options, and application_name. The query is not removed before this
+# decision. User, password, and host never satisfy the database-name rule.
+# Unsupported or unclear URLs are refused.
 
 url_decode() {
   local raw="$1"
@@ -61,9 +65,14 @@ cold_start_database_rejection() {
       return 0
       ;;
   esac
+  case "$url" in
+    *\?*)
+      echo "database URL query is not accepted"
+      return 0
+      ;;
+  esac
 
   local rest="${url#*://}"
-  rest="${rest%%\?*}"
   case "$rest" in
     */*) ;;
     *)
@@ -120,6 +129,7 @@ cold_start_database_rejection() {
     return 0
   fi
   local host=""
+  local decoded_host=""
   case "$hostport" in
     \[*\])
       host="${hostport#\[}"
@@ -156,8 +166,16 @@ cold_start_database_rejection() {
       ;;
     *) host="$hostport" ;;
   esac
-  host=$(printf '%s' "$host" | tr '[:upper:]' '[:lower:]')
+  if ! decoded_host=$(url_decode "$host"); then
+    echo "database URL host is not valid URL encoding"
+    return 0
+  fi
+  host=$(printf '%s' "$decoded_host" | tr '[:upper:]' '[:lower:]')
   case "$host" in
+    /*)
+      echo "a disposable database name does not make a socket path a cold-start test instance; only a loopback host is accepted, and the URL user must already be a disposable test role"
+      return 0
+      ;;
     127.0.0.1|localhost|::1) ;;
     *)
       echo "a disposable database name does not make a remote PostgreSQL server a cold-start test instance; only a loopback host is accepted, and the URL user must already be a disposable test role"

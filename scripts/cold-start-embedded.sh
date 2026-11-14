@@ -2,8 +2,9 @@
 # Runs the embedded-migrate binary from a temporary directory while the
 # auth and job migration JSON directories are renamed out of the source tree.
 # The process must not open CARGO_MANIFEST_DIR. A PostgreSQL URL is accepted
-# only when the decoded database name starts with fexu_test_ and the host is
-# loopback. The URL user must already be a disposable test role. Without an
+# only when the decoded database name starts with fexu_test_, the host is
+# loopback, and the URL has no query string. The URL user must already be a
+# disposable test role; this script does not verify that role's privileges. Without an
 # argument the script creates a fresh SQLite file and does not read DATABASE_URL.
 # Exit 0 also requires login=ok and a reported job. A killed process cannot
 # restore the renamed directories; move migrations.cold-hidden back by hand.
