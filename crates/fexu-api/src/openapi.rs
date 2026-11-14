@@ -96,6 +96,10 @@ impl OpenApiOptions {
     /// An omitted access mode is `session` in production and `public` otherwise.
     pub fn from_project(project: &fexu_migrations::ProjectConfig) -> Self {
         let resolved = project.api_docs.resolve(project.is_production());
+        Self::from_resolved(&resolved, project.app_name.clone())
+    }
+
+    fn from_resolved(resolved: &fexu_migrations::ResolvedApiDocs, title: String) -> Self {
         let ui = match resolved.ui.as_str() {
             "none" => OpenApiUi::None,
             "explorer" => OpenApiUi::Explorer,
@@ -104,13 +108,13 @@ impl OpenApiOptions {
         Self {
             enabled: resolved.enabled,
             schema_enabled: resolved.schema_enabled,
-            json_path: resolved.schema_path,
+            json_path: resolved.schema_path.clone(),
             ui_path: if ui == OpenApiUi::None {
                 None
             } else {
-                Some(resolved.path)
+                Some(resolved.path.clone())
             },
-            title: project.app_name.clone(),
+            title,
             ui,
             try_it_out: resolved.try_it_out,
             access: if resolved.access == "session" {
@@ -120,6 +124,26 @@ impl OpenApiOptions {
             },
         }
     }
+}
+
+/// Options for an app that did not call `openapi` or `without_openapi`.
+///
+/// A loaded project uses `[api.docs]`. Without a project, omitted settings follow
+/// `ApiDocsSettings::resolve`: documentation is off in production and on otherwise.
+/// [`OpenApiOptions::default`] does not read the environment.
+pub(crate) fn implicit_options(project: Option<&fexu_migrations::ProjectConfig>) -> OpenApiOptions {
+    if let Some(project) = project {
+        return OpenApiOptions::from_project(project);
+    }
+    let production = matches!(
+        fexu_core::aliased_env("FEXU_ENV"),
+        Ok(Some(value)) if value.eq_ignore_ascii_case("production")
+    );
+    if !production {
+        return OpenApiOptions::default();
+    }
+    let resolved = fexu_migrations::ApiDocsSettings::default().resolve(true);
+    OpenApiOptions::from_resolved(&resolved, "Fexu".to_owned())
 }
 
 /// One extra operation for a route the application already registered.
@@ -489,7 +513,7 @@ async fn serve_json(
         return response;
     }
     (
-        [(header::CACHE_CONTROL, HeaderValue::from_static("no-store"))],
+        [(header::CACHE_CONTROL, cache_control(&options, false))],
         Json(spec.as_ref().clone()),
     )
         .into_response()
@@ -510,7 +534,7 @@ async fn serve_html(
                 header::CONTENT_TYPE,
                 HeaderValue::from_static("text/html; charset=utf-8"),
             ),
-            (header::CACHE_CONTROL, HeaderValue::from_static("no-store")),
+            (header::CACHE_CONTROL, cache_control(&options, false)),
             (
                 header::X_CONTENT_TYPE_OPTIONS,
                 HeaderValue::from_static("nosniff"),
@@ -543,7 +567,7 @@ async fn serve_text(
     (
         [
             (header::CONTENT_TYPE, HeaderValue::from_static(content_type)),
-            (header::CACHE_CONTROL, HeaderValue::from_static("no-store")),
+            (header::CACHE_CONTROL, cache_control(&options, false)),
             (
                 header::X_CONTENT_TYPE_OPTIONS,
                 HeaderValue::from_static("nosniff"),
@@ -571,10 +595,7 @@ async fn serve_bytes(
     (
         [
             (header::CONTENT_TYPE, HeaderValue::from_static(content_type)),
-            (
-                header::CACHE_CONTROL,
-                HeaderValue::from_static("public, max-age=86400"),
-            ),
+            (header::CACHE_CONTROL, cache_control(&options, true)),
             (
                 header::X_CONTENT_TYPE_OPTIONS,
                 HeaderValue::from_static("nosniff"),
@@ -624,10 +645,24 @@ async fn allow_docs(
     }
 }
 
+fn cache_control(options: &OpenApiOptions, static_asset: bool) -> HeaderValue {
+    let value = if options.access == DocsAccess::Session {
+        "private, no-store"
+    } else if static_asset {
+        "public, max-age=86400"
+    } else {
+        "no-store"
+    };
+    HeaderValue::from_static(value)
+}
+
 fn docs_problem(status: StatusCode, title: &str, detail: &str) -> Response {
     (
         status,
-        [(header::CACHE_CONTROL, HeaderValue::from_static("no-store"))],
+        [(
+            header::CACHE_CONTROL,
+            HeaderValue::from_static("private, no-store"),
+        )],
         Json(problem_json(status.as_u16(), title, detail)),
     )
         .into_response()

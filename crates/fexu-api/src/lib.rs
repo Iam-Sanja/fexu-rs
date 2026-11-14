@@ -339,11 +339,8 @@ impl App {
     }
 
     fn build_router(mut self) -> Result<Router, crate::apps::AppError> {
-        if let Some(options) = (!self.openapi_explicit)
-            .then(|| self.settings.as_ref().map(OpenApiOptions::from_project))
-            .flatten()
-        {
-            self.openapi = options;
+        if !self.openapi_explicit {
+            self.openapi = openapi::implicit_options(self.settings.as_ref());
         }
         let needs_validation = !self.sealed
             && (!self.installed.is_empty()

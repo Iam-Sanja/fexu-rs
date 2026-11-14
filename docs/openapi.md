@@ -2,7 +2,7 @@
 
 [Overview](index.md) · **Implemented** in `crates/fexu-api/src/openapi.rs`. The document is built from `ModelDescriptor`, `ColumnSpec`, `NumericBound`, `FieldContract` and `AdminFieldMeta`. It does not keep a second model description, and Swagger UI only renders that document.
 
-`App` publishes `GET /api/openapi.json` and `GET /api/docs` unless documentation is turned off. Admin routes are not included, including a model whose API path starts with `/admin`. `App::document` accepts an operation only when its path is already registered.
+`App` publishes `GET /api/openapi.json` and `GET /api/docs` unless documentation is turned off. Earlier builds used `GET /openapi.json` and `GET /docs`. Those paths are not redirected. Set `schema_path` and `path`, or `json_path` and `ui_path`, to keep them. Admin routes are not included, including a model whose API path starts with `/admin`. `App::document` accepts an operation only when its path is already registered.
 
 Swagger UI 5.29.0 is compiled into the crate from `swagger-ui-dist` (Apache License 2.0). The license text is served at `{ui-path}/LICENSE`. The page, the script and the stylesheet come from the same process. The UI does not load a CDN, and it does not send the document to `validator.swagger.io`.
 
@@ -39,12 +39,13 @@ try_it_out = false
 access = "public"       # public or session
 ```
 
-An application that calls `with_settings` and does not call `openapi` or `without_openapi` uses this section. `OpenApiOptions::from_project` does the same explicitly.
+An application that calls `with_settings` and does not call `openapi` or `without_openapi` uses this section. `App::new` without settings uses the same omitted-section rule: `FEXU_ENV=production` mounts no documentation routes, and any other environment mounts the defaults. `OpenApiOptions::default` does not read the environment. `openapi` and `without_openapi` win over both the file and `FEXU_ENV`.
 
 | Situation | Result |
 |---|---|
-| Section omitted, not production | Schema and Swagger UI on, try-it-out off, access `public` |
-| Section omitted, `FEXU_ENV=production` | No documentation routes |
+| No `[api.docs]` and no `openapi` call, not production | Schema and Swagger UI on, try-it-out off, access `public` |
+| No `[api.docs]` and no `openapi` call, `FEXU_ENV=production` | No documentation routes. This includes `App::new` without `with_settings` |
+| `openapi(...)` or `without_openapi()` | The explicit options are used, including in production |
 | `enabled = false` | No documentation routes. Model, auth and health routes stay mounted |
 | `ui = "none"` and `schema = true` | JSON only |
 | `ui = "swagger"` or `explorer` | Requires `schema = true` |

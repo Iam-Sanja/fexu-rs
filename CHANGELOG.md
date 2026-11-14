@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased — OpenAPI paths and production defaults
+
+- The default document is `GET /api/openapi.json` and the default Swagger UI is `GET /api/docs`. `GET /openapi.json` and `GET /docs` are not mounted and are not redirected. Set `schema_path` and `path` in `[api.docs]`, or `json_path` and `ui_path` on `OpenApiOptions`, to keep the previous paths.
+- `App::new` without `with_settings` follows the same omitted-section rule as `[api.docs]`. `FEXU_ENV=production` mounts no documentation routes unless the application calls `openapi`. `OpenApiOptions::default` does not read the environment. `openapi` and `without_openapi` still replace the file and the environment.
+- Session-protected documentation responses, including HTML, JSON, Swagger assets, the initializer, the license files and auth failures, use `Cache-Control: private, no-store`. Public static assets keep `public, max-age=86400`.
+
 ## Unreleased — fexu-cli 0.1.1
 
 - `fexu new <name>` and `fexu new project <name>` write `fexu = "=0.1.0"` unless `--fexu-path` is set. The fullstack template keeps `features = ["admin-ui"]` on that registry dependency. The api template adds no features.
