@@ -13,6 +13,7 @@ use uuid::Uuid;
 pub enum FlashLevel {
     Success,
     Info,
+    Warning,
     Error,
 }
 
@@ -21,6 +22,7 @@ impl FlashLevel {
         match self {
             Self::Success => "success",
             Self::Info => "info",
+            Self::Warning => "warning",
             Self::Error => "error",
         }
     }
@@ -29,6 +31,7 @@ impl FlashLevel {
         match value {
             "success" => Some(Self::Success),
             "info" => Some(Self::Info),
+            "warning" => Some(Self::Warning),
             "error" => Some(Self::Error),
             _ => None,
         }
@@ -200,7 +203,9 @@ fn statement(
 
 #[cfg(test)]
 mod tests {
-    use super::{create_flash_table, push_flash, render_flashes, take_flashes, FlashLevel};
+    use super::{
+        create_flash_table, push_flash, render_flashes, take_flashes, FlashLevel, FlashMessage,
+    };
     use uuid::Uuid;
 
     async fn exercise(db: &fexu_db::driver::DatabaseConnection) {
@@ -229,6 +234,17 @@ mod tests {
         let remaining = take_flashes(db, other).await.unwrap();
         assert_eq!(remaining.len(), 1);
         assert!(take_flashes(db, other).await.unwrap().is_empty());
+    }
+
+    #[test]
+    fn warning_text_is_escaped_in_the_template_fragment() {
+        let html = render_flashes(&[FlashMessage {
+            level: FlashLevel::Warning,
+            text: "<b>careful</b>".to_owned(),
+        }]);
+        assert!(html.contains("data-level=\"warning\""));
+        assert!(html.contains("&lt;b&gt;"));
+        assert!(!html.contains("<b>"));
     }
 
     #[tokio::test]

@@ -112,7 +112,7 @@ State-changing requests must pass `authenticate_csrf`. View helpers do not repla
 
 `page_window` accepts pages from 1 and a size from 1 to 100. `pagination_href` stays on one local path and rejects `scope`, `csrf` and `token` query keys. `require_scope` rejects `QueryScope::None` before a read. `scoped_list` and `scoped_get` pass that scope into the existing query functions. They do not build a scope from the request.
 
-`create_flash_table` creates `_fexu_flashes`. `push_flash` stores one line, at most 240 characters, for a session id. `take_flashes` returns those rows and deletes them in the same transaction. A second take is empty. `render_flashes` escapes the text. `fexu dev` does not create this table.
+`create_flash_table` creates `_fexu_flashes`. `push_flash` stores one line, at most 240 characters, for a session id. Levels are `success`, `info`, `warning` and `error`. `take_flashes` returns those rows and deletes them in the same transaction. A second take is empty. `render_flashes` escapes the text. `fexu dev` does not create this table. HTML list and form pages consume the same rows into `flashes`. See [web views](web-views.md).
 
 ```rust
 fexu::views::push_flash(&db, user.session_id, fexu::views::FlashLevel::Success, "Saved").await?;

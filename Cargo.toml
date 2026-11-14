@@ -8,7 +8,8 @@ members = [
   "crates/fexu-middleware", "crates/fexu-mail", "crates/fexu-jobs",
   "examples/myshop",
   "examples/notes",
-  "examples/desk"
+  "examples/desk",
+  "examples/board"
 ]
 
 [workspace.package]

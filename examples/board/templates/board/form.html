@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>{% if mode == "create" %}New note{% else %}Edit note{% endif %}</title>
+  {% if canonical %}<link rel="canonical" href="{{ canonical | safe }}">{% endif %}
+</head>
+<body>
+  <ul class="flashes">
+  {% for flash in flashes %}
+    <li data-level="{{ flash.level }}">{{ flash.text }}</li>
+  {% endfor %}
+  </ul>
+  {{ form_html | safe }}
+  <a href="{{ list_url | safe }}">Back</a>
+</body>
+</html>

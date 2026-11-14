@@ -10,12 +10,14 @@ use fexu_middleware::RequestId;
 use tera::Context;
 
 pub use crate::crud::{
-    page_window, pagination_href, render_notice, require_scope, scoped_get, scoped_list, CrudError,
-    PageQuery,
+    page_links, page_window, pagination_href, render_notice, require_scope, scoped_get,
+    scoped_list, CrudError, PageLinks, PageQuery,
 };
 pub use crate::flash::{
     create_flash_table, push_flash, render_flashes, take_flashes, FlashLevel, FlashMessage,
 };
+pub use crate::generic::{crud_urls, crud_urls_with, HtmlResource, KeepRecord, RecordStamp};
+pub use crate::seo::{canonical_url, conditional_response, robots_txt, sitemap_xml, CachePolicy};
 
 #[derive(Debug)]
 pub struct ViewError {
@@ -76,14 +78,46 @@ pub fn json(value: &serde_json::Value) -> Response {
 }
 
 pub fn redirect_to(target: &str) -> Result<Response, ViewError> {
-    if !safe_redirect(target) {
-        return Err(ViewError::new(
-            StatusCode::BAD_REQUEST,
-            "view.redirect",
-            "Redirects müssen auf einen lokalen Pfad zeigen.",
-        ));
-    }
-    Ok(Redirect::to(target).into_response())
+    let Some(target) = normalized_local(target) else {
+        return Err(redirect_rejected());
+    };
+    Ok(Redirect::to(&target).into_response())
+}
+
+/// Redirects to `next` only when it stays under one allowed local prefix.
+///
+/// An empty `next` uses `fallback`. The prefix `/` allows any already-local path.
+/// `https://`, protocol-relative paths, backslashes and encoded `..` are rejected.
+pub fn redirect_next(
+    next: Option<&str>,
+    fallback: &str,
+    allowed_prefixes: &[&str],
+) -> Result<Response, ViewError> {
+    let Some(fallback) = normalized_local(fallback) else {
+        return Err(redirect_rejected());
+    };
+    let target = match next.map(str::trim).filter(|value| !value.is_empty()) {
+        None => fallback,
+        Some(value) => {
+            let local = normalized_local(value).ok_or_else(redirect_rejected)?;
+            if !allowed_prefixes
+                .iter()
+                .any(|prefix| prefix_match(&local, prefix))
+            {
+                return Err(redirect_rejected());
+            }
+            local
+        }
+    };
+    redirect_to(&target)
+}
+
+fn redirect_rejected() -> ViewError {
+    ViewError::new(
+        StatusCode::BAD_REQUEST,
+        "view.redirect",
+        "Redirects müssen auf einen lokalen Pfad zeigen.",
+    )
 }
 
 pub fn fail(
@@ -372,7 +406,7 @@ fn status_title(status: StatusCode) -> &'static str {
     }
 }
 
-fn from_auth(error: fexu_auth::AuthError) -> ViewError {
+pub(crate) fn from_auth(error: fexu_auth::AuthError) -> ViewError {
     let (status, code, detail) = match error {
         fexu_auth::AuthError::Unauthenticated => (
             StatusCode::UNAUTHORIZED,
@@ -401,14 +435,73 @@ fn from_auth(error: fexu_auth::AuthError) -> ViewError {
     ViewError::new(status, code, detail)
 }
 
-fn safe_redirect(target: &str) -> bool {
+pub(crate) fn normalized_path(target: &str) -> Option<String> {
+    normalized_local(target)
+}
+
+fn normalized_local(target: &str) -> Option<String> {
+    if target.len() > 512
+        || target
+            .chars()
+            .any(|char| char.is_control() || char.is_whitespace())
+    {
+        return None;
+    }
+    let decoded = strict_decode(target)?;
+    if is_local_path(&decoded) {
+        Some(decoded)
+    } else {
+        None
+    }
+}
+
+fn is_local_path(target: &str) -> bool {
     target.starts_with('/')
         && !target.starts_with("//")
         && !target.contains("://")
         && !target.contains('\\')
         && !target.contains("..")
-        && !target.chars().any(|char| char.is_control())
+        && !target.contains('@')
+        && !target.chars().any(|char| {
+            char.is_control()
+                || char.is_whitespace()
+                || matches!(char, '"' | '\'' | '<' | '>' | '&')
+        })
         && target.len() <= 512
+}
+
+fn prefix_match(path: &str, prefix: &str) -> bool {
+    if prefix == "/" {
+        return is_local_path(path);
+    }
+    let Some(prefix) = normalized_local(prefix) else {
+        return false;
+    };
+    path == prefix || path.starts_with(&format!("{prefix}/"))
+}
+
+fn strict_decode(value: &str) -> Option<String> {
+    let bytes = value.as_bytes();
+    let mut output = Vec::new();
+    let mut index = 0;
+    while index < bytes.len() {
+        if bytes[index] == b'%' {
+            if index + 2 >= bytes.len() {
+                return None;
+            }
+            let hex = std::str::from_utf8(&bytes[index + 1..index + 3]).ok()?;
+            let byte = u8::from_str_radix(hex, 16).ok()?;
+            if byte == 0 || byte == b'\\' || byte.is_ascii_control() {
+                return None;
+            }
+            output.push(byte);
+            index += 3;
+            continue;
+        }
+        output.push(bytes[index]);
+        index += 1;
+    }
+    String::from_utf8(output).ok()
 }
 
 fn decode(value: &str) -> String {
@@ -448,7 +541,8 @@ fn escape(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        fail, fail_in, form_fields, redirect_to, require_mutation, require_staff, validation,
+        fail, fail_in, form_fields, redirect_next, redirect_to, require_mutation, require_staff,
+        validation,
     };
     use axum::body::Body;
     use axum::http::{Request, StatusCode};
@@ -469,6 +563,27 @@ mod tests {
         assert!(redirect_to("/home").is_ok());
         assert!(redirect_to("https://example.invalid").is_err());
         assert!(redirect_to("//example.invalid").is_err());
+        assert!(redirect_to("/%2e%2e/secret").is_err());
+        assert!(redirect_to("/%2f%2fevil.example").is_err());
+        assert!(redirect_to("/\\evil.example").is_err());
+        let allowed = redirect_next(Some("/board/items/1"), "/board/items", &["/board"]).unwrap();
+        assert_eq!(
+            allowed.headers().get("location").unwrap().to_str().unwrap(),
+            "/board/items/1"
+        );
+        assert!(redirect_next(Some("/board-evil"), "/board/items", &["/board"]).is_err());
+        assert!(redirect_next(Some("https://evil.example"), "/board/items", &["/board"]).is_err());
+        assert!(redirect_next(Some("//evil.example"), "/board/items", &["/"]).is_err());
+        let fallback = redirect_next(None, "/board/items", &["/board"]).unwrap();
+        assert_eq!(
+            fallback
+                .headers()
+                .get("location")
+                .unwrap()
+                .to_str()
+                .unwrap(),
+            "/board/items"
+        );
     }
 
     #[tokio::test]
