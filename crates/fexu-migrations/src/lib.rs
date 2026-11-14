@@ -52,8 +52,8 @@ pub use packages::{
 };
 pub use plan::{plan_database, plan_database_in, PlanFinding, PlanLevel, PlanReport};
 pub use project::{
-    discover_project, load_schema_from_command, redact_database_url, DeclaredApp, ProjectConfig,
-    Settings,
+    discover_project, load_schema_from_command, redact_database_url, ApiDocsSettings, DeclaredApp,
+    ProjectConfig, ResolvedApiDocs, Settings,
 };
 pub use runner::{
     apply_directory, apply_directory_with_history, apply_files_with_history,
