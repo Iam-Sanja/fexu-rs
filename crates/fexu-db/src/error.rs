@@ -12,6 +12,7 @@ pub enum ConstraintKind {
 pub struct RuntimeErr {
     message: String,
     constraint: Option<ConstraintKind>,
+    sql_state: Option<String>,
 }
 
 impl RuntimeErr {
@@ -19,6 +20,7 @@ impl RuntimeErr {
         Self {
             message: message.into(),
             constraint: None,
+            sql_state: None,
         }
     }
 
@@ -26,7 +28,24 @@ impl RuntimeErr {
         Self {
             message: message.into(),
             constraint,
+            sql_state: None,
         }
+    }
+
+    pub(crate) fn with_sql_state(
+        message: impl Into<String>,
+        constraint: Option<ConstraintKind>,
+        sql_state: Option<String>,
+    ) -> Self {
+        Self {
+            message: message.into(),
+            constraint,
+            sql_state,
+        }
+    }
+
+    pub(crate) fn sql_state(&self) -> Option<&str> {
+        self.sql_state.as_deref()
     }
 }
 
@@ -52,6 +71,12 @@ impl DbErr {
     pub fn constraint(&self) -> Option<ConstraintKind> {
         match self {
             Self::Conn(runtime) | Self::Exec(runtime) | Self::Query(runtime) => runtime.constraint,
+        }
+    }
+
+    pub(crate) fn sql_state(&self) -> Option<&str> {
+        match self {
+            Self::Conn(runtime) | Self::Exec(runtime) | Self::Query(runtime) => runtime.sql_state(),
         }
     }
 
