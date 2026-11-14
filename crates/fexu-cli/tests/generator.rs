@@ -82,7 +82,7 @@ fn rejects_names_existing_directories_and_legacy_commands() {
     ] {
         let output = fexu().current_dir(&root).args(&args).output().unwrap();
         assert!(!output.status.success(), "{args:?}");
-        if args[1] == "Nope" || args[1] == "app" {
+        if args[1] == "app" {
             assert!(String::from_utf8_lossy(&output.stderr).contains("new app"));
         }
     }
@@ -459,6 +459,178 @@ fn local_paths_and_invalid_paths_keep_existing_projects_untouched() {
         assert!(!output.status.success(), "{label}");
         assert!(!parent.join("Bad").exists(), "{label}");
     }
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn shorthand_uses_the_same_argument_rules_as_the_project_command() {
+    let root = std::env::temp_dir().join(format!("fexu-args-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(&root).unwrap();
+    let quoted = root.join("quoted-crate");
+    std::fs::create_dir_all(&quoted).unwrap();
+    std::fs::write(
+        quoted.join("Cargo.toml"),
+        "[package]\nname = 'fexu'\nversion = '0.1.0'\nedition = '2021'\n",
+    )
+    .unwrap();
+    let broken = root.join("broken-crate");
+    std::fs::create_dir_all(&broken).unwrap();
+    std::fs::write(broken.join("Cargo.toml"), "[package]\nname = \"fexu\"\n[\n").unwrap();
+
+    success(
+        fexu()
+            .current_dir(&root)
+            .args(["new", "Demo"])
+            .output()
+            .unwrap(),
+    );
+    success(
+        fexu()
+            .current_dir(&root)
+            .args(["new", "project", "Explicit"])
+            .output()
+            .unwrap(),
+    );
+    let demo = std::fs::read_to_string(root.join("Demo/Cargo.toml")).unwrap();
+    let explicit = std::fs::read_to_string(root.join("Explicit/Cargo.toml")).unwrap();
+    let fullstack = "fexu = { version = \"=0.1.0\", features = [\"admin-ui\"] }";
+    assert!(demo.contains(fullstack), "{demo}");
+    assert!(explicit.contains(fullstack), "{explicit}");
+    assert!(!demo.contains("path =") && !demo.contains("git ="));
+
+    for args in [
+        vec!["new", "ApiSpaced", "--template", "api"],
+        vec!["new", "ApiEquals", "--template=api"],
+        vec!["new", "project", "ApiLong", "--template", "api"],
+    ] {
+        success(fexu().current_dir(&root).args(&args).output().unwrap());
+    }
+    for name in ["ApiSpaced", "ApiEquals", "ApiLong"] {
+        let manifest = std::fs::read_to_string(root.join(name).join("Cargo.toml")).unwrap();
+        assert!(
+            manifest.contains("fexu = \"=0.1.0\"\n"),
+            "{name}: {manifest}"
+        );
+        assert!(!manifest.contains("admin-ui"), "{name}");
+    }
+
+    success(
+        fexu()
+            .current_dir(&root)
+            .args(["new", "RootApps", "--apps-dir", "."])
+            .output()
+            .unwrap(),
+    );
+    assert!(std::fs::read_to_string(root.join("RootApps/fexu.toml"))
+        .unwrap()
+        .contains("apps_dir = \".\""));
+    success(
+        fexu()
+            .current_dir(&root)
+            .args([
+                "new",
+                "Quoted",
+                &format!("--fexu-path={}", quoted.display()),
+            ])
+            .output()
+            .unwrap(),
+    );
+    assert!(
+        dependency_path(&std::fs::read_to_string(root.join("Quoted/Cargo.toml")).unwrap())
+            .ends_with("quoted-crate")
+    );
+
+    for args in [
+        vec![
+            "new",
+            "DupShort",
+            "--template",
+            "api",
+            "--template",
+            "fullstack",
+        ],
+        vec![
+            "new",
+            "project",
+            "DupLong",
+            "--template",
+            "api",
+            "--template",
+            "fullstack",
+        ],
+        vec!["new", "DupApps", "--apps-dir", "apps", "--apps-dir", "."],
+        vec!["new", "DupPath", "--fexu-path", "one", "--fexu-path", "two"],
+        vec!["new", "Missing", "--template"],
+        vec!["new", "Unknown", "--not-an-option"],
+        vec!["new", "FlagValue", "--template", "--apps-dir"],
+        vec!["new", "project", "FlagLong", "--fexu-path", "--template"],
+    ] {
+        let output = fexu().current_dir(&root).args(&args).output().unwrap();
+        assert!(
+            !output.status.success(),
+            "{args:?}\n{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let name = args
+            .iter()
+            .find(|arg| !arg.starts_with('-') && **arg != "new" && **arg != "project")
+            .unwrap();
+        assert!(!root.join(name).exists(), "{args:?}");
+    }
+
+    for args in [vec!["new", "--help"], vec!["new", "help"]] {
+        let output = fexu().current_dir(&root).args(&args).output().unwrap();
+        let text = format!(
+            "{}{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(output.status.success(), "{args:?}\n{text}");
+        assert!(
+            text.contains("project") && text.contains("app"),
+            "{args:?}\n{text}"
+        );
+    }
+    for args in [
+        vec!["new", "project", "--help"],
+        vec!["new", "HelpProject", "--help"],
+    ] {
+        let output = fexu().current_dir(&root).args(&args).output().unwrap();
+        let text = format!(
+            "{}{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(output.status.success(), "{args:?}\n{text}");
+        assert!(text.contains("--template"), "{args:?}\n{text}");
+    }
+    assert!(!root.join("HelpProject").exists());
+    assert!(!root.join("help").exists());
+    let broken_output = fexu()
+        .current_dir(&root)
+        .args(["new", "Broken", "--fexu-path"])
+        .arg(&broken)
+        .output()
+        .unwrap();
+    assert!(!broken_output.status.success());
+    assert!(String::from_utf8_lossy(&broken_output.stderr).contains("not valid TOML"));
+    assert!(!root.join("Broken").exists());
+    let app = fexu()
+        .current_dir(&root)
+        .args(["new", "app", "produkte"])
+        .output()
+        .unwrap();
+    assert!(!app.status.success());
+    assert!(!root.join("app").exists());
+    success(
+        fexu()
+            .current_dir(&root)
+            .args(["new", "project", "help"])
+            .output()
+            .unwrap(),
+    );
+    assert!(root.join("help/Cargo.toml").is_file());
     std::fs::remove_dir_all(root).unwrap();
 }
 

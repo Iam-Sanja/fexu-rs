@@ -256,15 +256,22 @@ fn resolve_fexu_source(explicit: Option<&Path>) -> Result<FexuSource, String> {
             requested.display()
         ));
     }
+    if !requested.is_dir() {
+        return Err(format!(
+            "The Fexu path must be a directory: {}. Omit --fexu-path to use fexu {PUBLISHED_FEXU_VERSION} from crates.io.",
+            requested.display()
+        ));
+    }
     let path = requested
         .canonicalize()
         .map_err(|error| error.to_string())?;
-    let workspace_crate = path.join("crates/fexu");
-    if package_name(&workspace_crate.join("Cargo.toml")).as_deref() == Some("fexu") {
-        return Ok(FexuSource::Local(workspace_crate));
+    let workspace_manifest = path.join("crates/fexu/Cargo.toml");
+    if workspace_manifest.is_file() {
+        return fexu_crate_at(&path.join("crates/fexu"), &workspace_manifest);
     }
-    if package_name(&path.join("Cargo.toml")).as_deref() == Some("fexu") {
-        return Ok(FexuSource::Local(path));
+    let manifest = path.join("Cargo.toml");
+    if manifest.is_file() {
+        return fexu_crate_at(&path, &manifest);
     }
     Err(
         "`--fexu-path` must point at the Fexu workspace root or the fexu crate directory. Omit it to use crates.io."
@@ -272,78 +279,30 @@ fn resolve_fexu_source(explicit: Option<&Path>) -> Result<FexuSource, String> {
     )
 }
 
-fn package_name(manifest: &Path) -> Option<String> {
-    let text = std::fs::read_to_string(manifest).ok()?;
-    let mut in_package = false;
-    for line in text.lines() {
-        let line = line.split('#').next().unwrap_or("").trim();
-        if line.starts_with('[') {
-            in_package = line == "[package]";
-            continue;
-        }
-        if in_package {
-            let Some(rest) = line.strip_prefix("name") else {
-                continue;
-            };
-            if !rest.starts_with(|character: char| character.is_whitespace() || character == '=') {
-                continue;
-            }
-            let value = rest.trim().strip_prefix('=').unwrap_or("").trim();
-            return Some(value.trim_matches('"').to_owned());
-        }
+fn fexu_crate_at(crate_dir: &Path, manifest: &Path) -> Result<FexuSource, String> {
+    let name = package_name(manifest)?;
+    if name != "fexu" {
+        return Err(format!(
+            "{} declares package `{name}`, not `fexu`.",
+            manifest.display()
+        ));
     }
-    None
+    Ok(FexuSource::Local(crate_dir.to_path_buf()))
 }
 
-pub(crate) fn parse_project_shorthand(
-    args: &[String],
-) -> Result<(String, String, String, Option<PathBuf>), String> {
-    let mut args = args.iter().map(String::as_str);
-    let Some(name) = args.next() else {
-        return Err("Use `fexu new <name>` or `fexu new project <name>`. `fexu new app <name>` adds an app to an existing project.".to_owned());
-    };
-    if name.starts_with('-') {
-        return Err(
-            "A project name is required. Use `fexu new <name>` or `fexu new project <name>`."
-                .to_owned(),
-        );
-    }
-    let mut template = "fullstack".to_owned();
-    let mut apps_dir = "apps".to_owned();
-    let mut fexu_path = None;
-    while let Some(flag) = args.next() {
-        match flag {
-            "--template" => {
-                let value = args.next().ok_or("`--template` needs api or fullstack.")?;
-                if !matches!(value, "api" | "fullstack") {
-                    return Err("Unknown template. Choose api or fullstack.".to_owned());
-                }
-                template = value.to_owned();
-            }
-            "--apps-dir" => {
-                let value = args.next().ok_or("`--apps-dir` needs apps or .")?;
-                if !matches!(value, "apps" | ".") {
-                    return Err("App placement must be . or apps.".to_owned());
-                }
-                apps_dir = value.to_owned();
-            }
-            "--fexu-path" => {
-                let value = args.next().ok_or("`--fexu-path` needs a directory.")?;
-                fexu_path = Some(PathBuf::from(value));
-            }
-            other if other.starts_with('-') => {
-                return Err(format!(
-                    "Unknown flag `{other}`. Use `fexu new project --help` to see project options."
-                ));
-            }
-            other => {
-                return Err(format!(
-                    "`{other}` is not a project option. Use `fexu new project <name>` or `fexu new app <name>`."
-                ));
-            }
-        }
-    }
-    Ok((name.to_owned(), template, apps_dir, fexu_path))
+fn package_name(manifest: &Path) -> Result<String, String> {
+    let text = std::fs::read_to_string(manifest)
+        .map_err(|error| format!("{} cannot be read: {error}", manifest.display()))?;
+    let document: toml::Table = toml::from_str(&text)
+        .map_err(|error| format!("{} is not valid TOML: {error}", manifest.display()))?;
+    document
+        .get("package")
+        .and_then(toml::Value::as_table)
+        .and_then(|package| package.get("name"))
+        .and_then(toml::Value::as_str)
+        .filter(|name| !name.is_empty())
+        .map(ToOwned::to_owned)
+        .ok_or_else(|| format!("{} has no [package] name.", manifest.display()))
 }
 
 fn cargo_path(path: &Path) -> String {
@@ -700,10 +659,10 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {{
 #[cfg(test)]
 mod tests {
     use super::{
-        crate_name, dependency_assignment, parse_project_shorthand, resolve_fexu_source,
-        validate_project_name, FexuSource, PUBLISHED_FEXU_VERSION,
+        crate_name, dependency_assignment, resolve_fexu_source, validate_project_name, FexuSource,
+        PUBLISHED_FEXU_VERSION,
     };
-    use std::path::{Path, PathBuf};
+    use std::path::PathBuf;
 
     #[test]
     fn rejects_unsafe_project_names() {
@@ -771,15 +730,36 @@ mod tests {
             .contains("workspace root"));
         let file = root.join("note.txt");
         std::fs::write(&file, "not a crate").unwrap();
-        assert!(resolve_fexu_source(Some(&file)).is_err());
+        assert!(resolve_fexu_source(Some(&file))
+            .unwrap_err()
+            .contains("must be a directory"));
 
-        std::fs::write(root.join("Cargo.toml"), "[package]\nname = \"fexu\"\n").unwrap();
-        match resolve_fexu_source(Some(&root)).unwrap() {
-            FexuSource::Local(path) => {
-                assert_eq!(path.canonicalize().unwrap(), root.canonicalize().unwrap());
+        for manifest in [
+            "[package]\nname = \"fexu\"\n",
+            "[package]\nname = 'fexu'\nversion = '0.1.0'\nedition = '2021'\n",
+            "[package]\nversion = \"0.1.0\"\nname = \"fexu\"\n",
+            "package = { name = \"fexu\", version = \"0.1.0\" }\n",
+        ] {
+            std::fs::write(root.join("Cargo.toml"), manifest).unwrap();
+            match resolve_fexu_source(Some(&root)).unwrap() {
+                FexuSource::Local(path) => {
+                    assert_eq!(path.canonicalize().unwrap(), root.canonicalize().unwrap());
+                }
+                FexuSource::Registry => {
+                    panic!("valid manifest was treated as crates.io: {manifest}")
+                }
             }
-            FexuSource::Registry => panic!("crate directory was treated as crates.io"),
         }
+
+        std::fs::write(root.join("Cargo.toml"), "[package]\nname = \"fexu\"\n[").unwrap();
+        assert!(resolve_fexu_source(Some(&root))
+            .unwrap_err()
+            .contains("not valid TOML"));
+        std::fs::write(root.join("Cargo.toml"), "[package]\nname = \"other\"\n").unwrap();
+        assert!(resolve_fexu_source(Some(&root))
+            .unwrap_err()
+            .contains("not `fexu`"));
+        std::fs::remove_file(root.join("Cargo.toml")).unwrap();
 
         let workspace = root.join("workspace");
         std::fs::create_dir_all(workspace.join("crates/fexu")).unwrap();
@@ -789,6 +769,14 @@ mod tests {
         )
         .unwrap();
         assert!(resolve_fexu_source(Some(&workspace)).is_err());
+        std::fs::write(
+            workspace.join("crates/fexu/Cargo.toml"),
+            "[package]\nname = 'fexu'\n[",
+        )
+        .unwrap();
+        assert!(resolve_fexu_source(Some(&workspace))
+            .unwrap_err()
+            .contains("not valid TOML"));
         std::fs::write(
             workspace.join("crates/fexu/Cargo.toml"),
             "[package]\nname = \"fexu\"\n",
@@ -804,25 +792,5 @@ mod tests {
             FexuSource::Registry => panic!("workspace root was treated as crates.io"),
         }
         std::fs::remove_dir_all(root).unwrap();
-    }
-
-    #[test]
-    fn shorthand_accepts_template_placement_and_path() {
-        let (name, template, apps_dir, path) = parse_project_shorthand(&[
-            "mein-projekt".into(),
-            "--template".into(),
-            "api".into(),
-            "--apps-dir".into(),
-            ".".into(),
-            "--fexu-path".into(),
-            "D:/fexu".into(),
-        ])
-        .unwrap();
-        assert_eq!(name, "mein-projekt");
-        assert_eq!(template, "api");
-        assert_eq!(apps_dir, ".");
-        assert_eq!(path.unwrap(), Path::new("D:/fexu"));
-        assert!(parse_project_shorthand(&["Shop".into(), "extra".into()]).is_err());
-        assert!(parse_project_shorthand(&["--template".into(), "api".into()]).is_err());
     }
 }

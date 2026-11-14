@@ -31,6 +31,8 @@ struct Cli {
 #[derive(Subcommand)]
 enum Command {
     /// Creates a project or an app inside an existing project.
+    ///
+    /// `fexu new <name>` is `fexu new project <name>`. `app`, `project`, and `help` stay subcommands and are not treated as project names.
     New {
         #[command(subcommand)]
         action: NewCommand,
@@ -163,8 +165,6 @@ enum NewCommand {
         #[arg(long, default_value = "local", value_parser = ["local", "shared"])]
         templates: String,
     },
-    #[command(external_subcommand)]
-    Legacy(Vec<String>),
 }
 
 #[derive(Subcommand)]
@@ -396,8 +396,48 @@ enum MigrateCommand {
     },
 }
 
+/// `fexu new <name>` uses the same Clap command as `fexu new project <name>`.
+/// `app`, `project`, and `help` remain subcommands.
+pub(crate) fn normalize_new_shorthand(args: &[String]) -> Vec<String> {
+    let mut args = args.to_vec();
+    let Some(command_at) = first_command_index(&args) else {
+        return args;
+    };
+    if args.get(command_at).map(String::as_str) != Some("new") {
+        return args;
+    }
+    let Some(next) = args.get(command_at + 1).map(String::as_str) else {
+        return args;
+    };
+    if matches!(next, "project" | "app" | "--help" | "-h") || next.starts_with('-') {
+        return args;
+    }
+    if next == "help" {
+        args[command_at + 1] = "--help".to_owned();
+        return args;
+    }
+    args.insert(command_at + 1, "project".to_owned());
+    args
+}
+
+fn first_command_index(args: &[String]) -> Option<usize> {
+    let mut index = 1;
+    while let Some(arg) = args.get(index) {
+        if arg == "--" {
+            return None;
+        }
+        if arg.starts_with('-') {
+            index += 1;
+            continue;
+        }
+        return Some(index);
+    }
+    None
+}
+
 fn main() -> ExitCode {
-    match Cli::parse().command {
+    let args = normalize_new_shorthand(&std::env::args().collect::<Vec<_>>());
+    match Cli::parse_from(args).command {
         Command::New { action } => {
             let (result, label) = match action {
                 NewCommand::Project {
@@ -411,20 +451,6 @@ fn main() -> ExitCode {
                 ),
                 NewCommand::App { name, templates } => {
                     (apps::generate_app(&name, &templates), "Created app:")
-                }
-                NewCommand::Legacy(arguments) => {
-                    match scaffold::parse_project_shorthand(&arguments) {
-                        Ok((name, template, apps_dir, fexu_path)) => (
-                            scaffold::new_project(
-                                &name,
-                                &template,
-                                &apps_dir,
-                                fexu_path.as_deref(),
-                            ),
-                            text::line("project_created"),
-                        ),
-                        Err(error) => (Err(error), ""),
-                    }
                 }
             };
             match result {
@@ -1329,4 +1355,41 @@ fn resolve_database_url(override_url: Option<String>) -> Result<String, String> 
         }
     }
     Ok(fexu_db::DEFAULT_SQLITE_URL.to_owned())
+}
+
+#[cfg(test)]
+mod argument_tests {
+    use super::normalize_new_shorthand;
+
+    fn args(values: &[&str]) -> Vec<String> {
+        values.iter().map(|value| (*value).to_owned()).collect()
+    }
+
+    #[test]
+    fn shorthand_is_rewritten_to_the_project_command() {
+        assert_eq!(
+            normalize_new_shorthand(&args(&["fexu", "new", "Demo", "--template", "api"])),
+            args(&["fexu", "new", "project", "Demo", "--template", "api"])
+        );
+        assert_eq!(
+            normalize_new_shorthand(&args(&["fexu", "new", "Demo", "--template=api"])),
+            args(&["fexu", "new", "project", "Demo", "--template=api"])
+        );
+        assert_eq!(
+            normalize_new_shorthand(&args(&["fexu", "new", "project", "Demo"])),
+            args(&["fexu", "new", "project", "Demo"])
+        );
+        assert_eq!(
+            normalize_new_shorthand(&args(&["fexu", "new", "app", "produkte"])),
+            args(&["fexu", "new", "app", "produkte"])
+        );
+        assert_eq!(
+            normalize_new_shorthand(&args(&["fexu", "new", "help"])),
+            args(&["fexu", "new", "--help"])
+        );
+        assert_eq!(
+            normalize_new_shorthand(&args(&["fexu", "new", "--help"])),
+            args(&["fexu", "new", "--help"])
+        );
+    }
 }

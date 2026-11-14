@@ -11,7 +11,7 @@ fexu migrate up
 fexu dev
 ```
 
-`fexu new Shop` is the same command. The default is `--template fullstack`; `--template api` omits admin registration. Both create a runnable homepage, a named `project.ping` route at `/api/v1/ping`, authentication, static files and an empty media directory. Neither creates a business app, a `Product` model, business tables, seed data or an initial domain migration. `migrate up` applies the framework authentication and jobs migrations, then explicitly declared project/app migrations. It never resets a database. No user or default password is created.
+`fexu new <name>` uses the same arguments as `fexu new project <name>`, including `--template=api`, repeated options, and `--help`. `app`, `project`, and `help` are subcommands and take priority: `fexu new app` adds an app, `fexu new project` is the explicit project command, and `fexu new help` shows help. A project named `help` or `app` uses the explicit form, for example `fexu new project help`. `project` remains a reserved project name. Both create a runnable homepage, a named `project.ping` route at `/api/v1/ping`, authentication, static files and an empty media directory. Neither creates a business app, a `Product` model, business tables, seed data or an initial domain migration. `migrate up` applies the framework authentication and jobs migrations, then explicitly declared project/app migrations. It never resets a database. No user or default password is created.
 
 Without `--fexu-path`, the generated `Cargo.toml` depends on the published library:
 
@@ -21,7 +21,7 @@ fexu = "=0.1.0"
 
 The fullstack template adds the feature in the same registry dependency: `fexu = { version = "=0.1.0", features = ["admin-ui"] }`. The api template has no extra features. This version is the published `fexu` crate, not the `fexu-cli` package version. No framework checkout, git dependency, or `[patch.crates-io]` entry is required.
 
-`--fexu-path` keeps the development dependency. The value may be the workspace root or the `fexu` crate directory (`crates/fexu`). Both write a `path` dependency that points at the crate directory. A missing path, a file, or any other directory is rejected and no project directory is created.
+`--fexu-path` keeps the development dependency. The value may be the workspace root or the `fexu` crate directory (`crates/fexu`). Both write a `path` dependency that points at the crate directory. The manifest must be valid TOML and its package name must be `fexu`. A missing path, a file, invalid TOML, a different package name, or any other directory is rejected and no project directory is created.
 
 The directory/display name remains `Shop`. Its Rust package/import name is `shop`; `MyShop` becomes `my_shop`, `HTTPServer` becomes `http_server`, and `mein-projekt` becomes `mein_projekt`. Names must start with an ASCII letter, contain only ASCII letters, digits, underscores or hyphens, and fit within 48 characters. A name cannot end with a hyphen or contain `--`. Rust keywords, Windows device names and reserved project directories are rejected.
 
