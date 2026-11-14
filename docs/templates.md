@@ -59,6 +59,10 @@ The application loads the settings, opens the template directory and renders aga
 
 An app publishes templates with `Registration::export_templates`. A dependent app calls `Registration::import_templates(source)` before its own `templates()` call. The source must be listed in `depends_on` and must already have exported. Imported names stay under `{source}/`. `admin/`, `base.html` and `login.html` are rejected. Two apps may both have `page.html` because the names are `shop/page.html` and `cards/page.html`. A template that imports a file the source did not export fails when that app's catalog is built, with the missing template name in the error. Project `templates/base.html` is unchanged.
 
+## Caching
+
+Tera does not cache rendered pages. `Site::render` runs the template on every call. An application can pass that string to `fexu::cache::ViewCache::render` or store a fragment with `FragmentCache`. Both calls are explicit, and so is invalidation. A process-local cache is not shared with another server process. Do not put a CSRF token, a one-session flash message or a signed download key into the cached string. See [cache.md](cache.md).
+
 ## Limitations
 
 Panics do not automatically become the 500 page. `fexu dev` reloads templates at process start, not every time you save without restart. Changing a Rust file restarts the process and reloads the templates. `include` for partials is possible, but the generator does not yet create its own partial file. The basic template is the common layout.

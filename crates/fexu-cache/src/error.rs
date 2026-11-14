@@ -14,4 +14,10 @@ pub enum CacheError {
     Corrupt,
     #[error("cache backend failed")]
     Backend,
+    #[error("cache limits must be greater than zero")]
+    InvalidLimits,
+    #[error("cache ttl must be greater than zero")]
+    InvalidTtl,
+    #[error("authenticated output is not stored in a shared cache")]
+    AuthenticatedContent,
 }

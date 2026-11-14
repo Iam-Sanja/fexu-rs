@@ -120,6 +120,10 @@ let messages = fexu::views::take_flashes(&db, user.session_id).await?;
 let html = fexu::views::render_flashes(&messages);
 ```
 
+## Caching
+
+`views::render` always renders. It does not read or write `fexu::cache`. Authenticated HTML is not stored unless the application calls `ViewCache::render` with `ViewScope::User` and that user's id. `ViewScope::Anonymous` returns `AuthenticatedContent` when `viewer_is_authenticated` is true, does not call the producer, and leaves a public entry unchanged. Invalidation is `invalidate`, `invalidate_anonymous` or `invalidate_users`. See [cache.md](cache.md).
+
 ## Tests
 
 `redirect_rejects_external_targets`, `responses_keep_problem_json_and_escape_html` and `staff_route_and_request_id_stay_closed` in `views.rs` cover redirects, responses and staff access. HTML is escaped. A 422 response without `text/html` remains problem JSON. Staff routes reject requests without a session. The response includes a request-ID header when standard middleware is installed.

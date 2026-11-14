@@ -8,7 +8,7 @@
 
 - Password login, roles, object permissions and CSRF stay in place. Confirmed TOTP gates session issuance. See [auth-providers.md](auth-providers.md) and [auth-threat-model.md](auth-threat-model.md).
 - Jobs stay at-least-once, with cron, backoff, dead letters as `failed`, and transactional enqueue. See [jobs.md](jobs.md) and [job-scheduling.md](job-scheduling.md).
-- Cache is optional and process-local. See [cache.md](cache.md).
+- Cache is optional and process-local. Shared view caching refuses authenticated viewers. See [cache.md](cache.md).
 - Storage keeps local files, adds lifecycle and signed URLs, and exposes an S3 configuration shape without a network client. See [storage.md](storage.md) and [storage-remote.md](storage-remote.md).
 
 ## Merge notes for PR #101

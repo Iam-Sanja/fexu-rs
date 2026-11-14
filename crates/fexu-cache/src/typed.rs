@@ -1,6 +1,6 @@
 //! Typisierte Werte mit Versionspräfix. Ein abweichendes Präfix ist ein Fehler.
 
-use crate::backend::{validate_key, validate_namespace, CacheBackend};
+use crate::backend::{validate_key, validate_namespace, CacheBackend, RawLookup};
 use crate::error::CacheError;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
@@ -11,6 +11,18 @@ use std::time::Duration;
 use tokio::sync::Notify;
 
 const MAGIC: &[u8; 4] = b"FXC1";
+
+/// Ergebnis einer typisierten Suche.
+///
+/// `get` bildet `Miss` und `Expired` auf `None` ab. `lookup` unterscheidet sie.
+/// Ein abgelaufener Eintrag wird beim ersten Lesen entfernt. Der nächste Aufruf ist `Miss`.
+/// Ein späteres Backend, das abgelaufene Schlüssel selbst löscht, kann `Expired` als `Miss` melden.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CacheLookup<T> {
+    Hit(T),
+    Miss,
+    Expired,
+}
 
 pub struct TypedCache<B> {
     backend: B,
@@ -38,15 +50,27 @@ impl<B> TypedCache<B> {
 }
 
 impl<B: CacheBackend> TypedCache<B> {
+    pub async fn lookup<T: DeserializeOwned>(
+        &self,
+        namespace: &str,
+        key: &str,
+    ) -> Result<CacheLookup<T>, CacheError> {
+        match self.backend.lookup_raw(namespace, key).await? {
+            RawLookup::Miss => Ok(CacheLookup::Miss),
+            RawLookup::Expired => Ok(CacheLookup::Expired),
+            RawLookup::Hit(bytes) => decode::<T>(&bytes, self.version).map(CacheLookup::Hit),
+        }
+    }
+
     pub async fn get<T: DeserializeOwned>(
         &self,
         namespace: &str,
         key: &str,
     ) -> Result<Option<T>, CacheError> {
-        let Some(bytes) = self.backend.get_raw(namespace, key).await? else {
-            return Ok(None);
-        };
-        decode::<T>(&bytes, self.version).map(Some)
+        Ok(match self.lookup(namespace, key).await? {
+            CacheLookup::Hit(value) => Some(value),
+            CacheLookup::Miss | CacheLookup::Expired => None,
+        })
     }
 
     pub async fn set<T: Serialize>(
@@ -70,8 +94,8 @@ impl<B: CacheBackend> TypedCache<B> {
         self.backend.invalidate_namespace(namespace).await
     }
 
-    /// Ein gleichzeitiger Aufruf für denselben Schlüssel wartet auf den ersten Produzenten.
-    /// Das gilt nur in diesem Prozess. Ein zweiter Prozess rechnet selbst.
+    /// Gleichzeitige Aufrufe auf diesem `TypedCache` warten auf den ersten Produzenten.
+    /// Ein zweiter `TypedCache`, auch auf demselben Speicher, und ein zweiter Prozess rechnen selbst.
     pub async fn get_or_set<T, F, Fut>(
         &self,
         namespace: &str,
@@ -86,6 +110,9 @@ impl<B: CacheBackend> TypedCache<B> {
     {
         validate_namespace(namespace)?;
         validate_key(key)?;
+        if ttl.is_some_and(|ttl| ttl.is_zero()) {
+            return Err(CacheError::InvalidTtl);
+        }
         if let Some(value) = self.get(namespace, key).await? {
             return Ok(value);
         }

@@ -1,6 +1,6 @@
 //! Begrenzter Prozessspeicher. Er ist kein gemeinsamer Cache mehrerer Instanzen.
 
-use crate::backend::{validate_key, validate_namespace, CacheBackend};
+use crate::backend::{validate_key, validate_namespace, CacheBackend, RawLookup};
 use crate::error::CacheError;
 use async_trait::async_trait;
 use std::collections::HashMap;
@@ -62,7 +62,7 @@ impl MemoryCache {
         now_ms: Arc<dyn Fn() -> i64 + Send + Sync>,
     ) -> Result<Self, CacheError> {
         if limits.max_entries == 0 || limits.max_bytes == 0 {
-            return Err(CacheError::TooLarge);
+            return Err(CacheError::InvalidLimits);
         }
         Ok(Self {
             inner: Arc::new(MemoryInner {
@@ -83,7 +83,7 @@ impl MemoryCache {
 
 #[async_trait]
 impl CacheBackend for MemoryCache {
-    async fn get_raw(&self, namespace: &str, key: &str) -> Result<Option<Vec<u8>>, CacheError> {
+    async fn lookup_raw(&self, namespace: &str, key: &str) -> Result<RawLookup, CacheError> {
         validate_namespace(namespace)?;
         validate_key(key)?;
         let mut state = lock(&self.inner.state);
@@ -94,9 +94,12 @@ impl CacheBackend for MemoryCache {
             .is_some_and(|slot| expired(slot, self.now()));
         if expired {
             remove_key(&mut state, &map_key);
-            return Ok(None);
+            return Ok(RawLookup::Expired);
         }
-        Ok(state.entries.get(&map_key).map(|slot| slot.bytes.clone()))
+        match state.entries.get(&map_key) {
+            Some(slot) => Ok(RawLookup::Hit(slot.bytes.clone())),
+            None => Ok(RawLookup::Miss),
+        }
     }
 
     async fn put_raw(
@@ -109,7 +112,7 @@ impl CacheBackend for MemoryCache {
         validate_namespace(namespace)?;
         validate_key(key)?;
         if ttl.is_some_and(|ttl| ttl.is_zero()) {
-            return Err(CacheError::InvalidKey);
+            return Err(CacheError::InvalidTtl);
         }
         let mut state = lock(&self.inner.state);
         if bytes.len() > state.limits.max_bytes {
