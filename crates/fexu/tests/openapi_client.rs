@@ -784,7 +784,8 @@ async fn session_documentation_accepts_only_a_live_user_session() {
     let db = fexu::db::connect("sqlite::memory:").await.unwrap();
     fexu::auth::apply_migrations(&db).await.unwrap();
     let auth = fexu::auth::AuthService::new(db.clone(), fexu::auth::AuthConfig::development());
-    let password = "openapi-docs-fixture";
+    let password = Uuid::new_v4().simple().to_string();
+    let password = password.as_str();
     auth.create_user("ada@example.com", password, false, false)
         .await
         .unwrap();
