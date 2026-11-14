@@ -58,13 +58,14 @@ fexu auth assign-role --email admin@example.com --role editor
 
 Exit codes of the test: `0` without error, warnings included. `1` for conflicts, an unreadable existing database or a failed `cargo check`. `migrate status` also uses `1` if the SQLite file is missing and does not create it. `check --strict` uses `2` if only warnings remain. `upgrade` uses `1` for file conflicts and then does not write anything.
 
-In layout 2, create an app before generating its models. Old implicit `new <name>` and `generate app` calls return migration guidance. Layout-1 root models keep working. See [migration instructions](project-generator.md#migration-from-old-clilayouts).
+In layout 2, create an app before generating its models. `fexu new <name>` creates a project with Fexu from crates.io and accepts the same options as `fexu new project <name>`. `app`, `project`, and `help` are subcommands, so they are not project names in the short form. `fexu new help project` shows the project command's help, and an unknown help target is rejected. `fexu generate app` still returns migration guidance and writes nothing. Layout-1 root models keep working. See [migration instructions](project-generator.md#migration-from-old-clilayouts).
 
 ## CLI structure
 
 ```text
 fexu
-├─ new project <name>          Create an empty project
+├─ new <name>                  Create an empty project from crates.io
+├─ new project <name>          Same command, with --template, --apps-dir and --fexu-path
 ├─ new app <name>              Create and register a business app
 ├─ doctor                      Reale Umgebungsprüfung
 ├─ dev                         Entwicklungsprozess starten

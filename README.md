@@ -55,17 +55,26 @@ SQLite defaults to `sqlite://db.sqlite3?mode=rwc` in the current working directo
 
 ### Create your own application
 
-From the Fexu checkout, install the **local** CLI and generate a standalone project alongside the repository:
+Install the published CLI and create a project outside this repository. `fexu-cli` 0.1.1 writes a crates.io dependency on `fexu` 0.1.0. The published CLI 0.1.0 does not.
+
+```powershell
+cargo install fexu-cli --version 0.1.1 --locked
+fexu new project demo
+Set-Location demo
+fexu migrate up
+fexu admin create-user --email admin@example.com --staff --superuser
+fexu dev
+```
+
+`fexu new demo` is the same command. The default fullstack template writes `fexu = { version = "=0.1.0", features = ["admin-ui"] }`. `--template api` writes `fexu = "=0.1.0"`.
+
+To compile against a local Fexu checkout, pass the workspace root or `crates/fexu`:
 
 ```powershell
 cargo install --path crates/fexu-cli
 $fexuRepo = (Get-Location).Path
 Set-Location ..
 fexu new project demo --template fullstack --fexu-path $fexuRepo
-Set-Location demo
-fexu migrate up
-fexu admin create-user --email admin@example.com --staff --superuser
-fexu dev
 ```
 
 The CLI prompts for the admin password; there is **no default password**. New projects do not include shop-specific business models. See [project generation](docs/project-generator.md) and [CLI reference](docs/cli.md).

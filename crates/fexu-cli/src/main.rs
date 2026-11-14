@@ -18,6 +18,7 @@ use fexu_migrations::{
     write_explicit_migration, BackfillLiteral, ColumnBackfill, InstalledApp, MakeOutcome,
     MigrationOperation, PackageMigration, SchemaSnapshot,
 };
+use std::ffi::{OsStr, OsString};
 use std::path::PathBuf;
 use std::process::ExitCode;
 
@@ -31,6 +32,8 @@ struct Cli {
 #[derive(Subcommand)]
 enum Command {
     /// Creates a project or an app inside an existing project.
+    ///
+    /// `fexu new <name>` is `fexu new project <name>`. `app`, `project`, and `help` stay subcommands and are not treated as project names.
     New {
         #[command(subcommand)]
         action: NewCommand,
@@ -163,8 +166,6 @@ enum NewCommand {
         #[arg(long, default_value = "local", value_parser = ["local", "shared"])]
         templates: String,
     },
-    #[command(external_subcommand)]
-    Legacy(Vec<String>),
 }
 
 #[derive(Subcommand)]
@@ -396,16 +397,69 @@ enum MigrateCommand {
     },
 }
 
+/// `fexu new <name>` uses the same Clap command as `fexu new project <name>`.
+/// `app`, `project`, and `help` remain subcommands and are passed through unchanged.
+pub(crate) fn normalize_new_shorthand(args: &[impl AsRef<OsStr>]) -> Vec<OsString> {
+    let mut args: Vec<OsString> = args.iter().map(|arg| arg.as_ref().to_os_string()).collect();
+    let Some(command_at) = first_command_index(&args) else {
+        return args;
+    };
+    if !os_eq(args[command_at].as_os_str(), "new") {
+        return args;
+    }
+    let Some(next) = args.get(command_at + 1) else {
+        return args;
+    };
+    if os_eq(next, "project")
+        || os_eq(next, "app")
+        || os_eq(next, "help")
+        || os_eq(next, "--help")
+        || os_eq(next, "-h")
+        || next.as_encoded_bytes().first() == Some(&b'-')
+    {
+        return args;
+    }
+    args.insert(command_at + 1, OsString::from("project"));
+    args
+}
+
+fn os_eq(value: &OsStr, literal: &str) -> bool {
+    value == OsStr::new(literal)
+}
+
+fn first_command_index(args: &[OsString]) -> Option<usize> {
+    let mut index = 1;
+    while let Some(arg) = args.get(index) {
+        if os_eq(arg, "--") {
+            return None;
+        }
+        if arg.as_encoded_bytes().first() == Some(&b'-') {
+            index += 1;
+            continue;
+        }
+        return Some(index);
+    }
+    None
+}
+
 fn main() -> ExitCode {
-    match Cli::parse().command {
+    let raw: Vec<OsString> = std::env::args_os().collect();
+    let args = normalize_new_shorthand(&raw);
+    match Cli::parse_from(args).command {
         Command::New { action } => {
             let (result, label) = match action {
-                NewCommand::Project { name, template, apps_dir, fexu_path } => (
+                NewCommand::Project {
+                    name,
+                    template,
+                    apps_dir,
+                    fexu_path,
+                } => (
                     scaffold::new_project(&name, &template, &apps_dir, fexu_path.as_deref()),
                     text::line("project_created"),
                 ),
-                NewCommand::App { name, templates } => (apps::generate_app(&name, &templates), "Created app:"),
-                NewCommand::Legacy(arguments) => (Err(format!("The implicit new command ({} arguments) was removed. Use fexu new project <name> or fexu new app <name>. Existing projects are not changed.", arguments.len())), ""),
+                NewCommand::App { name, templates } => {
+                    (apps::generate_app(&name, &templates), "Created app:")
+                }
             };
             match result {
                 Ok(path) => {
@@ -1309,4 +1363,116 @@ fn resolve_database_url(override_url: Option<String>) -> Result<String, String> 
         }
     }
     Ok(fexu_db::DEFAULT_SQLITE_URL.to_owned())
+}
+
+#[cfg(test)]
+mod argument_tests {
+    use super::normalize_new_shorthand;
+    use std::ffi::{OsStr, OsString};
+
+    fn args(values: &[&str]) -> Vec<OsString> {
+        values.iter().map(|value| OsString::from(*value)).collect()
+    }
+
+    #[test]
+    fn shorthand_is_rewritten_to_the_project_command() {
+        assert_eq!(
+            normalize_new_shorthand(&args(&["fexu", "new", "Demo", "--template", "api"])),
+            args(&["fexu", "new", "project", "Demo", "--template", "api"])
+        );
+        assert_eq!(
+            normalize_new_shorthand(&args(&["fexu", "new", "Demo", "--template=api"])),
+            args(&["fexu", "new", "project", "Demo", "--template=api"])
+        );
+        assert_eq!(
+            normalize_new_shorthand(&args(&["fexu", "new", "project", "Demo"])),
+            args(&["fexu", "new", "project", "Demo"])
+        );
+        assert_eq!(
+            normalize_new_shorthand(&args(&["fexu", "new", "app", "produkte"])),
+            args(&["fexu", "new", "app", "produkte"])
+        );
+        assert_eq!(
+            normalize_new_shorthand(&args(&["fexu", "new", "help"])),
+            args(&["fexu", "new", "help"])
+        );
+        assert_eq!(
+            normalize_new_shorthand(&args(&["fexu", "new", "help", "project"])),
+            args(&["fexu", "new", "help", "project"])
+        );
+        assert_eq!(
+            normalize_new_shorthand(&args(&["fexu", "new", "help", "app"])),
+            args(&["fexu", "new", "help", "app"])
+        );
+        assert_eq!(
+            normalize_new_shorthand(&args(&["fexu", "new", "help", "bogus"])),
+            args(&["fexu", "new", "help", "bogus"])
+        );
+        assert_eq!(
+            normalize_new_shorthand(&args(&["fexu", "new", "--help"])),
+            args(&["fexu", "new", "--help"])
+        );
+    }
+
+    #[test]
+    fn unicode_and_non_utf8_arguments_are_preserved() {
+        let unicode = OsString::from("D:/Daten/项目/fexu");
+        let input = [
+            OsString::from("fexu"),
+            OsString::from("migrate"),
+            OsString::from("status"),
+            OsString::from("--migrations-dir"),
+            unicode.clone(),
+        ];
+        assert_eq!(normalize_new_shorthand(&input), input);
+        let shorthand = [
+            OsString::from("fexu"),
+            OsString::from("new"),
+            OsString::from("Demo"),
+            OsString::from("--fexu-path"),
+            unicode.clone(),
+        ];
+        let rewritten = normalize_new_shorthand(&shorthand);
+        assert_eq!(rewritten[2], OsStr::new("project"));
+        assert_eq!(rewritten[5], unicode);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn unpaired_utf16_surrogate_is_preserved() {
+        use std::os::windows::ffi::{OsStrExt, OsStringExt};
+        let path = OsString::from_wide(&[b'C' as u16, b':' as u16, b'\\' as u16, 0xDCFF]);
+        let input = [
+            OsString::from("fexu"),
+            OsString::from("new"),
+            path.clone(),
+            OsString::from("--fexu-path"),
+            path.clone(),
+        ];
+        let rewritten = normalize_new_shorthand(&input);
+        assert_eq!(rewritten[2], OsStr::new("project"));
+        assert_eq!(rewritten[3], path);
+        assert_eq!(rewritten[5], path);
+        let wide: Vec<u16> = rewritten[3].encode_wide().collect();
+        assert_eq!(wide.last().copied(), Some(0xDCFF));
+        let migrate = [
+            OsString::from("fexu"),
+            OsString::from("migrate"),
+            OsString::from("status"),
+            OsString::from("--migrations-dir"),
+            path.clone(),
+        ];
+        assert_eq!(normalize_new_shorthand(&migrate), migrate);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn non_utf8_bytes_are_preserved() {
+        use std::os::unix::ffi::{OsStrExt, OsStringExt};
+        let path = OsString::from_vec(vec![0xff, 0xfe]);
+        let input = [OsString::from("fexu"), OsString::from("new"), path.clone()];
+        let rewritten = normalize_new_shorthand(&input);
+        assert_eq!(rewritten[2], OsStr::new("project"));
+        assert_eq!(rewritten[3].as_bytes(), &[0xff, 0xfe]);
+    }
 }
