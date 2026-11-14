@@ -35,7 +35,7 @@ Logout, password change and expiration revoke or discard the session. After that
 - `GET /auth/csrf` returns `{ "csrf_token": "..." }`
 - Header `x-csrf-token` for unsafe JSON methods
 - HTML field `csrf_token` with the same HMAC
-- Cookie `fexu_login_csrf` only for `POST /admin/login`. It is 64 Hex characters, HttpOnly, `Path=/`, SameSite from the Auth configuration, `Secure` only at `cookie_secure` and `Max-Age=600`. A valid cookie is reused for other tabs. An existing `fexu_anonymous` or `fexu_session` cookie does not replace this check: the global cookie guard accepts the login double-submit and still rejects a missing or mismatched login token. The anonymous CSRF token is not a login proof. A successful login revokes the anonymous session. `POST /auth/password-reset` and `POST /auth/password-reset/choose` use the same separation for `fexu_reset_csrf`. JSON `POST /auth/login` has no login cookie; with an anonymous cookie it still needs the anonymous CSRF proof, and without a session cookie it stays a stateless credential request. Routes that must not accept a cookie-less write use `fexu::require_browser`. That layer rejects POST, PUT, PATCH and DELETE without `fexu_session` or `fexu_anonymous`, ignores `Authorization: Bearer`, and still checks the session CSRF when a cookie is present. `allow_anonymous` routes stay open for clients that send no session cookie.
+- Cookie `fexu_login_csrf` only for `POST /admin/login`. It is 64 Hex characters, HttpOnly, `Path=/`, SameSite from the Auth configuration, `Secure` only at `cookie_secure` and `Max-Age=600`. A valid cookie is reused for other tabs. An existing `fexu_anonymous` or `fexu_session` cookie does not replace this check: the global cookie guard accepts the login double-submit and still rejects a missing or mismatched login token. The anonymous CSRF token is not a login proof. A successful login revokes the anonymous session. `POST /auth/password-reset` and `POST /auth/password-reset/choose` use the same separation for `fexu_reset_csrf`. JSON `POST /auth/login` has no login cookie; with an anonymous cookie it still needs the anonymous CSRF proof, and without a session cookie it stays a stateless credential request. Routes that must not accept a cookie-less write use `fexu::require_browser` or `App::require_browser_writes`. That outer layer rejects POST, PUT, PATCH and DELETE without `fexu_session` or `fexu_anonymous`, ignores `Authorization: Bearer`, and still checks the session CSRF when a cookie is present. `POST /admin/login` is the exception: a fresh jar may present only `fexu_login_csrf` and the matching form field. `POST /auth/password-reset` and `POST /auth/password-reset/choose` may present only `fexu_reset_csrf`. Those cookies do not authorize any other route. An expired or unknown session cookie does not replace the login proof and does not block a valid one. `allow_anonymous` routes stay open for clients that send no session cookie unless `require_browser_writes` is set. JSON `POST /auth/login` without a session cookie is then rejected as well.
 
 ## Data flow
 
@@ -65,11 +65,15 @@ Logout, password change and expiration revoke or discard the session. After that
 |Header missing or token is wrong| 403, `csrf token is missing or invalid` |
 |Token of another session| 403 |
 |Session expired, revoked or user inactive on a safe method| 401 |
-|Unsafe method with an expired or unknown session cookie| 403 before the handler |
+|Unsafe method with an expired or unknown session cookie, except dedicated login and reset posts|403 before the handler|
 |Logout without tokens|403, the session remains|
 |Session cookie without a valid CSRF proof|403 before the handler|
 |Default session cookie and no `AuthService`|403|
-|No session cookie, including `Authorization: Bearer`|Not blocked by this layer|
+|No session cookie, including `Authorization: Bearer`, and `require_browser` is off|Not blocked by this layer. `POST /admin/login` still checks its own cookie in the handler|
+|No session cookie on any other write while `require_browser` is on|403 before the handler|
+|Fresh `POST /admin/login` with matching `fexu_login_csrf`, allowed origin, no session cookie, `require_browser` on|303 and `fexu_session`|
+|That login with a foreign origin, or `Origin: null` without `Sec-Fetch-Site: same-origin`|403|
+|`fexu_reset_csrf` presented to a route other than the password-reset posts|403 when `require_browser` is on|
 
 ## Example
 
@@ -96,4 +100,4 @@ x-csrf-token: ...
 
 ## Limitations
 
-All tabs in a session share a token. Logout therefore ends all tabs of this session. There is no token list with single revocation. The key in `.fexu/csrf.key` is in the working directory and is only the development source if no environment variable is set. The layer reads at most 8 MiB when it has to inspect a body, and only when a session cookie is present and `x-csrf-token` is empty. Routes added after `into_router` are outside the layer. `fexu_login_csrf`, `fexu_reset` and `fexu_locale` do not start it. Development with `cookie_secure = false` still allows a missing origin.
+All tabs in a session share a token. Logout therefore ends all tabs of this session. There is no token list with single revocation. The key in `.fexu/csrf.key` is in the working directory and is only the development source if no environment variable is set. The layer reads at most 8 MiB when it has to inspect a body. It does that for a present session cookie with an empty `x-csrf-token`, and for the dedicated login and reset posts. Routes added after `into_router` are outside the layer. `fexu_login_csrf` and `fexu_reset_csrf` do not start the session HMAC check. `fexu_locale` does not either. Development with `cookie_secure = false` still allows a missing origin. There is no public self-service registration route. A fresh browser session is `GET /auth/anonymous` plus, for the admin, `GET /admin/login`.

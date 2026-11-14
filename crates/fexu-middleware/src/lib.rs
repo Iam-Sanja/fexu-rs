@@ -6,10 +6,13 @@
 //!
 //! `X-Content-Type-Options` und `X-Frame-Options` gehören dieser Schicht und werden immer auf
 //! `nosniff` und `DENY` gesetzt. Eine Anwendung kann sie nicht abschwächen.
-//! `Referrer-Policy` gehört ebenfalls dieser Schicht, sofern die Antwort noch keinen Wert hat.
-//! Ein vom Handler gesetzter Wert bleibt erhalten. Recovery-Seiten setzen selbst `no-referrer`.
-//! Die Standardvorgabe ist ebenfalls `no-referrer` und kann über [`Standard::referrer_policy`]
-//! auf einen der aufgezählten Werte geändert werden.
+//! `Referrer-Policy` gehört derselben Schicht. Ein vom Handler gesetzter Wert bleibt nur erhalten,
+//! wenn er eine der aufgezählten sicheren Policies ist. `unsafe-url`, `origin`,
+//! `no-referrer-when-downgrade` und jeder andere Wert werden durch die konfigurierte Policy ersetzt.
+//! Recovery-Seiten setzen selbst `no-referrer` und behalten diesen Wert auch dann, wenn die
+//! Konfiguration `same-origin` ist. Die Standardvorgabe ist `no-referrer` und kann über
+//! [`Standard::referrer_policy`] geändert werden. Diese Schicht liest weder `Host` noch
+//! `X-Forwarded-*` und entscheidet keine Origin- oder CSRF-Prüfung.
 //!
 //! Diese Crate ersetzt weder Authentifizierung noch Autorisierung. Den Cookie-CSRF-Schutz setzt
 //! `App::into_router`, nicht diese Schicht.
@@ -42,6 +45,18 @@ impl ReferrerPolicy {
             Self::OriginWhenCrossOrigin => "origin-when-cross-origin",
             Self::StrictOrigin => "strict-origin",
             Self::StrictOriginWhenCrossOrigin => "strict-origin-when-cross-origin",
+        }
+    }
+
+    /// Akzeptiert nur die Policies, die diese Schicht selbst setzen darf.
+    pub fn parse(value: &str) -> Option<Self> {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "no-referrer" => Some(Self::NoReferrer),
+            "same-origin" => Some(Self::SameOrigin),
+            "origin-when-cross-origin" => Some(Self::OriginWhenCrossOrigin),
+            "strict-origin" => Some(Self::StrictOrigin),
+            "strict-origin-when-cross-origin" => Some(Self::StrictOriginWhenCrossOrigin),
+            _ => None,
         }
     }
 }
@@ -125,7 +140,11 @@ async fn security_headers(mut request: Request, next: Next, policy: ReferrerPoli
         HeaderValue::from_static("nosniff"),
     );
     headers.insert(header::X_FRAME_OPTIONS, HeaderValue::from_static("DENY"));
-    if !headers.contains_key(header::REFERRER_POLICY) {
+    let explicit = headers
+        .get(header::REFERRER_POLICY)
+        .and_then(|value| value.to_str().ok())
+        .and_then(ReferrerPolicy::parse);
+    if explicit.is_none() {
         headers.insert(
             header::REFERRER_POLICY,
             HeaderValue::from_static(policy.as_header()),
@@ -284,6 +303,61 @@ mod tests {
                 .contains("referrer-policy: same-origin"),
             "{body}"
         );
+    }
+
+    #[test]
+    fn unsafe_referrer_policy_is_replaced_without_weakening_other_headers() {
+        for unsafe_policy in [
+            "unsafe-url",
+            "origin",
+            "no-referrer-when-downgrade",
+            "",
+            "same-origin, no-referrer",
+        ] {
+            let app = apply(
+                Router::new().route(
+                    "/health",
+                    get(move || async move {
+                        ([(axum::http::header::REFERRER_POLICY, unsafe_policy)], "ok")
+                    }),
+                ),
+                Standard::default(),
+            );
+            let body = exchange(
+                app,
+                "GET /health HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
+            );
+            let lower = body.to_ascii_lowercase();
+            assert!(
+                lower.contains("referrer-policy: no-referrer"),
+                "{unsafe_policy} -> {body}"
+            );
+            assert!(!lower.contains("unsafe-url"), "{body}");
+            assert!(!lower.contains("no-referrer-when-downgrade"), "{body}");
+            assert!(lower.contains("x-frame-options: deny"), "{body}");
+            assert!(lower.contains("x-content-type-options: nosniff"), "{body}");
+        }
+    }
+
+    #[test]
+    fn recovery_no_referrer_survives_a_same_origin_default() {
+        let app = apply(
+            Router::new().route(
+                "/auth/password-reset",
+                get(|| async { ([(axum::http::header::REFERRER_POLICY, "no-referrer")], "ok") }),
+            ),
+            Standard {
+                referrer_policy: super::ReferrerPolicy::SameOrigin,
+                ..Standard::default()
+            },
+        );
+        let body = exchange(
+            app,
+            "GET /auth/password-reset HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
+        );
+        let lower = body.to_ascii_lowercase();
+        assert!(lower.contains("referrer-policy: no-referrer"), "{body}");
+        assert!(!lower.contains("referrer-policy: same-origin"), "{body}");
     }
 
     #[test]

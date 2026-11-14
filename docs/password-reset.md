@@ -18,7 +18,7 @@
 
 The public acknowledgement is “If an account with this address exists, an email with further steps has been requested.” Unknown, inactive or invalid addresses, rate limits, disabled mail and delivery failures do not reveal account existence. Inactive users receive no email. CSRF and origin failures return 403 without naming the address. Without an auth service, POST returns 404. Bodies over 8 KiB are rejected with 403.
 
-The pages are server-rendered HTML without external file and without JavaScript. `Referrer-Policy` is `no-referrer`. The content security policy does not allow an external asset. The admin login remains unchanged and does not contain an additional link.
+The pages are server-rendered HTML without external file and without JavaScript. `Referrer-Policy` is `no-referrer`. The security-header layer keeps that explicit value when the configured default is `same-origin`. The admin login document uses `same-origin` and is unchanged as a page. The content security policy does not allow an external asset. The admin login remains unchanged and does not contain an additional link.
 
 ## Token
 

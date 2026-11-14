@@ -13,7 +13,7 @@
 
 ## Public API
 
-`Standard` carries `body_limit`, standard 2 MiB. `apply(router, standard)` attaches the layers. `RequestId` is in the request extensions. `logged_path` returns only the path. The incoming header `x-request-id` is ignored. The answer sets a new ID.
+`Standard` carries `body_limit` (standard 2 MiB) and `referrer_policy`. `apply(router, standard)` attaches the layers. `RequestId` is in the request extensions. `logged_path` returns only the path. An incoming `x-request-id` is kept only when it is 8 to 64 ASCII letters, digits or hyphens. Anything else is replaced.
 
 ## Data flow
 
@@ -27,11 +27,11 @@ Tower runs the last layer added first. `apply` is therefore attached in this ord
 
 ## Configuration
 
-`Standard { body_limit }` is the only option. `prepare` uses at least the configured upload size. There is no TOML switch that turns off the security headers.
+`Standard { body_limit, referrer_policy }` is the explicit configuration. `fexu::web::prepare` fills a missing referrer policy with `no-referrer` and does not read a TOML switch. Callers that use `apply` directly can select one of `no-referrer`, `same-origin`, `origin-when-cross-origin`, `strict-origin` or `strict-origin-when-cross-origin`. There is no switch that turns off the security headers or that trusts `Host` or `X-Forwarded-*`.
 
 ## Security
 
-The log contains method, path, status, duration and request ID. Query, cookies, `Authorization`, CSRF, passwords and multipart content are not written. Response headers are `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY` and `Referrer-Policy: no-referrer`. A content security policy is not set so that the admin does not break. Neither this crate nor the cookie-CSRF layer replaces an authorization check. A cookie-less `allow_anonymous` write remains public.
+The log contains method, path, status, duration and request ID. Query, cookies, `Authorization`, CSRF, passwords and multipart content are not written. This layer owns the final `X-Content-Type-Options: nosniff` and `X-Frame-Options: DENY`. A handler cannot weaken either value. `Referrer-Policy` is also owned here: a missing header, or a value outside the list above, is replaced by the configured policy. An explicit safe value is kept, including `same-origin` on the admin login document and `no-referrer` on the password-reset pages. A content security policy is not set so that the admin does not break. Origin checks, Fetch Metadata and CSRF live in `fexu-auth` and `fexu-api`, not in this crate. Neither this crate nor the cookie-CSRF layer replaces an authorization check. A cookie-less `allow_anonymous` write remains public unless the app calls `require_browser_writes`.
 
 The `x-fexu-trace-order` header is a test probe and does not affect routing.
 
@@ -47,7 +47,7 @@ let router = fexu::middleware::apply(router, fexu::middleware::Standard::default
 
 ## Tests
 
-`cargo test -p fexu-middleware` checks the request ID, the security headers, the order `request_id,access_log,security_headers`, the body limit and that query and cookie are not in the response stream of the log path.
+`cargo test -p fexu-middleware` checks the request ID, the security headers after the whole `apply` chain, preservation of `same-origin`, preservation of recovery `no-referrer` when the default is `same-origin`, replacement of `unsafe-url` and the other unsafe policies, the forced `nosniff` and `DENY` values, the order `request_id,access_log,security_headers`, the body limit and that query and cookie are not in the response stream of the log path. The admin login walk over a real socket is `sqlite_browser_security_matrix` in `fexu-api`.
 
 ## Limitations
 

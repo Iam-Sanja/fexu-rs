@@ -874,7 +874,7 @@ fn auth_json(id: &str, summary: &str, body: bool, status: u16, csrf: bool) -> Va
     }
     if csrf {
         operation["description"] = json!(
-            "Cookie sessions need their CSRF proof. Login uses fexu_login_csrf when an anonymous cookie is also present. Password reset uses fexu_reset_csrf."
+            "Cookie sessions need their CSRF proof. HTML admin login uses fexu_login_csrf even when no session cookie is present. Password reset uses fexu_reset_csrf. Neither cookie authorizes another route."
         );
         operation["security"] = json!([
             {},

@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased — browser security and native admin login
+
+- The security-header layer keeps an explicit safe `Referrer-Policy` and replaces any other value with the configured policy. `nosniff` and `DENY` stay mandatory. `Host` and `X-Forwarded-*` are not origins.
+- The native admin login document sends `Referrer-Policy: same-origin`. Password-reset pages keep `no-referrer`.
+- `require_browser_writes` accepts `POST /admin/login` from a fresh cookie jar when `fexu_login_csrf` matches. Other writes still need a session cookie. Foreign origins and unverified `Origin: null` stay rejected.
+
 ## Unreleased — fexu-cli 0.1.1
 
 - `fexu new <name>` and `fexu new project <name>` write `fexu = "=0.1.0"` unless `--fexu-path` is set. The fullstack template keeps `features = ["admin-ui"]` on that registry dependency. The api template adds no features.
