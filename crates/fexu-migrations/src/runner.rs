@@ -4,7 +4,7 @@ use crate::diff::{classify, ApplyClass, MigrationOperation};
 use crate::error::MigrationError;
 use crate::history::{self, HistoryEntry};
 use crate::snapshot::{ColumnSnapshot, SchemaSnapshot};
-use crate::store::{inspect_directory, MigrationFile};
+use crate::store::{inspect_directory, migration_number, MigrationFile};
 use fexu_core::{secondary_index_name, unique_index_name, DatabaseKind, ReferentialAction};
 use fexu_db::driver::{
     ConnectionTrait, DatabaseBackend, DatabaseConnection, PinnedSqlite, Statement, TransactionTrait,
@@ -251,10 +251,12 @@ pub async fn status_of_files(
     report_files(db, files, Vec::new(), history_table, current).await
 }
 
-/// Records tables that an applied framework migration still requires.
+/// Records tables and columns that the latest applied framework migration still requires.
 ///
-/// The check is read-only. A missing table becomes a conflict and is not created again.
-/// `label` is `Auth` or `Job` so the diagnostic code can name the component.
+/// The latest migration is the highest migration number among applied files, not the
+/// last entry of `files`. The check is read-only. A missing table or column becomes a
+/// conflict and is not created again. Existing conflicts, including checksum mismatches,
+/// are left in place. `label` is `Auth` or `Job` so the diagnostic code can name the component.
 pub async fn note_missing_applied_tables(
     db: &DatabaseConnection,
     files: &[MigrationFile],
@@ -267,19 +269,33 @@ pub async fn note_missing_applied_tables(
         .filter(|line| line.state == "angewendet")
         .map(|line| line.id.clone())
         .collect::<std::collections::HashSet<_>>();
-    let Some(file) = files.iter().rev().find(|file| applied.contains(&file.id)) else {
+    let mut ranked: Vec<&MigrationFile> = files.iter().collect();
+    ranked.sort_by_key(|file| migration_number(&file.id).unwrap_or(0));
+    let Some(file) = ranked.iter().rev().find(|file| applied.contains(&file.id)) else {
         return Ok(());
     };
     for table in &file.to_snapshot.tables {
-        if history::table_exists(db, &table.name).await? {
+        if !history::table_exists(db, &table.name).await? {
+            let message = format!(
+                "{label} table `{}` is missing after applied migration {}. Framework migrations were not reported as successful.",
+                table.name, file.id
+            );
+            if !report.conflicts.iter().any(|conflict| conflict == &message) {
+                report.conflicts.push(message);
+            }
             continue;
         }
-        let message = format!(
-            "{label} table `{}` is missing after applied migration {}. Framework migrations were not reported as successful.",
-            table.name, file.id
-        );
-        if !report.conflicts.iter().any(|conflict| conflict == &message) {
-            report.conflicts.push(message);
+        for column in &table.columns {
+            if history::column_exists(db, &table.name, &column.name).await? {
+                continue;
+            }
+            let message = format!(
+                "{label} column `{}.{}` is missing after applied migration {}. Framework migrations were not reported as successful.",
+                table.name, column.name, file.id
+            );
+            if !report.conflicts.iter().any(|conflict| conflict == &message) {
+                report.conflicts.push(message);
+            }
         }
     }
     Ok(())

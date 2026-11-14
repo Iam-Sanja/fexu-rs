@@ -50,16 +50,35 @@ async fn sqlite_embedded_auth_and_jobs_cover_the_failure_matrix() {
 }
 
 #[tokio::test]
+async fn sqlite_partial_prefix_ignores_later_snapshots() {
+    partial_prefix("sqlite::memory:").await.unwrap();
+}
+
+#[tokio::test]
 #[ignore = "requires DATABASE_URL pointing at an approved PostgreSQL admin database"]
 async fn postgres_embedded_auth_and_jobs() {
     let admin = std::env::var("DATABASE_URL").expect("DATABASE_URL");
     let isolated = DisposablePostgres::create(&admin)
         .await
         .expect("isolated database");
+    let partial = DisposablePostgres::create(&admin).await;
     let result = exercise(isolated.url()).await;
+    let partial_result = match &partial {
+        Ok(database) => partial_prefix(database.url()).await,
+        Err(error) => Err(error.to_string()),
+    };
     let dropped = isolated.drop_database().await;
+    let partial_dropped = match partial {
+        Ok(database) => database
+            .drop_database()
+            .await
+            .map_err(|error| error.to_string()),
+        Err(_) => Ok(()),
+    };
     result.unwrap();
+    partial_result.unwrap();
     dropped.expect("drop isolated database");
+    partial_dropped.expect("drop partial database");
 }
 
 async fn exercise(url: &str) -> Result<(), String> {
@@ -199,6 +218,17 @@ async fn exercise(url: &str) -> Result<(), String> {
     if status.lines.iter().any(|line| line.state != "angewendet") || !status.conflicts.is_empty() {
         return Err(format!("auth status is not applied: {status:?}"));
     }
+    let jobs_status = fexu::jobs::migration_status(&db)
+        .await
+        .map_err(|error| format!("{} {}", error.code(), error.detail()))?;
+    if jobs_status
+        .lines
+        .iter()
+        .any(|line| line.state != "angewendet")
+        || !jobs_status.conflicts.is_empty()
+    {
+        return Err(format!("jobs status is not applied: {jobs_status:?}"));
+    }
     let queue = fexu::jobs::Queue::new(
         db.clone(),
         std::sync::Arc::new(fexu::jobs::SystemClock),
@@ -261,11 +291,89 @@ async fn exercise(url: &str) -> Result<(), String> {
     }
     exec(
         &db,
+        "ALTER TABLE \"_fexu_admin_audit\" DROP COLUMN \"operation_id\"",
+    )
+    .await?;
+    let checksum_and_column = fexu::auth::migration_status(&db)
+        .await
+        .map_err(|error| error.to_string())?;
+    if !checksum_and_column
+        .conflicts
+        .iter()
+        .any(|conflict| conflict.to_ascii_lowercase().contains("checksum"))
+        || !checksum_and_column.conflicts.iter().any(|conflict| {
+            conflict.contains("operation_id") && conflict.to_ascii_lowercase().contains("column")
+        })
+    {
+        return Err(format!(
+            "checksum conflict and missing operation_id were not both reported: {checksum_and_column:?}"
+        ));
+    }
+    exec(
+        &db,
         &format!(
             "UPDATE \"_fexu_auth_migrations\" SET checksum = '{auth_checksum}' WHERE id = '0001_auth_schema'"
         ),
     )
     .await?;
+    let column_only = fexu::auth::migration_status(&db)
+        .await
+        .map_err(|error| error.to_string())?;
+    if column_only
+        .conflicts
+        .iter()
+        .any(|conflict| conflict.to_ascii_lowercase().contains("checksum"))
+        || !column_only.conflicts.iter().any(|conflict| {
+            conflict.contains("operation_id") && conflict.to_ascii_lowercase().contains("column")
+        })
+    {
+        return Err(format!(
+            "restored checksum still hid or kept the wrong conflict: {column_only:?}"
+        ));
+    }
+    let column_replay = fexu::auth::apply_migrations(&db)
+        .await
+        .map_err(|error| error.to_string())?;
+    if !column_replay.is_empty() {
+        return Err(format!(
+            "apply repaired a missing auth column: {column_replay:?}"
+        ));
+    }
+    if fexu::migrations::column_exists(&db, "_fexu_admin_audit", "operation_id")
+        .await
+        .map_err(|error| error.0)?
+    {
+        return Err("apply silently recreated operation_id".into());
+    }
+    exec(
+        &db,
+        "ALTER TABLE \"_fexu_jobs\" DROP COLUMN \"cron_expression\"",
+    )
+    .await?;
+    let jobs_column = fexu::jobs::migration_status(&db)
+        .await
+        .map_err(|error| format!("{} {}", error.code(), error.detail()))?;
+    if !jobs_column.conflicts.iter().any(|conflict| {
+        conflict.contains("cron_expression") && conflict.to_ascii_lowercase().contains("column")
+    }) {
+        return Err(format!(
+            "missing cron_expression was reported as success: {jobs_column:?}"
+        ));
+    }
+    let jobs_column_replay = fexu::jobs::apply_migrations(&db)
+        .await
+        .map_err(|error| format!("{} {}", error.code(), error.detail()))?;
+    if !jobs_column_replay.is_empty() {
+        return Err(format!(
+            "job apply repaired a missing column: {jobs_column_replay:?}"
+        ));
+    }
+    if fexu::migrations::column_exists(&db, "_fexu_jobs", "cron_expression")
+        .await
+        .map_err(|error| error.0)?
+    {
+        return Err("apply silently recreated cron_expression".into());
+    }
     exec(&db, "DROP TABLE \"_fexu_login_challenges\"").await?;
     let dropped = fexu::auth::migration_status(&db)
         .await
@@ -276,6 +384,28 @@ async fn exercise(url: &str) -> Result<(), String> {
     }) {
         return Err(format!(
             "missing auth table was reported as success: {dropped:?}"
+        ));
+    }
+    let mut reversed = auth_files.clone();
+    reversed.reverse();
+    let mut unsorted = fexu::migrations::status_of_files(
+        &db,
+        &auth_files,
+        fexu::migrations::AUTH_HISTORY_TABLE,
+        None,
+    )
+    .await
+    .map_err(|error| error.0)?;
+    fexu::migrations::note_missing_applied_tables(&db, &reversed, &mut unsorted, "Auth")
+        .await
+        .map_err(|error| error.0)?;
+    if !unsorted
+        .conflicts
+        .iter()
+        .any(|conflict| conflict.contains("_fexu_login_challenges"))
+    {
+        return Err(format!(
+            "unsorted migration files hid a missing table: {unsorted:?}"
         ));
     }
     let replay = fexu::auth::apply_migrations(&db)
@@ -340,6 +470,90 @@ async fn exercise(url: &str) -> Result<(), String> {
         return Err(format!("dev notice claimed a clean database: {notice}"));
     }
     let _ = std::fs::remove_dir_all(&empty_app);
+    Ok(())
+}
+
+async fn partial_prefix(url: &str) -> Result<(), String> {
+    let db = fexu::db::connect(url)
+        .await
+        .map_err(|error| error.to_string())?;
+    let auth_files = fexu::auth::embedded_migrations().map_err(|error| error.to_string())?;
+    let jobs_files = fexu::jobs::embedded_migrations()
+        .map_err(|error| format!("{} {}", error.code(), error.detail()))?;
+    let auth_0001 = auth_files
+        .iter()
+        .find(|file| file.id.starts_with("0001_"))
+        .cloned()
+        .ok_or_else(|| "0001 auth migration is missing".to_owned())?;
+    fexu::migrations::apply_files_with_history(
+        &db,
+        std::slice::from_ref(&auth_0001),
+        false,
+        fexu::migrations::AUTH_HISTORY_TABLE,
+    )
+    .await
+    .map_err(|error| error.0)?;
+    exec(&db, "DROP TABLE \"_fexu_user_roles\"").await?;
+    let mut reversed = auth_files.clone();
+    reversed.reverse();
+    let mut report = fexu::migrations::status_of_files(
+        &db,
+        &auth_files,
+        fexu::migrations::AUTH_HISTORY_TABLE,
+        None,
+    )
+    .await
+    .map_err(|error| error.0)?;
+    fexu::migrations::note_missing_applied_tables(&db, &reversed, &mut report, "Auth")
+        .await
+        .map_err(|error| error.0)?;
+    if !report
+        .conflicts
+        .iter()
+        .any(|conflict| conflict.contains("_fexu_user_roles"))
+    {
+        return Err(format!("partial auth hid a missing table: {report:?}"));
+    }
+    if report.conflicts.iter().any(|conflict| {
+        conflict.contains("_fexu_mfa_totp")
+            || conflict.contains("operation_id")
+            || conflict.contains("_fexu_login_challenges")
+    }) {
+        return Err(format!(
+            "partial auth required an object from a later migration: {report:?}"
+        ));
+    }
+    let jobs_0001 = jobs_files
+        .iter()
+        .find(|file| file.id.starts_with("0001_"))
+        .cloned()
+        .ok_or_else(|| "0001 job migration is missing".to_owned())?;
+    fexu::migrations::apply_files_with_history(
+        &db,
+        std::slice::from_ref(&jobs_0001),
+        false,
+        fexu::jobs::JOB_HISTORY,
+    )
+    .await
+    .map_err(|error| error.0)?;
+    let mut jobs_reversed = jobs_files.clone();
+    jobs_reversed.reverse();
+    let mut jobs_report =
+        fexu::migrations::status_of_files(&db, &jobs_files, fexu::jobs::JOB_HISTORY, None)
+            .await
+            .map_err(|error| error.0)?;
+    fexu::migrations::note_missing_applied_tables(&db, &jobs_reversed, &mut jobs_report, "Job")
+        .await
+        .map_err(|error| error.0)?;
+    if jobs_report
+        .conflicts
+        .iter()
+        .any(|conflict| conflict.contains("cron_expression") || conflict.contains("cron_zone"))
+    {
+        return Err(format!(
+            "pending job schedule required cron columns: {jobs_report:?}"
+        ));
+    }
     Ok(())
 }
 

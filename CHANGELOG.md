@@ -3,7 +3,8 @@
 ## Unreleased — embedded framework migrations
 
 - Auth and job migrations stay embedded in the binary. A relocated `embedded-migrate` process no longer needs the crate `migrations/` directories. `scripts/cold-start-embedded.sh` hides those directories, and CI runs that check for SQLite and for `fexu_test_relocated`.
-- `inspect_framework` and the auth and jobs status commands report a missing table for an applied framework migration as an error. They do not recreate the table and do not describe that database as fully migrated. Empty and absent application directories stay optional. Checksums of the checked-in migration files are unchanged.
+- `inspect_framework` and the auth and jobs status commands report a missing table or a missing column from the latest applied framework snapshot as an error. The latest snapshot is the highest migration number, not the last array entry. They do not recreate the table or column and do not describe that database as fully migrated. Empty and absent application directories stay optional. Checksums of the checked-in migration files are unchanged.
+- Cold-start Bash and PowerShell accept a PostgreSQL URL only when the decoded database name starts with `fexu_test_` and the host is loopback. The URL user must already be a disposable test role. Both scripts require `login=ok` and a reported job. Linux CI runs the Bash script and Windows CI runs the PowerShell script.
 
 ## Unreleased — fexu-cli 0.1.1
 

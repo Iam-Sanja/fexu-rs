@@ -479,10 +479,16 @@ fn conflict_code(text: &str) -> &'static str {
     let normalized = text.to_ascii_lowercase();
     if normalized.contains("checksum") {
         "migration.checksum_mismatch"
+    } else if normalized.starts_with("auth column") {
+        "migration.auth.column_missing"
+    } else if normalized.starts_with("job column") {
+        "migration.jobs.column_missing"
     } else if normalized.starts_with("auth table") {
         "migration.auth.table_missing"
     } else if normalized.starts_with("job table") {
         "migration.jobs.table_missing"
+    } else if normalized.contains("operation_id") && normalized.contains("missing") {
+        "migration.auth.column_missing"
     } else if normalized.contains("no file")
         || normalized.contains("missing from the directory")
         || normalized.contains("no longer has a file")
@@ -515,6 +521,22 @@ fn translated_conflicts_preserve_machine_readable_codes() {
             "Job table `_fexu_jobs` is missing after applied migration 0002_job_schedule."
         ),
         "migration.jobs.table_missing"
+    );
+    assert_eq!(
+        conflict_code(
+            "Auth column `_fexu_admin_audit.operation_id` is missing after applied migration 0003_audit_operation."
+        ),
+        "migration.auth.column_missing"
+    );
+    assert_eq!(
+        conflict_code(
+            "Job column `_fexu_jobs.cron_expression` is missing after applied migration 0002_job_schedule."
+        ),
+        "migration.jobs.column_missing"
+    );
+    assert_eq!(
+        conflict_code("Column operation_id is missing from _fexu_admin_audit."),
+        "migration.auth.column_missing"
     );
 }
 

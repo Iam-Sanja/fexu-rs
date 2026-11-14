@@ -70,12 +70,33 @@ jobs:
           if command -v cygpath >/dev/null 2>&1; then
             db=$(cygpath -m "$db")
           fi
-          DATABASE_URL="sqlite://$db?mode=rwc" "$bin"
+          output=$(DATABASE_URL="sqlite://$db?mode=rwc" "$bin" 2>&1)
+          status=$?
+          printf '%s\n' "$output"
+          test "$status" -eq 0
+          printf '%s\n' "$output" | grep -q 'login=ok'
+          printf '%s\n' "$output" | grep -q 'job='
           test -s "$work/app.sqlite"
 
+      - name: Cold-start URL policy
+        if: runner.os == 'Linux'
+        shell: bash
+        run: bash scripts/test-cold-start-url.sh
+
+      - name: Cold-start URL policy
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: powershell -NoProfile -File scripts/test-cold-start-url.ps1
+
       - name: Cold start without migration source files
+        if: runner.os == 'Linux'
         shell: bash
         run: bash scripts/cold-start-embedded.sh
+
+      - name: Cold start without migration source files
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: powershell -NoProfile -File scripts/cold-start-embedded.ps1
 
   postgres:
     name: PostgreSQL
