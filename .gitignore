@@ -26,6 +26,9 @@
 *.db-wal
 *.db-shm
 
+# Left behind only if a cold-start script is killed before it restores the JSON.
+*.cold-hidden
+
 # Logs, backups, and temporary files.
 *.log
 *.tmp

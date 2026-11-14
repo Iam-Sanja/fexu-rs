@@ -5,7 +5,9 @@
 use crate::error::MigrationError;
 use crate::history::{self, AUTH_HISTORY_TABLE, HISTORY_TABLE};
 use crate::packages::{package_reports, PackageMigration};
-use crate::runner::{migration_status_in, status_of_files, StatusReport};
+use crate::runner::{
+    migration_status_in, note_missing_applied_tables, status_of_files, StatusReport,
+};
 use crate::snapshot::SchemaSnapshot;
 use crate::store::MigrationFile;
 use std::path::Path;
@@ -155,10 +157,16 @@ pub async fn inspect_framework(
             "Required framework migration resources for `fexu-jobs` are missing. Job migrations were not reported as successful.".to_owned(),
         ));
     }
-    let auth = status_of_files(db, auth_files, AUTH_HISTORY_TABLE, None)
+    let mut auth = status_of_files(db, auth_files, AUTH_HISTORY_TABLE, None)
         .await
         .map_err(as_unavailable)?;
-    let jobs = status_of_files(db, jobs_files, jobs_history_table, None)
+    let mut jobs = status_of_files(db, jobs_files, jobs_history_table, None)
+        .await
+        .map_err(as_unavailable)?;
+    note_missing_applied_tables(db, auth_files, &mut auth, "Auth")
+        .await
+        .map_err(as_unavailable)?;
+    note_missing_applied_tables(db, jobs_files, &mut jobs, "Job")
         .await
         .map_err(as_unavailable)?;
     assemble(
@@ -352,26 +360,30 @@ pub fn dev_notice(locale: &str, report: &Result<DualReport, MigrationError>) -> 
         Ok(report) if report.has_error() => phrase(
             locale,
             &format!(
-                "[WARN] Die Migrationsdiagnose hat Konflikte gefunden.\n       Auth: {} ausstehend. App: {} ausstehend.\nBitte prüfen:\n  fexu migrate status\n",
+                "[WARN] Die Migrationsdiagnose hat Konflikte gefunden.\n       Auth: {} ausstehend. Jobs: {} ausstehend. App: {} ausstehend.\nBitte prüfen:\n  fexu migrate status\n",
                 report.pending_auth(),
+                report.pending_jobs(),
                 report.pending_app()
             ),
             &format!(
-                "[WARN] Migration diagnosis found conflicts.\n       Auth: {} pending. App: {} pending.\nCheck:\n  fexu migrate status\n",
+                "[WARN] Migration diagnosis found conflicts.\n       Auth: {} pending. Jobs: {} pending. App: {} pending.\nCheck:\n  fexu migrate status\n",
                 report.pending_auth(),
+                report.pending_jobs(),
                 report.pending_app()
             ),
         ),
         Ok(report) => phrase(
             locale,
             &format!(
-                "[WARN] Die Datenbank ist nicht vollständig migriert.\n       Auth: {} Migrationen ausstehend.\n       App: {} Migrationen ausstehend.\n\nBitte ausführen:\n  fexu migrate up\n",
+                "[WARN] Die Datenbank ist nicht vollständig migriert.\n       Auth: {} Migrationen ausstehend.\n       Jobs: {} Migrationen ausstehend.\n       App: {} Migrationen ausstehend.\n\nBitte ausführen:\n  fexu migrate up\n",
                 report.pending_auth(),
+                report.pending_jobs(),
                 report.pending_app()
             ),
             &format!(
-                "[WARN] The database is not fully migrated.\n       Auth: {} migrations pending.\n       App: {} migrations pending.\n\nRun:\n  fexu migrate up\n",
+                "[WARN] The database is not fully migrated.\n       Auth: {} migrations pending.\n       Jobs: {} migrations pending.\n       App: {} migrations pending.\n\nRun:\n  fexu migrate up\n",
                 report.pending_auth(),
+                report.pending_jobs(),
                 report.pending_app()
             ),
         ),
@@ -467,6 +479,10 @@ fn conflict_code(text: &str) -> &'static str {
     let normalized = text.to_ascii_lowercase();
     if normalized.contains("checksum") {
         "migration.checksum_mismatch"
+    } else if normalized.starts_with("auth table") {
+        "migration.auth.table_missing"
+    } else if normalized.starts_with("job table") {
+        "migration.jobs.table_missing"
     } else if normalized.contains("no file")
         || normalized.contains("missing from the directory")
         || normalized.contains("no longer has a file")
@@ -487,6 +503,18 @@ fn translated_conflicts_preserve_machine_readable_codes() {
     assert_eq!(
         conflict_code("Applied migration has no file"),
         "migration.unknown"
+    );
+    assert_eq!(
+        conflict_code(
+            "Auth table `_fexu_users` is missing after applied migration 0006_account_security."
+        ),
+        "migration.auth.table_missing"
+    );
+    assert_eq!(
+        conflict_code(
+            "Job table `_fexu_jobs` is missing after applied migration 0002_job_schedule."
+        ),
+        "migration.jobs.table_missing"
     );
 }
 
@@ -722,5 +750,37 @@ mod tests {
         assert!(notice.contains("[WARN]"));
         assert!(notice.contains("nicht geprüft"));
         assert!(!notice.contains("vollständig migriert"));
+    }
+
+    #[test]
+    fn pending_jobs_are_named_and_are_not_a_successful_check() {
+        let pending_job = crate::runner::StatusReport {
+            backend: "sqlite".to_owned(),
+            lines: vec![crate::runner::MigrationLine {
+                id: "0001_jobs".to_owned(),
+                state: "ausstehend".to_owned(),
+                checksum: "abc".to_owned(),
+            }],
+            conflicts: Vec::new(),
+            schema_note: String::new(),
+        };
+        let quiet = crate::runner::StatusReport {
+            backend: "sqlite".to_owned(),
+            lines: Vec::new(),
+            conflicts: Vec::new(),
+            schema_note: String::new(),
+        };
+        let report = DualReport {
+            backend: "sqlite".to_owned(),
+            auth: quiet.clone(),
+            jobs: pending_job,
+            app: quiet,
+            packages: Vec::new(),
+            diagnostics: Vec::new(),
+        };
+        let notice = dev_notice("de", &Ok(report));
+        assert!(notice.contains("Jobs: 1"), "{notice}");
+        assert!(notice.contains("[WARN]"), "{notice}");
+        assert!(!notice.is_empty());
     }
 }

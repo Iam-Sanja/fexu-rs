@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased — embedded framework migrations
+
+- Auth and job migrations stay embedded in the binary. A relocated `embedded-migrate` process no longer needs the crate `migrations/` directories. `scripts/cold-start-embedded.sh` hides those directories, and CI runs that check for SQLite and for `fexu_test_relocated`.
+- `inspect_framework` and the auth and jobs status commands report a missing table for an applied framework migration as an error. They do not recreate the table and do not describe that database as fully migrated. Empty and absent application directories stay optional. Checksums of the checked-in migration files are unchanged.
+
 ## Unreleased — fexu-cli 0.1.1
 
 - `fexu new <name>` and `fexu new project <name>` write `fexu = "=0.1.0"` unless `--fexu-path` is set. The fullstack template keeps `features = ["admin-ui"]` on that registry dependency. The api template adds no features.

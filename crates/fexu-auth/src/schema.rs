@@ -426,9 +426,13 @@ pub async fn migration_status(
     db: &DatabaseConnection,
 ) -> Result<fexu_migrations::StatusReport, AuthError> {
     let files = embedded_migrations()?;
-    fexu_migrations::status_of_files(db, &files, AUTH_HISTORY_TABLE, None)
+    let mut report = fexu_migrations::status_of_files(db, &files, AUTH_HISTORY_TABLE, None)
         .await
-        .map_err(|error| AuthError::Validation(error.to_string()))
+        .map_err(|error| AuthError::Validation(error.to_string()))?;
+    fexu_migrations::note_missing_applied_tables(db, &files, &mut report, "Auth")
+        .await
+        .map_err(|error| AuthError::Validation(error.to_string()))?;
+    Ok(report)
 }
 
 #[cfg(test)]

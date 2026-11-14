@@ -28,6 +28,14 @@ cargo test --workspace
 cargo build --workspace
 ```
 
+Cold start of a relocated binary, without the auth and job JSON directories on disk:
+
+```powershell
+powershell -File scripts/cold-start-embedded.ps1
+```
+
+On Linux, `bash scripts/cold-start-embedded.sh` does the same. A PostgreSQL argument is accepted only when the database name contains `fexu_test`. The script restores the JSON directories when it finishes.
+
 Optional PostgreSQL run, only against a dispensable database:
 
 ```powershell

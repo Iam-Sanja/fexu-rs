@@ -73,6 +73,10 @@ jobs:
           DATABASE_URL="sqlite://$db?mode=rwc" "$bin"
           test -s "$work/app.sqlite"
 
+      - name: Cold start without migration source files
+        shell: bash
+        run: bash scripts/cold-start-embedded.sh
+
   postgres:
     name: PostgreSQL
     # ubuntu-latest is 26.04 and installs a PostgreSQL 18 client. pg_dump then
@@ -156,10 +160,14 @@ jobs:
           psql -h 127.0.0.1 -U fexu -d postgres -v ON_ERROR_STOP=1 \
             -c 'DROP DATABASE IF EXISTS fexu_test_relocated WITH (FORCE);' \
             -c 'CREATE DATABASE fexu_test_relocated;'
-          DATABASE_URL="postgres://fexu:${POSTGRES_PASSWORD}@127.0.0.1:5432/fexu_test_relocated" \
-            ./target/debug/embedded-migrate
+          set +e
+          bash scripts/cold-start-embedded.sh \
+            "postgres://fexu:${POSTGRES_PASSWORD}@127.0.0.1:5432/fexu_test_relocated"
+          status=$?
+          set -e
           psql -h 127.0.0.1 -U fexu -d postgres -v ON_ERROR_STOP=1 \
             -c 'DROP DATABASE IF EXISTS fexu_test_relocated WITH (FORCE);'
+          exit "$status"
 
   browser:
     name: Browser

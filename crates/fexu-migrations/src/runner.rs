@@ -251,6 +251,40 @@ pub async fn status_of_files(
     report_files(db, files, Vec::new(), history_table, current).await
 }
 
+/// Records tables that an applied framework migration still requires.
+///
+/// The check is read-only. A missing table becomes a conflict and is not created again.
+/// `label` is `Auth` or `Job` so the diagnostic code can name the component.
+pub async fn note_missing_applied_tables(
+    db: &DatabaseConnection,
+    files: &[MigrationFile],
+    report: &mut StatusReport,
+    label: &str,
+) -> Result<(), MigrationError> {
+    let applied = report
+        .lines
+        .iter()
+        .filter(|line| line.state == "angewendet")
+        .map(|line| line.id.clone())
+        .collect::<std::collections::HashSet<_>>();
+    let Some(file) = files.iter().rev().find(|file| applied.contains(&file.id)) else {
+        return Ok(());
+    };
+    for table in &file.to_snapshot.tables {
+        if history::table_exists(db, &table.name).await? {
+            continue;
+        }
+        let message = format!(
+            "{label} table `{}` is missing after applied migration {}. Framework migrations were not reported as successful.",
+            table.name, file.id
+        );
+        if !report.conflicts.iter().any(|conflict| conflict == &message) {
+            report.conflicts.push(message);
+        }
+    }
+    Ok(())
+}
+
 /// Applies migrations in an app directory. History IDs use `app:file`.
 ///
 /// The file checksum remains unchanged. Existing legacy `0001_initial` history is not remapped.
