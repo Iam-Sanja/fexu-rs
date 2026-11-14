@@ -2,9 +2,11 @@
 {% block content %}
 <p class="hint">{{ i18n.hint_flags }}</p>
 <div class="toolbar">
-<form class="filters" method="get">
+<form class="filters" method="get" role="search">
 <div class="filter-fields">
-<label>{{ i18n.search }} <input name="q" value="{{ query }}"></label>
+<label for="user-search">{{ i18n.search }}
+<input id="user-search" name="q" type="search" value="{{ query }}">
+</label>
 </div>
 <div class="filter-actions">
 <button class="ghost" type="submit">{{ i18n.search }}</button>
@@ -15,9 +17,9 @@
 </div>
 <p class="meta">{{ i18n.total }}: {{ total }} · {{ i18n.results }}: {{ shown }} · {{ i18n.page }} {{ page }}</p>
 {% if users | length == 0 %}
-<div class="empty-state"><p class="empty">{{ i18n.empty }}</p></div>
+<div class="empty-state"><p class="empty">{% if query %}{{ i18n.empty_filtered }}{% else %}{{ i18n.empty }}{% endif %}</p></div>
 {% else %}
-<div class="table-wrap">
+<div class="table-wrap" tabindex="0">
 <table>
 <caption class="sr-only">{{ i18n.users }}</caption>
 <thead>

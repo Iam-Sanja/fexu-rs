@@ -4013,6 +4013,208 @@ async fn admin_dates_use_native_inputs_and_utc_hierarchy() {
     server.abort();
 }
 
+#[tokio::test]
+async fn admin_modeladmin_order_timeline_and_keyboard_markup() {
+    let db = fexu::db::connect("sqlite::memory:").await.unwrap();
+    fexu::auth::apply_migrations(&db).await.unwrap();
+    let auth = AuthService::new(db.clone(), AuthConfig::development());
+    let password = format!("timeline-{}", fexu::uuid::Uuid::new_v4());
+    auth.create_user("root@example.com", &password, true, true)
+        .await
+        .unwrap();
+    auth.create_user("staff@example.com", &password, true, false)
+        .await
+        .unwrap();
+    auth.ensure_role("catalog").await.unwrap();
+    for code in [
+        "products.read",
+        "products.create",
+        "products.update",
+        "categories.read",
+    ] {
+        auth.ensure_permission(code).await.unwrap();
+        auth.grant_permission("catalog", code).await.unwrap();
+    }
+    auth.assign_role("staff@example.com", "catalog")
+        .await
+        .unwrap();
+    let products = ModelAdmin::new("html_products")
+        .list_display(&["price_cents", "name"])
+        .search_fields(&["name"])
+        .filters(&["category_id"])
+        .check(HtmlProduct::admin_meta().unwrap(), HtmlProduct::columns())
+        .unwrap();
+    let registry = AdminRegistry::new()
+        .add::<HtmlCategory>()
+        .add::<HtmlProduct>()
+        .configure(products)
+        .unwrap()
+        .seal()
+        .unwrap();
+    let app = fexu::App::new(db.clone())
+        .with_auth(auth)
+        .with_admin(registry)
+        .register::<HtmlCategory>()
+        .register::<HtmlProduct>();
+    app.bootstrap_schema().await.unwrap();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let server = tokio::spawn(async move { axum::serve(listener, app.into_router()).await });
+    let call = |method: &'static str, path: String, body: Option<String>, extra: String| {
+        tokio::task::spawn_blocking(move || http(port, method, &path, body.as_deref(), &extra))
+    };
+    let login = call("GET", "/admin/login".into(), None, String::new())
+        .await
+        .unwrap();
+    let login_csrf = cookie_value(&login.headers, "fexu_login_csrf");
+    let signed = call(
+        "POST",
+        "/admin/login".into(),
+        Some(form(&[
+            ("csrf_token", &login_csrf),
+            ("email", "root@example.com"),
+            ("password", password.as_str()),
+            ("next", "/admin"),
+        ])),
+        format!("Cookie: fexu_login_csrf={login_csrf}\r\n"),
+    )
+    .await
+    .unwrap();
+    assert_eq!(signed.status, 303, "{}", signed.body);
+    let session = cookie_value(&signed.headers, "fexu_session");
+    let home = call("GET", "/admin".into(), None, cookie_header(&session))
+        .await
+        .unwrap();
+    assert!(home.body.contains("id=\"admin-nav\""));
+    assert!(home.body.contains("class=\"nav-switch\""));
+    assert!(home.body.contains("model-card"));
+    assert!(home.body.contains("Liste öffnen"));
+    assert!(home.body.contains("href=\"#content\""));
+    let list = call(
+        "GET",
+        "/admin/models/html_products".into(),
+        None,
+        cookie_header(&session),
+    )
+    .await
+    .unwrap();
+    assert_eq!(list.status, 200, "{}", list.body);
+    assert!(list.body.contains("role=\"search\""));
+    assert!(list.body.contains("aria-current=\"page\""));
+    assert!(list.body.contains("Keine Einträge."));
+    let missed = call(
+        "GET",
+        "/admin/models/html_products?q=kein-treffer-zz".into(),
+        None,
+        cookie_header(&session),
+    )
+    .await
+    .unwrap();
+    assert!(missed.body.contains("Keine Treffer"));
+    let csrf = field_value(&list.body, "csrf_token");
+    let created = call(
+        "POST",
+        "/admin/models/html_products/new".into(),
+        Some(form(&[
+            ("csrf_token", &csrf),
+            ("name", "Timeline-Apfel"),
+            ("price_cents", "12"),
+            ("save", "edit"),
+        ])),
+        cookie_header(&session),
+    )
+    .await
+    .unwrap();
+    assert_eq!(created.status, 303, "{}", created.body);
+    let editor = call(
+        "GET",
+        location(&created.headers),
+        None,
+        cookie_header(&session),
+    )
+    .await
+    .unwrap();
+    assert_eq!(editor.status, 200, "{}", editor.body);
+    assert!(editor.body.contains("class=\"timeline\""));
+    assert!(editor
+        .body
+        .contains("Nur Änderungen über die Administration"));
+    assert!(editor.body.contains("<time datetime=\""));
+    assert!(editor.body.contains("Timeline-Apfel"));
+    assert!(editor.body.contains("root@example.com"));
+    assert!(editor.body.contains("Angelegt"));
+    let other = call(
+        "POST",
+        "/admin/models/html_products/new".into(),
+        Some(form(&[
+            ("csrf_token", &field_value(&editor.body, "csrf_token")),
+            ("name", "Timeline-Birne"),
+            ("price_cents", "8"),
+            ("save", "list"),
+        ])),
+        cookie_header(&session),
+    )
+    .await
+    .unwrap();
+    assert_eq!(other.status, 303, "{}", other.body);
+    let filled = call(
+        "GET",
+        "/admin/models/html_products".into(),
+        None,
+        cookie_header(&session),
+    )
+    .await
+    .unwrap();
+    assert!(filled.body.contains("tabindex=\"0\""));
+    assert!(filled.body.contains("Timeline-Apfel"));
+    assert!(filled.body.contains("Timeline-Birne"));
+    let price = filled.body.find("sort=price_cents").expect("price column");
+    let name = filled.body.find("sort=name").expect("name column");
+    assert!(price < name, "declared list order");
+    let again = call(
+        "GET",
+        location(&created.headers),
+        None,
+        cookie_header(&session),
+    )
+    .await
+    .unwrap();
+    assert!(again.body.contains("Timeline-Apfel"));
+    assert!(!again.body.contains("Timeline-Birne"));
+    let staff_login = call("GET", "/admin/login".into(), None, String::new())
+        .await
+        .unwrap();
+    let staff_csrf = cookie_value(&staff_login.headers, "fexu_login_csrf");
+    let staff_signed = call(
+        "POST",
+        "/admin/login".into(),
+        Some(form(&[
+            ("csrf_token", &staff_csrf),
+            ("email", "staff@example.com"),
+            ("password", password.as_str()),
+            ("next", "/admin"),
+        ])),
+        format!("Cookie: fexu_login_csrf={staff_csrf}\r\n"),
+    )
+    .await
+    .unwrap();
+    let staff_session = cookie_value(&staff_signed.headers, "fexu_session");
+    let staff_page = call(
+        "GET",
+        location(&created.headers),
+        None,
+        cookie_header(&staff_session),
+    )
+    .await
+    .unwrap();
+    assert_eq!(staff_page.status, 200, "{}", staff_page.body);
+    assert!(!staff_page.body.contains("root@example.com"));
+    assert!(staff_page
+        .body
+        .contains("Für diesen Datensatz ist noch kein Eintrag"));
+    server.abort();
+}
+
 fn http(port: u16, method: &str, path: &str, body: Option<&str>, extra: &str) -> Reply {
     http_on(port, method, path, body, extra, "localhost")
 }
