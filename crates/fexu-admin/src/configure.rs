@@ -1,9 +1,9 @@
 //! Typisierte Admin-Konfiguration über der bestehenden `AdminModelMeta`.
 //!
 //! `ModelAdmin` ersetzt die Registry nicht. `check` kopiert die Modellfelder und
-//! darf sie nur enger machen: weniger Listen- und Suchfelder, zusätzliche
-//! Nur-Lesen- und Hidden-Markierungen, eigene Fieldsets und zusätzliche
-//! Aktionsrechte. `AdminRegistry::seal` schaltet die Kopie frei.
+//! darf sie nur enger machen: weniger Listen- und Suchfelder in der angegebenen
+//! Reihenfolge, zusätzliche Nur-Lesen- und Hidden-Markierungen, eigene Fieldsets
+//! und zusätzliche Aktionsrechte. `AdminRegistry::seal` schaltet die Kopie frei.
 
 use fexu_core::{AdminFieldMeta, AdminFieldset, AdminModelMeta, ColumnKind, ColumnSpec};
 
@@ -76,6 +76,8 @@ pub struct CheckedModelAdmin {
     actions: Vec<(&'static str, &'static str)>,
     per_page: Option<u16>,
     links: Vec<ManyLink>,
+    list_order: Option<Vec<&'static str>>,
+    filter_order: Option<Vec<&'static str>>,
 }
 
 impl ModelAdmin {
@@ -259,10 +261,10 @@ impl ModelAdmin {
                     format!("`{action}` is declared more than once."),
                 ));
             }
-            if !permission_code(code) {
+            if !permission_code(code) || code.split('.').any(|part| part == "superuser") {
                 return Err(error(
                     "admin.permission",
-                    format!("`{code}` must look like resource.action."),
+                    format!("`{code}` must look like resource.action and cannot name superuser."),
                 ));
             }
             actions.push((*action, *code));
@@ -277,6 +279,8 @@ impl ModelAdmin {
             actions,
             per_page: self.per_page,
             links,
+            list_order: self.list_display,
+            filter_order: self.filters,
         })
     }
 }
@@ -312,6 +316,16 @@ impl CheckedModelAdmin {
 
     pub(crate) fn links(&self) -> &[ManyLink] {
         &self.links
+    }
+
+    /// Deklarierte Listenreihenfolge. `None` behält die Reihenfolge der Modellfelder.
+    pub(crate) fn list_order(&self) -> Option<&[&'static str]> {
+        self.list_order.as_deref()
+    }
+
+    /// Deklarierte Filterreihenfolge. `None` behält die Reihenfolge der Modellfelder.
+    pub(crate) fn filter_order(&self) -> Option<&[&'static str]> {
+        self.filter_order.as_deref()
     }
 }
 
@@ -673,6 +687,17 @@ mod tests {
             .unwrap();
         assert_eq!(checked.links().len(), 1);
         assert_eq!(checked.links()[0].child_key, "tags");
+        let ordered = ModelAdmin::new("notes")
+            .list_display(&["body", "title"])
+            .filters(&["body", "title"])
+            .check(&meta(), &columns())
+            .unwrap();
+        assert_eq!(ordered.list_order(), Some(["body", "title"].as_slice()));
+        assert_eq!(ordered.filter_order(), Some(["body", "title"].as_slice()));
+        let superuser = ModelAdmin::new("notes")
+            .action_permission("update", "notes.superuser")
+            .check(&meta(), &columns());
+        assert_eq!(superuser.unwrap_err().code, "admin.permission");
         let column = ModelAdmin::new("notes")
             .many_to_many("title", "Tags", "note_tags", "note_id", "tag_id", "tags")
             .check(&meta(), &columns());

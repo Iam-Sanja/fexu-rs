@@ -4,6 +4,7 @@ use crate::registry::AdminRegistry;
 use fexu_auth::AuthUser;
 use fexu_db::driver::DatabaseConnection;
 use serde_json::{Map, Value};
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -23,12 +24,22 @@ pub const RESERVED_KEYS: &[&str] = &[
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExtensionError {
     pub code: &'static str,
-    pub detail: &'static str,
+    pub detail: Cow<'static, str>,
 }
 
 impl ExtensionError {
     pub const fn new(code: &'static str, detail: &'static str) -> Self {
-        Self { code, detail }
+        Self {
+            code,
+            detail: Cow::Borrowed(detail),
+        }
+    }
+
+    pub fn detailed(code: &'static str, detail: impl Into<String>) -> Self {
+        Self {
+            code,
+            detail: Cow::Owned(detail.into()),
+        }
     }
 }
 
