@@ -4,7 +4,8 @@
 //! Redis-Client und behandelt den Prozessspeicher nicht als verteilten Cache.
 //! Zwei `MemoryCache::new`-Werte teilen keine Einträge. Ein `clone` schon, aber
 //! nur innerhalb dieses Prozesses. [`ViewCache`] speichert Views nur, wenn die
-//! Anwendung ihn aufruft, und lehnt angemeldete Betrachter im gemeinsamen Scope ab.
+//! Anwendung ihn aufruft. Ein gemeinsamer Scope lehnt angemeldete Betrachter ab,
+//! ein Nutzer-Scope lehnt anonyme Betrachter ab. Das Boolean ersetzt keine Sitzung.
 
 mod backend;
 mod error;
@@ -12,7 +13,7 @@ mod memory;
 mod typed;
 mod view;
 
-pub use backend::{validate_key, validate_namespace, CacheBackend, RawLookup};
+pub use backend::{validate_key, validate_namespace, CacheBackend, Publish, RawLookup, WriteToken};
 pub use error::CacheError;
 pub use memory::{MemoryCache, MemoryLimits};
 pub use typed::{CacheLookup, TypedCache};
@@ -966,14 +967,15 @@ mod tests {
         );
         assert_eq!(skipped.load(Ordering::SeqCst), 0);
         cache.invalidate_anonymous().await.expect("public");
-        fragments
+        let fragment = fragments
             .render("list", Duration::from_secs(30), || {
                 fragment_calls.fetch_add(1, Ordering::SeqCst);
                 async { Ok("fresh-fragment".to_owned()) }
             })
             .await
-            .expect("rendered again");
-        assert_eq!(fragment_calls.load(Ordering::SeqCst), 2);
+            .expect("fragment stays");
+        assert_eq!(fragment, "fragment");
+        assert_eq!(fragment_calls.load(Ordering::SeqCst), 1);
         assert_eq!(
             cache
                 .render(
@@ -1061,5 +1063,449 @@ mod tests {
             cache.set("tenant", &long_key, &"x", None).await,
             Err(CacheError::InvalidKey)
         );
+    }
+
+    async fn park(cache: &TypedCache<MemoryCache>, waiters: u32) {
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while cache.parked_waiters() < waiters {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("waiters parked");
+    }
+
+    async fn superseded_by<F, Fut>(cut: F)
+    where
+        F: FnOnce(Arc<TypedCache<MemoryCache>>) -> Fut,
+        Fut: std::future::Future<Output = ()>,
+    {
+        let cache = Arc::new(open_cache(8, 4096));
+        let entered = Arc::new(tokio::sync::Barrier::new(2));
+        let release = Arc::new(tokio::sync::Barrier::new(2));
+        let calls = Arc::new(AtomicU32::new(0));
+        let leader = {
+            let cache = cache.clone();
+            let entered = entered.clone();
+            let release = release.clone();
+            let calls = calls.clone();
+            tokio::spawn(async move {
+                cache
+                    .get_or_set("app", "page", None, || {
+                        let entered = entered.clone();
+                        let release = release.clone();
+                        let calls = calls.clone();
+                        async move {
+                            calls.fetch_add(1, Ordering::SeqCst);
+                            entered.wait().await;
+                            release.wait().await;
+                            Ok::<_, CacheError>("stale".to_owned())
+                        }
+                    })
+                    .await
+            })
+        };
+        entered.wait().await;
+        let mut waiters = Vec::new();
+        for _ in 0..3 {
+            let cache = cache.clone();
+            waiters.push(tokio::spawn(async move {
+                cache
+                    .get_or_set("app", "page", None, || async {
+                        Ok::<_, CacheError>("waiter".to_owned())
+                    })
+                    .await
+            }));
+        }
+        park(&cache, 3).await;
+        cut(cache.clone()).await;
+        release.wait().await;
+        assert_eq!(leader.await.expect("leader"), Err(CacheError::Superseded));
+        for waiter in waiters {
+            assert_eq!(waiter.await.expect("waiter"), Err(CacheError::Superseded));
+        }
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+        assert!(cache
+            .get::<String>("app", "page")
+            .await
+            .expect("not stored")
+            .is_none());
+        let fresh = cache
+            .get_or_set("app", "page", None, || async {
+                Ok::<_, CacheError>("fresh".to_owned())
+            })
+            .await
+            .expect("new computation");
+        assert_eq!(fresh, "fresh");
+        assert_eq!(
+            cache
+                .get::<String>("app", "page")
+                .await
+                .expect("stored")
+                .as_deref(),
+            Some("fresh")
+        );
+    }
+
+    #[tokio::test]
+    async fn delete_during_get_or_set_does_not_publish() {
+        superseded_by(|cache| async move {
+            cache.delete("app", "page").await.expect("delete");
+        })
+        .await;
+    }
+
+    #[tokio::test]
+    async fn invalidate_namespace_during_get_or_set_does_not_publish() {
+        superseded_by(|cache| async move {
+            cache.invalidate_namespace("app").await.expect("invalidate");
+        })
+        .await;
+    }
+
+    #[tokio::test]
+    async fn aborted_producer_wakes_waiters_without_storing() {
+        let cache = Arc::new(open_cache(8, 4096));
+        let entered = Arc::new(tokio::sync::Barrier::new(2));
+        let release = Arc::new(tokio::sync::Barrier::new(2));
+        let leader = {
+            let cache = cache.clone();
+            let entered = entered.clone();
+            let release = release.clone();
+            tokio::spawn(async move {
+                cache
+                    .get_or_set("app", "page", None, || {
+                        let entered = entered.clone();
+                        let release = release.clone();
+                        async move {
+                            entered.wait().await;
+                            release.wait().await;
+                            Ok::<_, CacheError>("stale".to_owned())
+                        }
+                    })
+                    .await
+            })
+        };
+        entered.wait().await;
+        let mut waiters = Vec::new();
+        for _ in 0..3 {
+            let cache = cache.clone();
+            waiters.push(tokio::spawn(async move {
+                cache
+                    .get_or_set("app", "page", None, || async {
+                        Ok::<_, CacheError>("waiter".to_owned())
+                    })
+                    .await
+            }));
+        }
+        park(&cache, 3).await;
+        leader.abort();
+        assert!(leader.await.expect_err("cancelled").is_cancelled());
+        for waiter in waiters {
+            assert_eq!(waiter.await.expect("waiter"), Err(CacheError::Backend));
+        }
+        assert!(cache
+            .get::<String>("app", "page")
+            .await
+            .expect("not stored")
+            .is_none());
+        let fresh = cache
+            .get_or_set("app", "page", None, || async {
+                Ok::<_, CacheError>("fresh".to_owned())
+            })
+            .await
+            .expect("new computation");
+        assert_eq!(fresh, "fresh");
+    }
+
+    #[tokio::test]
+    async fn unrelated_delete_and_invalidation_still_publish() {
+        let cache = Arc::new(open_cache(8, 4096));
+        let entered = Arc::new(tokio::sync::Barrier::new(2));
+        let release = Arc::new(tokio::sync::Barrier::new(2));
+        let leader = {
+            let cache = cache.clone();
+            let entered = entered.clone();
+            let release = release.clone();
+            tokio::spawn(async move {
+                cache
+                    .get_or_set("app", "page", None, || {
+                        let entered = entered.clone();
+                        let release = release.clone();
+                        async move {
+                            entered.wait().await;
+                            release.wait().await;
+                            Ok::<_, CacheError>("kept".to_owned())
+                        }
+                    })
+                    .await
+            })
+        };
+        entered.wait().await;
+        cache.delete("app", "other").await.expect("other key");
+        cache
+            .invalidate_namespace("other")
+            .await
+            .expect("other namespace");
+        release.wait().await;
+        assert_eq!(leader.await.expect("leader").expect("stored"), "kept");
+        assert_eq!(
+            cache
+                .get::<String>("app", "page")
+                .await
+                .expect("read")
+                .as_deref(),
+            Some("kept")
+        );
+    }
+
+    #[tokio::test]
+    async fn set_during_get_or_set_keeps_the_newer_value() {
+        let cache = Arc::new(open_cache(8, 4096));
+        let entered = Arc::new(tokio::sync::Barrier::new(2));
+        let release = Arc::new(tokio::sync::Barrier::new(2));
+        let leader = {
+            let cache = cache.clone();
+            let entered = entered.clone();
+            let release = release.clone();
+            tokio::spawn(async move {
+                cache
+                    .get_or_set("app", "page", None, || {
+                        let entered = entered.clone();
+                        let release = release.clone();
+                        async move {
+                            entered.wait().await;
+                            release.wait().await;
+                            Ok::<_, CacheError>("stale".to_owned())
+                        }
+                    })
+                    .await
+            })
+        };
+        entered.wait().await;
+        cache
+            .set("app", "page", &"newer".to_owned(), None)
+            .await
+            .expect("set");
+        release.wait().await;
+        assert_eq!(leader.await.expect("leader"), Err(CacheError::Superseded));
+        assert_eq!(
+            cache
+                .get::<String>("app", "page")
+                .await
+                .expect("read")
+                .as_deref(),
+            Some("newer")
+        );
+    }
+
+    #[tokio::test]
+    async fn dotted_view_names_do_not_share_a_namespace() {
+        let memory = MemoryCache::new(MemoryLimits {
+            max_entries: 16,
+            max_bytes: 8192,
+        })
+        .expect("memory");
+        let notes = ViewCache::new(TypedCache::new(memory.clone(), 1), "notes").expect("notes");
+        let dotted = ViewCache::new(TypedCache::new(memory, 1), "notes.user").expect("dotted view");
+        let private_calls = AtomicU32::new(0);
+        let anonymous_calls = AtomicU32::new(0);
+        let stored = notes
+            .render(
+                "list",
+                Duration::from_secs(30),
+                &ViewScope::User {
+                    user_id: "ada".into(),
+                },
+                true,
+                || {
+                    private_calls.fetch_add(1, Ordering::SeqCst);
+                    async { Ok("private-ada".to_owned()) }
+                },
+            )
+            .await
+            .expect("private");
+        assert_eq!(stored, "private-ada");
+        let colliding = user_key("ada", "list");
+        let anonymous = dotted
+            .render(
+                &colliding,
+                Duration::from_secs(30),
+                &ViewScope::Anonymous,
+                false,
+                || {
+                    anonymous_calls.fetch_add(1, Ordering::SeqCst);
+                    async { Ok("public-dotted".to_owned()) }
+                },
+            )
+            .await
+            .expect("anonymous producer");
+        assert_eq!(anonymous, "public-dotted");
+        assert_eq!(anonymous_calls.load(Ordering::SeqCst), 1);
+        dotted.invalidate_anonymous().await.expect("dotted public");
+        let still_private = notes
+            .render(
+                "list",
+                Duration::from_secs(30),
+                &ViewScope::User {
+                    user_id: "ada".into(),
+                },
+                true,
+                || {
+                    private_calls.fetch_add(1, Ordering::SeqCst);
+                    async { Ok("replaced".to_owned()) }
+                },
+            )
+            .await
+            .expect("private remains");
+        assert_eq!(still_private, "private-ada");
+        assert_eq!(private_calls.load(Ordering::SeqCst), 1);
+        notes.invalidate_users().await.expect("notes users");
+        let public_notes = notes
+            .render(
+                "list",
+                Duration::from_secs(30),
+                &ViewScope::Anonymous,
+                false,
+                || async { Ok("public-notes".to_owned()) },
+            )
+            .await
+            .expect("public notes");
+        assert_eq!(public_notes, "public-notes");
+        dotted.invalidate_users().await.expect("dotted users");
+        let public_again = notes
+            .render(
+                "list",
+                Duration::from_secs(30),
+                &ViewScope::Anonymous,
+                false,
+                || async { Ok("replaced-public".to_owned()) },
+            )
+            .await
+            .expect("public notes stay");
+        assert_eq!(public_again, "public-notes");
+    }
+
+    fn user_key(user_id: &str, key: &str) -> String {
+        format!("u{:03}:{user_id}:{key}", user_id.len())
+    }
+
+    #[tokio::test]
+    async fn view_names_keep_dots_underscores_and_the_length_limit() {
+        let memory = MemoryCache::new(MemoryLimits {
+            max_entries: 16,
+            max_bytes: 8192,
+        })
+        .expect("memory");
+        let dotted =
+            ViewCache::new(TypedCache::new(memory.clone(), 1), "notes.archive_v2").expect("dotted");
+        let underscored = ViewCache::new(TypedCache::new(memory.clone(), 1), "notes_archive")
+            .expect("underscore");
+        let long_name = "n".repeat(60);
+        let longest = ViewCache::new(TypedCache::new(memory.clone(), 1), &long_name).expect("60");
+        assert!(matches!(
+            ViewCache::new(TypedCache::new(memory, 1), &"n".repeat(61)),
+            Err(CacheError::InvalidKey)
+        ));
+        dotted
+            .render(
+                "k",
+                Duration::from_secs(5),
+                &ViewScope::Anonymous,
+                false,
+                || async { Ok("dotted".to_owned()) },
+            )
+            .await
+            .expect("dotted store");
+        let other = underscored
+            .render(
+                "k",
+                Duration::from_secs(5),
+                &ViewScope::Anonymous,
+                false,
+                || async { Ok("underscore".to_owned()) },
+            )
+            .await
+            .expect("underscore store");
+        assert_eq!(other, "underscore");
+        longest
+            .render(
+                "k",
+                Duration::from_secs(5),
+                &ViewScope::User {
+                    user_id: "ada".into(),
+                },
+                true,
+                || async { Ok("long-user".to_owned()) },
+            )
+            .await
+            .expect("long user");
+        dotted.invalidate_anonymous().await.expect("dotted only");
+        let user_kept = longest
+            .render(
+                "k",
+                Duration::from_secs(5),
+                &ViewScope::User {
+                    user_id: "ada".into(),
+                },
+                true,
+                || async { Ok("replaced".to_owned()) },
+            )
+            .await
+            .expect("long user stays");
+        assert_eq!(user_kept, "long-user");
+        longest.invalidate_users().await.expect("long users");
+        let underscored_kept = underscored
+            .render(
+                "k",
+                Duration::from_secs(5),
+                &ViewScope::Anonymous,
+                false,
+                || async { Ok("replaced-underscore".to_owned()) },
+            )
+            .await
+            .expect("underscore stays");
+        assert_eq!(underscored_kept, "underscore");
+    }
+
+    #[tokio::test]
+    async fn user_scope_rejects_an_anonymous_viewer_before_lookup() {
+        let memory = MemoryCache::new(MemoryLimits {
+            max_entries: 8,
+            max_bytes: 4096,
+        })
+        .expect("memory");
+        let cache = ViewCache::new(TypedCache::new(memory, 1), "notes").expect("view");
+        let calls = AtomicU32::new(0);
+        let refused = cache
+            .render(
+                "list",
+                Duration::from_secs(30),
+                &ViewScope::User {
+                    user_id: "ada".into(),
+                },
+                false,
+                || {
+                    calls.fetch_add(1, Ordering::SeqCst);
+                    async { Ok("private".to_owned()) }
+                },
+            )
+            .await;
+        assert_eq!(refused, Err(CacheError::UnauthenticatedViewer));
+        assert_eq!(calls.load(Ordering::SeqCst), 0);
+        let anonymous = cache
+            .render(
+                "list",
+                Duration::from_secs(30),
+                &ViewScope::Anonymous,
+                true,
+                || {
+                    calls.fetch_add(1, Ordering::SeqCst);
+                    async { Ok("shared".to_owned()) }
+                },
+            )
+            .await;
+        assert_eq!(anonymous, Err(CacheError::AuthenticatedContent));
+        assert_eq!(calls.load(Ordering::SeqCst), 0);
     }
 }

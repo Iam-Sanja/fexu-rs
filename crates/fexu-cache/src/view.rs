@@ -45,8 +45,9 @@ impl<B: CacheBackend> FragmentCache<B> {
 /// Wer eine gerenderte View oder ein Template sehen darf.
 ///
 /// `Anonymous` ist ein gemeinsamer Eintrag und lehnt angemeldete Betrachter ab.
-/// `User` speichert unter einer kodierten Nutzer-ID. Die Anwendung muss die ID
-/// der angemeldeten Sitzung übergeben. Der Cache prüft keine Sitzung.
+/// `User` speichert unter einer kodierten Nutzer-ID und lehnt anonyme Betrachter
+/// ab. Die Anwendung muss die echte Sitzung und die dazu passende Nutzer-ID
+/// übergeben. `viewer_is_authenticated` ist kein Authentifizierungsnachweis.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ViewScope {
     Anonymous,
@@ -55,9 +56,12 @@ pub enum ViewScope {
 
 /// Opt-in-Cache für fertiges HTML. Tera und `views::render` rufen ihn nicht auf.
 ///
-/// Anonyme Einträge liegen in `view.{name}`, nutzerbezogene in `view.{name}.user`.
-/// `invalidate_anonymous` löscht die zweite Gruppe nicht. Ein gemeinsamer Eintrag
-/// wird nie für einen angemeldeten Betrachter geschrieben oder ausgeliefert.
+/// Anonyme Einträge liegen in `a{länge}.{name}`, nutzerbezogene in `u{länge}.{name}`.
+/// Die Länge macht `notes` und `notes.user` zu verschiedenen Namensräumen.
+/// `invalidate_anonymous` löscht keine Nutzereinträge. Ein gemeinsamer Eintrag
+/// wird nie für einen angemeldeten Betrachter geschrieben. Ein Nutzer-Scope ohne
+/// angemeldeten Betrachter wird vor dem Lesen abgelehnt. Das Boolean ist kein
+/// Nachweis der Sitzung: die Anwendung muss Sitzung und Nutzer-ID selbst prüfen.
 pub struct ViewCache<B> {
     cache: TypedCache<B>,
     anonymous: String,
@@ -66,8 +70,8 @@ pub struct ViewCache<B> {
 
 impl<B: CacheBackend> ViewCache<B> {
     pub fn new(cache: TypedCache<B>, view: &str) -> Result<Self, CacheError> {
-        let anonymous = view_namespace(view, "")?;
-        let users = view_namespace(view, "user")?;
+        let anonymous = scope_namespace(view, 'a')?;
+        let users = scope_namespace(view, 'u')?;
         Ok(Self {
             cache,
             anonymous,
@@ -89,6 +93,9 @@ impl<B: CacheBackend> ViewCache<B> {
     {
         if matches!(scope, ViewScope::Anonymous) && viewer_is_authenticated {
             return Err(CacheError::AuthenticatedContent);
+        }
+        if matches!(scope, ViewScope::User { .. }) && !viewer_is_authenticated {
+            return Err(CacheError::UnauthenticatedViewer);
         }
         let (namespace, storage_key) = self.location(key, scope)?;
         self.cache
@@ -119,13 +126,14 @@ impl<B: CacheBackend> ViewCache<B> {
     }
 }
 
-fn view_namespace(view: &str, suffix: &str) -> Result<String, CacheError> {
+fn scope_namespace(view: &str, scope_tag: char) -> Result<String, CacheError> {
     validate_namespace(view)?;
-    let namespace = if suffix.is_empty() {
-        format!("view.{view}")
-    } else {
-        format!("view.{view}.{suffix}")
-    };
+    // Vier Zeichen für Kennung, Länge und Punkt. Der Name bleibt bei höchstens 60,
+    // damit der Namensraum die Grenze von 64 Zeichen einhält.
+    if view.len() > 60 {
+        return Err(CacheError::InvalidKey);
+    }
+    let namespace = format!("{scope_tag}{:02}.{view}", view.len());
     validate_namespace(&namespace)?;
     Ok(namespace)
 }

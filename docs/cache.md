@@ -21,7 +21,7 @@ Keys are the pair `(namespace, key)`, not a concatenated string. `validate_names
 
 Values are JSON with an `FXC1` prefix and a big-endian `u32` version. A version mismatch or corrupt bytes is an error. The cache does not recompute those entries. `get_or_set` returns the error and does not call the producer. Bump the version only together with `delete` or `invalidate_namespace`.
 
-`CacheError` carries no stored bytes. `Serialization`, `Corrupt`, `VersionMismatch`, `Backend`, `AuthenticatedContent`, `InvalidKey`, `InvalidTtl`, `InvalidLimits` and `TooLarge` keep the payload out of `Display` and `Debug`. `Serialization` is a JSON failure, including `f64::NAN` and a custom serializer error. Zero `max_entries`, zero `max_bytes` and a zero TTL are rejected and nothing is stored. A TTL below one millisecond is stored as one millisecond, so it still expires on the next clock step. The clock is an injectable millisecond function. A clock that jumps backward delays expiry.
+`CacheError` carries no stored bytes. `Serialization`, `Corrupt`, `VersionMismatch`, `Backend`, `AuthenticatedContent`, `UnauthenticatedViewer`, `Superseded`, `InvalidKey`, `InvalidTtl`, `InvalidLimits` and `TooLarge` keep the payload out of `Display` and `Debug`. `Serialization` is a JSON failure, including `f64::NAN` and a custom serializer error. Zero `max_entries`, zero `max_bytes` and a zero TTL are rejected and nothing is stored. A TTL below one millisecond is stored as one millisecond, so it still expires on the next clock step. The clock is an injectable millisecond function. A clock that jumps backward delays expiry.
 
 ## Memory limits
 
@@ -31,21 +31,25 @@ On insert, expired entries are dropped first. If the new value still does not fi
 
 ## Stampede, instances and stale data
 
-`get_or_set` elects one producer per `TypedCache` and key. Waiters subscribe to `tokio::sync::Notify` before they read the result, so a producer that finishes immediately cannot drop the wakeup. A producer error is shared with those waiters and is not stored. The next call may try again. A second `TypedCache` on the same `MemoryCache` shares stored bytes and still runs its own producer. A second `MemoryCache`, or a second process, always runs its own producer.
+`get_or_set` elects one producer per `TypedCache` and key. Waiters subscribe to `tokio::sync::Notify` before they read the result, so a producer that finishes immediately cannot drop the wakeup. A producer error is shared with those waiters and is not stored. Dropping the producer task wakes those waiters with `Backend` and stores nothing. The next call may try again. A second `TypedCache` on the same `MemoryCache` shares stored bytes and still runs its own producer. A second `MemoryCache`, or a second process, always runs its own producer.
 
-There is no cross-process lock, no lease and no broadcast invalidation. Stale data is the caller's problem. Set a TTL or call `delete` / `invalidate_namespace` after a write. Eviction can also drop a live entry when the limit is reached.
+`MemoryCache` fences a publish against `delete`, `invalidate_namespace` and `set` of the same key. `get_or_set` reads a `WriteToken` before the producer runs. After the producer returns, `put_raw_if_current` checks that token and writes under the same mutex as the delete and invalidation. A producer that started before the cut returns `Superseded`, stores nothing, and wakes its waiters with the same error. A later `get_or_set` reads a new token and may store. A delete or invalidation of a different key or namespace does not block the publish. The mutex is not held while the producer runs, so different keys still compute in parallel.
+
+That fence is a `MemoryCache` guarantee. `CacheBackend` cannot police another backend: `current_token` and `put_raw_if_current` are separate trait methods, and only an implementation that checks and writes under the same exclusion as `delete_raw` and `invalidate_namespace` actually provides it. A Redis backend would need its own transaction or script. This crate does not claim that atomicity for a backend that has not implemented it.
+
+The fence table is process-local. It records namespace and key marks and drops the oldest marks once the table exceeds eight times `max_entries`, at least 64. Dropping the newest mark for a name raises a floor, so an older token fails closed. That can reject an unrelated in-flight publish; the retry stores. It never lets the stale producer publish. A token of `u64::MAX` is rejected because a saturated counter can no longer tell a later invalidation apart. `set` still writes in that theoretical state. There is no cross-process lock, no lease and no broadcast invalidation. Eviction can also drop a live entry when the limit is reached.
 
 ## Views and templates
 
 Nothing in `views::render`, Tera or `mount_pages` writes the cache. There is no site-wide cache and no automatic cache of authenticated responses.
 
-`FragmentCache` stores one opted-in string under `view.{name}`. `ViewCache` is the view and template helper:
+`FragmentCache` stores one opted-in string under `view.{name}`. `ViewCache` does not use that namespace. Its anonymous namespace is `a{length}.{name}` and its user namespace is `u{length}.{name}`. The length is two digits. A view name longer than 60 characters is `InvalidKey`, because the derived namespace would pass 64 characters. Dots and underscores stay inside the name. `notes` and `notes.user` therefore never share a store, and an anonymous read cannot return another view's user entry by guessing its key.
 
 - `ViewScope::Anonymous` with `viewer_is_authenticated == false` may store shared HTML.
-- The same scope with `viewer_is_authenticated == true` returns `AuthenticatedContent`, does not call the producer, and does not replace a public entry.
-- `ViewScope::User { user_id }` stores under `view.{name}.user`. The caller must pass the authenticated user's id. The cache does not read the session. A shared namespace does not isolate tenants; the tests lock that in.
-- `invalidate` removes one entry. `invalidate_anonymous` clears `view.{name}` and does not clear user entries. `invalidate_users` does the opposite.
-- `FragmentCache` and anonymous `ViewCache` entries share `view.{name}` when the name matches. Invalidating one clears the other.
+- The same scope with `viewer_is_authenticated == true` returns `AuthenticatedContent` before lookup or the producer, and does not replace a public entry.
+- `ViewScope::User { user_id }` with `viewer_is_authenticated == false` returns `UnauthenticatedViewer` before lookup or the producer. The boolean is not a session proof. The application must pass the real session and the user id that belongs to it. The cache does not read the session.
+- `ViewScope::User { user_id }` stores under `u{length}.{name}` with key `u{length}:{user_id}:{key}`. A shared namespace does not isolate tenants; the tests lock that in.
+- `invalidate` removes one entry. `invalidate_anonymous` clears only that view's anonymous namespace. `invalidate_users` clears only that view's user namespace. Neither clears `FragmentCache`, another view, or the other scope.
 
 Pass HTML that `Site::render` or `views::render` already produced. Do not cache a response that contains a CSRF token, a flash message for one session, or a `Set-Cookie` value.
 
@@ -59,7 +63,9 @@ Error text does not repeat the value. That is not a reason to store the value.
 
 ## Shared backend
 
-`CacheBackend` is the extension point: `lookup_raw`, `get_raw`, `put_raw`, `delete_raw` and `invalidate_namespace`. A later Redis crate would implement that trait, store the `FXC1` bytes unchanged, and address keys as a namespace plus a length-prefixed key. It would use the server TTL for `put_raw` and an exact namespace delete for `invalidate_namespace`. It would not treat `tenant` as a prefix of `tenant.a`. `lookup_raw` may return `Miss` for a key Redis has already deleted; `Expired` is guaranteed for `MemoryCache`, not for every backend.
+`CacheBackend` is the extension point: `lookup_raw`, `get_raw`, `put_raw`, `delete_raw`, `invalidate_namespace`, `current_token` and `put_raw_if_current`. `get_raw` has a default that collapses `Expired` and `Miss`. The other methods are required. Fexu 0.1 is experimental. Adding `lookup_raw`, `current_token` and `put_raw_if_current`, and adding `UnauthenticatedViewer` and `Superseded`, breaks an out-of-tree `CacheBackend` and an exhaustive `match` on `CacheError`. `get`, `set`, `delete` and `get_or_set` keep their signatures. Inside this workspace only `MemoryCache` implements the trait.
+
+A later Redis crate would implement that trait, store the `FXC1` bytes unchanged, and address keys as a namespace plus a length-prefixed key. It would use the server TTL for `put_raw` and an exact namespace delete for `invalidate_namespace`. It would not treat `tenant` as a prefix of `tenant.a`. `lookup_raw` may return `Miss` for a key Redis has already deleted; `Expired` is guaranteed for `MemoryCache`, not for every backend. The stale-write fence is also not implied: that crate must check `WriteToken` and write in one Redis transaction or script.
 
 That crate is not part of this tree. A Redis client would add a network service and a deployment requirement, and the process-local default would still be the one that must not be described as shared. No Redis dependency is declared.
 
@@ -70,8 +76,8 @@ That crate is not part of this tree. A Redis client would add a network service 
 - `get` collapses `Miss` and `Expired`. Use `lookup` when the difference matters.
 - A version mismatch stays until an explicit delete, overwrite or expiry. It does not refresh itself.
 - The cache does not encrypt values and does not refuse secret-shaped strings.
-- Authenticated HTML is excluded only when the caller uses `ViewCache` and tells the truth in `viewer_is_authenticated` or `ViewScope::User`.
-- User isolation is the encoded user id. The cache does not check that the id belongs to the session.
+- Authenticated HTML stays out of the anonymous scope only when the caller uses `ViewCache` and passes `viewer_is_authenticated == true` for that viewer. A false flag on `ViewScope::User` is rejected, but a true flag is not proof that the session or the user id is real.
+- User isolation is the encoded user id inside that view's user namespace. The cache does not check that the id belongs to the session.
 - There is no per-namespace quota, only the backend's global entry and byte limits.
 - Eviction drops live entries. TTL and invalidation are the caller's consistency tools.
 - A backward clock jump keeps entries until the clock passes `expires_at`.
@@ -80,7 +86,7 @@ That crate is not part of this tree. A Redis client would add a network service 
 
 ## Tests
 
-These tests do not open an application database. `cargo test -p fexu-cache` covers TTL boundaries, a one-millisecond expiry, zero TTL, zero limits, eviction, `TooLarge`, miss versus expiry, exact namespaces, key-pair collisions, user-key collisions, unsafe keys, version errors, corrupt payloads, serialization that must not echo the value, secrets left in the caller's namespace, a shared namespace mixing tenants, separate `MemoryCache` instances, cloned memory with two stampede locks, concurrent `get_or_set`, coalesced producer errors, fragment invalidation, and the authenticated-view refusal.
+These tests do not open an application database. `cargo test -p fexu-cache` covers TTL boundaries, a one-millisecond expiry, zero TTL, zero limits, eviction, `TooLarge`, miss versus expiry, exact namespaces, key-pair collisions, user-key collisions, unsafe keys, version errors, corrupt payloads, serialization that must not echo the value, secrets left in the caller's namespace, a shared namespace mixing tenants, separate `MemoryCache` instances, cloned memory with two stampede locks, concurrent `get_or_set`, coalesced producer errors, a delete or namespace invalidation during a producer, an aborted producer, a newer `set` during a producer, fragment invalidation, dotted view names, and both invalid view-scope flags.
 
 `cargo test -p notes --test cache_page` runs the notes example: tenant miss and hit, tenant invalidation, a public page cached once, an authenticated viewer refused, a user page isolated from another user and from the public page, and a second `NoteCache` that does not see the first.
 

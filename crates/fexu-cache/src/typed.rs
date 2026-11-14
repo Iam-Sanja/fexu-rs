@@ -1,11 +1,12 @@
 //! Typisierte Werte mit Versionspräfix. Ein abweichendes Präfix ist ein Fehler.
 
-use crate::backend::{validate_key, validate_namespace, CacheBackend, RawLookup};
+use crate::backend::{validate_key, validate_namespace, CacheBackend, Publish, RawLookup};
 use crate::error::CacheError;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use std::collections::HashMap;
 use std::future::Future;
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio::sync::Notify;
@@ -33,6 +34,7 @@ pub struct TypedCache<B> {
 struct Flight {
     result: Mutex<Option<Result<Vec<u8>, CacheError>>>,
     notify: Notify,
+    waiters: AtomicU32,
 }
 
 impl<B> TypedCache<B> {
@@ -46,6 +48,18 @@ impl<B> TypedCache<B> {
 
     pub fn backend(&self) -> &B {
         &self.backend
+    }
+
+    #[cfg(test)]
+    pub(crate) fn parked_waiters(&self) -> u32 {
+        let guard = self
+            .flights
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        guard
+            .values()
+            .map(|flight| flight.waiters.load(Ordering::SeqCst))
+            .sum()
     }
 }
 
@@ -128,6 +142,13 @@ impl<B: CacheBackend> TypedCache<B> {
             flight: flight.clone(),
             armed: true,
         };
+        let token = match self.backend.current_token(namespace, key).await {
+            Ok(token) => token,
+            Err(error) => {
+                guard.finish(Err(error.clone()));
+                return Err(error);
+            }
+        };
         let produced = produce().await;
         let value = match produced {
             Ok(value) => value,
@@ -144,16 +165,24 @@ impl<B: CacheBackend> TypedCache<B> {
             }
         };
         let bytes = encode(self.version, &payload);
-        if let Err(error) = self
+        match self
             .backend
-            .put_raw(namespace, key, bytes.clone(), ttl)
+            .put_raw_if_current(namespace, key, bytes.clone(), ttl, token)
             .await
         {
-            guard.finish(Err(error.clone()));
-            return Err(error);
+            Ok(Publish::Stored) => {
+                guard.finish(Ok(bytes));
+                Ok(value)
+            }
+            Ok(Publish::Superseded) => {
+                guard.finish(Err(CacheError::Superseded));
+                Err(CacheError::Superseded)
+            }
+            Err(error) => {
+                guard.finish(Err(error.clone()));
+                Err(error)
+            }
         }
-        guard.finish(Ok(bytes));
-        Ok(value)
     }
 }
 
@@ -189,6 +218,7 @@ fn elect(flights: &Mutex<HashMap<String, Arc<Flight>>>, key: &str) -> (Arc<Fligh
     let flight = Arc::new(Flight {
         result: Mutex::new(None),
         notify: Notify::new(),
+        waiters: AtomicU32::new(0),
     });
     guard.insert(key.to_owned(), flight.clone());
     (flight, true)
@@ -232,7 +262,17 @@ async fn wait_for(flight: Arc<Flight>) -> Result<Vec<u8>, CacheError> {
         {
             return result;
         }
+        flight.waiters.fetch_add(1, Ordering::SeqCst);
+        let _parked = WaiterGuard(&flight.waiters);
         notified.await;
+    }
+}
+
+struct WaiterGuard<'a>(&'a AtomicU32);
+
+impl Drop for WaiterGuard<'_> {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::SeqCst);
     }
 }
 

@@ -20,4 +20,8 @@ pub enum CacheError {
     InvalidTtl,
     #[error("authenticated output is not stored in a shared cache")]
     AuthenticatedContent,
+    #[error("user-scoped cache requires an authenticated viewer")]
+    UnauthenticatedViewer,
+    #[error("cache write was superseded by a delete or invalidation")]
+    Superseded,
 }

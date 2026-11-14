@@ -122,7 +122,7 @@ let html = fexu::views::render_flashes(&messages);
 
 ## Caching
 
-`views::render` always renders. It does not read or write `fexu::cache`. Authenticated HTML is not stored unless the application calls `ViewCache::render` with `ViewScope::User` and that user's id. `ViewScope::Anonymous` returns `AuthenticatedContent` when `viewer_is_authenticated` is true, does not call the producer, and leaves a public entry unchanged. Invalidation is `invalidate`, `invalidate_anonymous` or `invalidate_users`. See [cache.md](cache.md).
+`views::render` always renders. It does not read or write `fexu::cache`. Authenticated HTML is not stored unless the application calls `ViewCache::render` with `ViewScope::User` and that user's id. `ViewScope::Anonymous` returns `AuthenticatedContent` when `viewer_is_authenticated` is true. `ViewScope::User` returns `UnauthenticatedViewer` when `viewer_is_authenticated` is false. Both checks happen before lookup and before the producer. The boolean is not a session proof. Invalidation is `invalidate`, `invalidate_anonymous` or `invalidate_users`. See [cache.md](cache.md).
 
 ## Tests
 
