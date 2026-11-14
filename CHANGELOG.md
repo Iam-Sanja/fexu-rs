@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased — fexu-cli 0.1.1
+
+- `fexu new <name>` and `fexu new project <name>` write `fexu = "=0.1.0"` unless `--fexu-path` is set. The fullstack template keeps `features = ["admin-ui"]` on that registry dependency. The api template adds no features.
+- `--fexu-path` accepts the workspace root or the `fexu` crate directory and still writes a path dependency. A missing or unrelated path creates no directory.
+- Only `fexu-cli` moves to 0.1.1. The other fifteen crates stay at 0.1.0. Generated projects pin the published `fexu` library, not the CLI version. This entry is not a crates.io publication.
+
 ## 0.1.0 — initial crates.io rollout (2026-11-14)
 
 - First experimental `0.1.0` crates are being published in dependency order; this is a **rollout record**, not confirmation that all 16 packages exist. Verify each package in crates.io.

@@ -51,6 +51,11 @@ fn cleanup_isolated_databases() {
     }
 }
 
+fn build_lock() -> std::sync::MutexGuard<'static, ()> {
+    static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    LOCK.lock().unwrap_or_else(|poison| poison.into_inner())
+}
+
 fn repository() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")
 }
@@ -72,16 +77,17 @@ fn rejects_names_existing_directories_and_legacy_commands() {
     for args in [
         vec!["new", "project", "../escape"],
         vec!["new", "project", "type"],
-        vec!["new", "Shop", "--template", "api"],
+        vec!["new", "Nope", "extra"],
         vec!["generate", "app", "shop"],
     ] {
         let output = fexu().current_dir(&root).args(&args).output().unwrap();
         assert!(!output.status.success(), "{args:?}");
-        if args[1] == "Shop" || args[1] == "app" {
+        if args[1] == "Nope" || args[1] == "app" {
             assert!(String::from_utf8_lossy(&output.stderr).contains("new app"));
         }
     }
     assert!(!root.join("Shop").exists());
+    assert!(!root.join("Nope").exists());
     success(create(&root, "Shop", "api", &repository(), "apps"));
     let shop = root.join("Shop");
     std::fs::write(shop.join("sentinel"), "keep").unwrap();
@@ -106,6 +112,7 @@ fn rejects_names_existing_directories_and_legacy_commands() {
 
 #[test]
 fn generated_api_and_fullstack_projects_compile() {
+    let _builds = build_lock();
     let root = std::env::temp_dir().join(format!("fexu-gen-{}", std::process::id()));
     std::fs::create_dir_all(&root).unwrap();
     let target = std::env::var_os("CARGO_TARGET_DIR")
@@ -335,6 +342,222 @@ fn serve_and_check(
         );
         assert!(response.contains(body), "{path}: {response}");
     }
+}
+
+fn serve_homepage(
+    binary: &std::path::Path,
+    project: &std::path::Path,
+    database: &str,
+    admin: bool,
+) {
+    use std::io::{Read, Write};
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap();
+    drop(listener);
+    let mut command = Command::new(binary);
+    seal(&mut command);
+    let mut server = Server(
+        command
+            .current_dir(project)
+            .env("DATABASE_URL", database)
+            .env("BIND_ADDRESS", address.to_string())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .unwrap(),
+    );
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+    while std::net::TcpStream::connect(address).is_err() {
+        assert!(
+            server.0.try_wait().unwrap().is_none(),
+            "generated server exited before listening"
+        );
+        assert!(
+            std::time::Instant::now() < deadline,
+            "generated server did not listen"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+    for (path, status, body) in [
+        ("/", "200", "Business apps are added explicitly"),
+        ("/api/v1/ping", "200", "\"ok\":true"),
+        ("/admin", if admin { "303" } else { "404" }, ""),
+    ] {
+        let mut stream = std::net::TcpStream::connect(address).unwrap();
+        stream
+            .set_read_timeout(Some(std::time::Duration::from_secs(5)))
+            .unwrap();
+        write!(
+            stream,
+            "GET {path} HTTP/1.1\r\nHost: {address}\r\nConnection: close\r\n\r\n"
+        )
+        .unwrap();
+        let mut response = String::new();
+        stream.read_to_string(&mut response).unwrap();
+        assert!(
+            response.starts_with(&format!("HTTP/1.1 {status}")),
+            "{path}: {response}"
+        );
+        assert!(response.contains(body), "{path}: {response}");
+    }
+}
+
+#[test]
+fn local_paths_and_invalid_paths_keep_existing_projects_untouched() {
+    let root = std::env::temp_dir().join(format!("fexu-path-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(&root).unwrap();
+    let repo = repository().canonicalize().unwrap();
+    let parent = root.join("local");
+    std::fs::create_dir_all(&parent).unwrap();
+    success(create(&parent, "FromRoot", "fullstack", &repo, "apps"));
+    success(create(
+        &parent,
+        "FromCrate",
+        "api",
+        &repo.join("crates/fexu"),
+        "apps",
+    ));
+    let root_manifest = std::fs::read_to_string(parent.join("FromRoot/Cargo.toml")).unwrap();
+    let crate_manifest = std::fs::read_to_string(parent.join("FromCrate/Cargo.toml")).unwrap();
+    assert!(root_manifest.contains("features = [\"admin-ui\"]"));
+    assert!(!crate_manifest.contains("admin-ui"));
+    assert_eq!(
+        dependency_path(&root_manifest),
+        dependency_path(&crate_manifest)
+    );
+    assert!(dependency_path(&root_manifest).ends_with("crates/fexu"));
+    let shorthand = fexu()
+        .current_dir(&parent)
+        .args(["new", "PathShop", "--template", "api", "--fexu-path"])
+        .arg(&repo)
+        .output()
+        .unwrap();
+    success(shorthand);
+    let shorthand_manifest = std::fs::read_to_string(parent.join("PathShop/Cargo.toml")).unwrap();
+    assert_eq!(
+        dependency_path(&shorthand_manifest),
+        dependency_path(&crate_manifest)
+    );
+    for (label, path) in [
+        ("missing", root.join("missing-fexu")),
+        ("empty", root.join("empty-dir")),
+        ("file", root.join("not-a-crate.txt")),
+    ] {
+        if label == "empty" {
+            std::fs::create_dir_all(&path).unwrap();
+        }
+        if label == "file" {
+            std::fs::write(&path, "not a crate").unwrap();
+        }
+        let output = fexu()
+            .current_dir(&parent)
+            .args(["new", "project", "Bad", "--fexu-path"])
+            .arg(&path)
+            .output()
+            .unwrap();
+        assert!(!output.status.success(), "{label}");
+        assert!(!parent.join("Bad").exists(), "{label}");
+    }
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn registry_projects_build_and_serve_without_a_framework_checkout() {
+    let _builds = build_lock();
+    let root = std::env::temp_dir().join(format!("fexu-registry-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(&root).unwrap();
+    let repo = repository().canonicalize().unwrap();
+    success(
+        fexu()
+            .current_dir(&root)
+            .args(["new", "mein-projekt"])
+            .output()
+            .unwrap(),
+    );
+    success(
+        fexu()
+            .current_dir(&root)
+            .args(["new", "project", "ApiShop", "--template", "api"])
+            .output()
+            .unwrap(),
+    );
+    let project = root.join("mein-projekt");
+    let api = root.join("ApiShop");
+    assert!(!project.canonicalize().unwrap().starts_with(&repo));
+    assert!(!api.canonicalize().unwrap().starts_with(&repo));
+    let fullstack = std::fs::read_to_string(project.join("Cargo.toml")).unwrap();
+    let api_manifest = std::fs::read_to_string(api.join("Cargo.toml")).unwrap();
+    assert!(fullstack.contains("fexu = { version = \"=0.1.0\", features = [\"admin-ui\"] }"));
+    assert!(api_manifest.contains("fexu = \"=0.1.0\"\n"));
+    for manifest in [&fullstack, &api_manifest] {
+        assert!(!manifest.contains("path ="), "{manifest}");
+        assert!(!manifest.contains("git ="), "{manifest}");
+        assert!(!manifest.contains("[patch"), "{manifest}");
+    }
+    for relative in [
+        "src/main.rs",
+        "src/lib.rs",
+        "src/project/mod.rs",
+        "src/apps.rs",
+        "fexu.toml",
+        "templates/index.html",
+        "templates/errors/404.html",
+        "static/css/app.css",
+        ".fexu/project.json",
+    ] {
+        assert!(project.join(relative).is_file(), "{relative}");
+        assert!(api.join(relative).is_file(), "{relative}");
+    }
+    let before = std::fs::read(project.join("Cargo.toml")).unwrap();
+    let target = root.join("target");
+    let database = format!(
+        "sqlite://{}/integration.sqlite?mode=rwc",
+        project.to_string_lossy().replace('\\', "/")
+    );
+    success(cargo(&project, &target, &["build"]));
+    let lock = std::fs::read_to_string(project.join("Cargo.lock"))
+        .unwrap()
+        .replace("\r\n", "\n");
+    assert!(
+        lock.contains("name = \"fexu\"\nversion = \"0.1.0\"\nsource = \"registry+https://github.com/rust-lang/crates.io-index\""),
+        "Cargo.lock does not pin fexu 0.1.0 from crates.io"
+    );
+    let cli = |args: &[&str]| {
+        fexu()
+            .current_dir(&project)
+            .env("CARGO_TARGET_DIR", &target)
+            .env("DATABASE_URL", &database)
+            .args(args)
+            .output()
+            .unwrap()
+    };
+    success(cli(&["doctor"]));
+    success(cli(&["migrate", "up"]));
+    success(cli(&["check"]));
+    success(cli(&["upgrade", "--check"]));
+    assert_eq!(std::fs::read(project.join("Cargo.toml")).unwrap(), before);
+    serve_homepage(
+        &target
+            .join("debug")
+            .join(format!("mein_projekt{}", std::env::consts::EXE_SUFFIX)),
+        &project,
+        &database,
+        true,
+    );
+    success(cargo(&api, &target, &["check"]));
+    std::fs::remove_dir_all(root).unwrap();
+    cleanup_isolated_databases();
+}
+
+fn dependency_path(manifest: &str) -> String {
+    let marker = "path = \"";
+    let start = manifest
+        .find(marker)
+        .unwrap_or_else(|| panic!("missing path dependency: {manifest}"))
+        + marker.len();
+    manifest[start..].split('"').next().unwrap().to_owned()
 }
 
 fn create(

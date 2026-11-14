@@ -5,17 +5,27 @@
 ## Create an empty project
 
 ```powershell
-fexu new project Shop --fexu-path D:\04_Projekte_Arbeit\Projekte\fexu
+fexu new project Shop
 cd Shop
 fexu migrate up
 fexu dev
 ```
 
-The default is `--template fullstack`; `--template api` omits admin registration. Both create a runnable homepage, a named `project.ping` route at `/api/v1/ping`, authentication, static files and an empty media directory. Neither creates a business app, a `Product` model, business tables, seed data or an initial domain migration. `migrate up` applies the framework authentication and jobs migrations, then explicitly declared project/app migrations. It never resets a database. No user or default password is created.
+`fexu new Shop` is the same command. The default is `--template fullstack`; `--template api` omits admin registration. Both create a runnable homepage, a named `project.ping` route at `/api/v1/ping`, authentication, static files and an empty media directory. Neither creates a business app, a `Product` model, business tables, seed data or an initial domain migration. `migrate up` applies the framework authentication and jobs migrations, then explicitly declared project/app migrations. It never resets a database. No user or default password is created.
 
-The directory/display name remains `Shop`. Its Rust package/import name is `shop`; `MyShop` becomes `my_shop` and `HTTPServer` becomes `http_server`. Names must start with an ASCII letter, contain only ASCII letters, digits or underscores, and fit within 48 characters. Rust keywords, Windows device names and reserved project directories are rejected.
+Without `--fexu-path`, the generated `Cargo.toml` depends on the published library:
 
-The component crates are being published in dependency order. Until `fexu` and `fexu-cli` are independently confirmed on crates.io, use a source checkout and `--fexu-path`; without it the generator uses its build-time checkout. Create projects outside the framework workspace. Existing target directories are refused; newly generated files use exclusive creation.
+```toml
+fexu = "=0.1.0"
+```
+
+The fullstack template adds the feature in the same registry dependency: `fexu = { version = "=0.1.0", features = ["admin-ui"] }`. The api template has no extra features. This version is the published `fexu` crate, not the `fexu-cli` package version. No framework checkout, git dependency, or `[patch.crates-io]` entry is required.
+
+`--fexu-path` keeps the development dependency. The value may be the workspace root or the `fexu` crate directory (`crates/fexu`). Both write a `path` dependency that points at the crate directory. A missing path, a file, or any other directory is rejected and no project directory is created.
+
+The directory/display name remains `Shop`. Its Rust package/import name is `shop`; `MyShop` becomes `my_shop`, `HTTPServer` becomes `http_server`, and `mein-projekt` becomes `mein_projekt`. Names must start with an ASCII letter, contain only ASCII letters, digits, underscores or hyphens, and fit within 48 characters. A name cannot end with a hyphen or contain `--`. Rust keywords, Windows device names and reserved project directories are rejected.
+
+Create projects outside the framework workspace. Existing target directories are refused; newly generated files use exclusive creation. `fexu-cli` 0.1.1 generates the crates.io dependency above. The published `fexu-cli` 0.1.0 still expects a source checkout.
 
 Generated `main` calls `App::with_auth` and `into_router`. That router rejects POST, PUT, PATCH and DELETE when the configured session cookie or `fexu_anonymous` is present and the CSRF proof does not match. Register those routes on `App` before `into_router`. A client with no session cookie, including `Authorization: Bearer`, is not blocked by this check. `allow_anonymous` still means a cookie-less request can write. The bearer value is not validated. See [csrf.md](csrf.md).
 
@@ -48,12 +58,12 @@ A new project contains `src/project/management.rs` and `src/bin/fexu-manage.rs`.
 
 | Old call | New call |
 |---|---|
-| `fexu new Shop` | `fexu new project Shop` |
+| `fexu new Shop` | `fexu new Shop` or `fexu new project Shop` |
 | `fexu generate app produkte` | `fexu new app produkte` |
 | `fexu generate model Customer` in a new project | `fexu generate model Customer --app produkte` |
 | `fexu migrate make initial` for an app | `fexu migrate make initial --app produkte` |
 
-The first two old calls fail with actionable guidance and do not create files. Existing manifests without `project.layout_version` remain layout 1. Their startup, model generation and migration IDs keep working. `new app` refuses layout 1 rather than silently relocating code.
+`fexu generate app` fails with actionable guidance and does not create files. `fexu new <name>` creates an empty project and does not modify an existing directory. Existing manifests without `project.layout_version` remain layout 1. Their startup, model generation and migration IDs keep working. `new app` refuses layout 1 rather than silently relocating code.
 
 For an existing project, first commit/back up code and back up its database. Generate a layout-2 reference project in a separate, unused directory. Port startup, settings and root URLs manually; add `src/apps.rs` and explicitly install each migrated app. Set `project.layout_version = 2` only after adapting the source and declarations. Preserve existing model table names, API paths, project migration files, checksums and history IDs. Applied unqualified migrations stay in the project history; do not copy them into an app package or baseline/reset the database. Use `migrate status` and `check` before applying any new, reviewed migration. Compare behavior against the old project before deployment.
 
@@ -61,6 +71,6 @@ The internal template version is `0.25`; the Cargo version remains `0.1.0`. `upg
 
 ## Validation
 
-`crates/fexu-cli/tests/generator.rs` exercises both templates outside the workspace, Rust package normalization, both app placements, local/shared templates, names and duplicates, legacy-command rejection, SQLite system-only initialization, app migrations, protected model APIs, HTTP startup, development startup and release builds. Existing projects and databases are never automatically restructured.
+`crates/fexu-cli/tests/generator.rs` exercises both templates outside the workspace, registry and path dependencies, Rust package normalization, both app placements, local/shared templates, names and duplicates, rejected arguments, SQLite system-only initialization, app migrations, protected model APIs, HTTP startup, development startup and release builds. Existing projects and databases are never automatically restructured.
 
 Generated projects depend on Fexu and do not receive a `[patch.crates-io]` entry. SQLite comes from rusqlite inside Fexu. See [the database driver note](database-driver.md).

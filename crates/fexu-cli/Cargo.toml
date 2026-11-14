@@ -1,6 +1,8 @@
 [package]
 name = "fexu-cli"
-version.workspace = true
+# Released on its own. The other workspace crates stay at 0.1.0.
+# Generated projects pin the published library, not this CLI version.
+version = "0.1.1"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true

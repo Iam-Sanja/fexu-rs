@@ -400,12 +400,32 @@ fn main() -> ExitCode {
     match Cli::parse().command {
         Command::New { action } => {
             let (result, label) = match action {
-                NewCommand::Project { name, template, apps_dir, fexu_path } => (
+                NewCommand::Project {
+                    name,
+                    template,
+                    apps_dir,
+                    fexu_path,
+                } => (
                     scaffold::new_project(&name, &template, &apps_dir, fexu_path.as_deref()),
                     text::line("project_created"),
                 ),
-                NewCommand::App { name, templates } => (apps::generate_app(&name, &templates), "Created app:"),
-                NewCommand::Legacy(arguments) => (Err(format!("The implicit new command ({} arguments) was removed. Use fexu new project <name> or fexu new app <name>. Existing projects are not changed.", arguments.len())), ""),
+                NewCommand::App { name, templates } => {
+                    (apps::generate_app(&name, &templates), "Created app:")
+                }
+                NewCommand::Legacy(arguments) => {
+                    match scaffold::parse_project_shorthand(&arguments) {
+                        Ok((name, template, apps_dir, fexu_path)) => (
+                            scaffold::new_project(
+                                &name,
+                                &template,
+                                &apps_dir,
+                                fexu_path.as_deref(),
+                            ),
+                            text::line("project_created"),
+                        ),
+                        Err(error) => (Err(error), ""),
+                    }
+                }
             };
             match result {
                 Ok(path) => {

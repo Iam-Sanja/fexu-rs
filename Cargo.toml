@@ -51,7 +51,7 @@ fexu-admin = { path = "crates/fexu-admin", version = "0.1.0" }
 fexu-api = { path = "crates/fexu-api", version = "0.1.0" }
 fexu-auth = { path = "crates/fexu-auth", version = "0.1.0" }
 fexu-cache = { path = "crates/fexu-cache", version = "0.1.0" }
-fexu-cli = { path = "crates/fexu-cli", version = "0.1.0" }
+fexu-cli = { path = "crates/fexu-cli", version = "0.1.1" }
 fexu-core = { path = "crates/fexu-core", version = "0.1.0" }
 fexu-db = { path = "crates/fexu-db", version = "0.1.0" }
 fexu-forms = { path = "crates/fexu-forms", version = "0.1.0" }
