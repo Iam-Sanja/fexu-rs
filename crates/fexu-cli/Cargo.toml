@@ -32,7 +32,6 @@ fexu-jobs.workspace = true
 fexu-mail.workspace = true
 fexu-migrations.workspace = true
 notify = "8"
-toml = "0.8"
 rpassword.workspace = true
 tokio.workspace = true
 uuid.workspace = true

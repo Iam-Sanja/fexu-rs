@@ -468,10 +468,19 @@ fn shorthand_uses_the_same_argument_rules_as_the_project_command() {
     let _ = std::fs::remove_dir_all(&root);
     std::fs::create_dir_all(&root).unwrap();
     let quoted = root.join("quoted-crate");
-    std::fs::create_dir_all(&quoted).unwrap();
+    std::fs::create_dir_all(quoted.join("src")).unwrap();
+    std::fs::write(quoted.join("src/lib.rs"), "").unwrap();
     std::fs::write(
         quoted.join("Cargo.toml"),
         "[package]\nname = 'fexu'\nversion = '0.1.0'\nedition = '2021'\n",
+    )
+    .unwrap();
+    let multiline = root.join("multiline-crate");
+    std::fs::create_dir_all(multiline.join("src")).unwrap();
+    std::fs::write(multiline.join("src/lib.rs"), "").unwrap();
+    std::fs::write(
+        multiline.join("Cargo.toml"),
+        "package = {\n  name = \"fexu\",\n  version = \"0.1.0\",\n  edition = \"2021\",\n}\n",
     )
     .unwrap();
     let broken = root.join("broken-crate");
@@ -540,6 +549,18 @@ fn shorthand_uses_the_same_argument_rules_as_the_project_command() {
         dependency_path(&std::fs::read_to_string(root.join("Quoted/Cargo.toml")).unwrap())
             .ends_with("quoted-crate")
     );
+    success(
+        fexu()
+            .current_dir(&root)
+            .args(["new", "Multiline", "--fexu-path"])
+            .arg(&multiline)
+            .output()
+            .unwrap(),
+    );
+    assert!(
+        dependency_path(&std::fs::read_to_string(root.join("Multiline/Cargo.toml")).unwrap())
+            .ends_with("multiline-crate")
+    );
 
     for args in [
         vec![
@@ -595,6 +616,8 @@ fn shorthand_uses_the_same_argument_rules_as_the_project_command() {
     for args in [
         vec!["new", "project", "--help"],
         vec!["new", "HelpProject", "--help"],
+        vec!["new", "help", "project"],
+        vec!["help", "new", "project"],
     ] {
         let output = fexu().current_dir(&root).args(&args).output().unwrap();
         let text = format!(
@@ -605,6 +628,29 @@ fn shorthand_uses_the_same_argument_rules_as_the_project_command() {
         assert!(output.status.success(), "{args:?}\n{text}");
         assert!(text.contains("--template"), "{args:?}\n{text}");
     }
+    let app_help = fexu()
+        .current_dir(&root)
+        .args(["new", "help", "app"])
+        .output()
+        .unwrap();
+    let app_help_text = format!(
+        "{}{}",
+        String::from_utf8_lossy(&app_help.stdout),
+        String::from_utf8_lossy(&app_help.stderr)
+    );
+    assert!(app_help.status.success(), "{app_help_text}");
+    assert!(app_help_text.contains("--templates"), "{app_help_text}");
+    let bogus = fexu()
+        .current_dir(&root)
+        .args(["new", "help", "bogus"])
+        .output()
+        .unwrap();
+    assert!(
+        !bogus.status.success(),
+        "{}",
+        String::from_utf8_lossy(&bogus.stderr)
+    );
+    assert!(!root.join("bogus").exists());
     assert!(!root.join("HelpProject").exists());
     assert!(!root.join("help").exists());
     let broken_output = fexu()
@@ -614,7 +660,7 @@ fn shorthand_uses_the_same_argument_rules_as_the_project_command() {
         .output()
         .unwrap();
     assert!(!broken_output.status.success());
-    assert!(String::from_utf8_lossy(&broken_output.stderr).contains("not valid TOML"));
+    assert!(String::from_utf8_lossy(&broken_output.stderr).contains("not a valid Cargo manifest"));
     assert!(!root.join("Broken").exists());
     let app = fexu()
         .current_dir(&root)
