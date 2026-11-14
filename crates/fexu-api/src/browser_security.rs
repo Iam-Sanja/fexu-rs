@@ -18,7 +18,7 @@ use axum::Router;
 use fexu_admin::AdminRegistry;
 use fexu_auth::{apply_migrations, AppState, AuthConfig, AuthService};
 use fexu_db::driver::{ConnectionTrait, DatabaseConnection, Statement};
-use fexu_middleware::{apply, Standard};
+use fexu_middleware::{apply, ReferrerPolicy, Standard};
 
 use super::App;
 
@@ -68,6 +68,8 @@ async fn exercise(db: DatabaseConnection) -> Result<(), String> {
     fresh_and_session_states(&dev_address, &db, &password).await?;
     anonymous_registration_and_other_writes(&dev_address).await?;
     reset_stays_isolated(&dev_address).await?;
+    dedicated_cookies_do_not_authorize_other_writes(&dev_address, &password).await?;
+    recovery_errors_keep_no_referrer(db.clone()).await?;
     https_configuration(&secure_address, &password).await?;
     loopback_bind_is_not_an_origin(&loopback_address, &password).await?;
     Ok(())
@@ -737,6 +739,208 @@ async fn reset_stays_isolated(address: &SocketAddr) -> Result<(), String> {
         )
         .await?;
     expect_status(&rejected, 403, "reset foreign origin")?;
+    Ok(())
+}
+
+async fn dedicated_cookies_do_not_authorize_other_writes(
+    address: &SocketAddr,
+    password: &str,
+) -> Result<(), String> {
+    let mut client = Client::new(*address);
+    client.call("GET", "/admin/login", &[], None).await?;
+    let login = issued_token(&client)?;
+    for method in ["POST", "PUT", "PATCH", "DELETE"] {
+        let response = client
+            .call(
+                method,
+                "/probe",
+                &[
+                    ("origin", LOCAL),
+                    ("content-type", "application/json"),
+                    ("x-csrf-token", &login),
+                ],
+                Some("{}"),
+            )
+            .await?;
+        expect_status(&response, 403, method)?;
+        if response.body == "written" {
+            return Err(format!("{method} /probe accepted the login cookie"));
+        }
+    }
+    let form = login_body(&login, password);
+    for path in [
+        "/admin/login/",
+        "/admin//login",
+        "/admin%2flogin",
+        "/admin/login%2f",
+        "/admin/%6cogin",
+        "/admin/login%2e%2e/probe",
+    ] {
+        let response = client
+            .call(
+                "POST",
+                path,
+                &[
+                    ("origin", LOCAL),
+                    ("content-type", "application/x-www-form-urlencoded"),
+                ],
+                Some(&form),
+            )
+            .await?;
+        expect_status(&response, 403, path)?;
+        if sets_live_session(&response) || response.body == "written" {
+            return Err(format!("{path} authorized a write"));
+        }
+    }
+    let reset_with_login = client
+        .call(
+            "POST",
+            "/auth/password-reset",
+            &[
+                ("origin", LOCAL),
+                ("content-type", "application/x-www-form-urlencoded"),
+            ],
+            Some(&encode(&[
+                ("csrf_token", &login),
+                ("email", "ada@example.com"),
+            ])),
+        )
+        .await?;
+    expect_status(&reset_with_login, 403, "login cookie on the reset route")?;
+
+    let mut reset_only = Client::new(*address);
+    let page = reset_only
+        .call("GET", "/auth/password-reset", &[("origin", LOCAL)], None)
+        .await?;
+    let reset = form_field(&page.body)?;
+    reset_only.jar.clear();
+    reset_only.jar.insert("fexu_reset_csrf", reset.clone());
+    let login_with_reset = reset_only
+        .post_login(Some(LOCAL), None, &login_body(&reset, password), &[])
+        .await?;
+    expect_status(&login_with_reset, 403, "reset cookie on the login route")?;
+    if sets_live_session(&login_with_reset) {
+        return Err("reset cookie issued a session".into());
+    }
+    let choose = reset_only
+        .call(
+            "POST",
+            "/auth/password-reset/choose",
+            &[
+                ("origin", LOCAL),
+                ("content-type", "application/x-www-form-urlencoded"),
+            ],
+            Some(&encode(&[
+                ("csrf_token", &reset),
+                ("password", password),
+                ("password_confirm", password),
+            ])),
+        )
+        .await?;
+    if choose.status == 403 {
+        return Err("the reset route rejected its own cookie".into());
+    }
+    if sets_live_session(&choose) {
+        return Err("reset choose issued a session".into());
+    }
+
+    let mut foreign = Client::new(*address);
+    foreign.call("GET", "/admin/login", &[], None).await?;
+    let token = issued_token(&foreign)?;
+    let spoofed = foreign
+        .post_login(
+            Some(FOREIGN),
+            Some("same-origin"),
+            &login_body(&token, password),
+            &[],
+        )
+        .await?;
+    expect_status(
+        &spoofed,
+        403,
+        "foreign origin with same-origin fetch metadata",
+    )?;
+    if sets_live_session(&spoofed) {
+        return Err("spoofed fetch metadata issued a session".into());
+    }
+    let unverified = foreign
+        .post_login(Some("null"), None, &login_body(&token, password), &[])
+        .await?;
+    expect_status(&unverified, 403, "null origin without fetch metadata")?;
+    if sets_live_session(&unverified) {
+        return Err("unverified null origin issued a session".into());
+    }
+    Ok(())
+}
+
+async fn recovery_errors_keep_no_referrer(db: DatabaseConnection) -> Result<(), String> {
+    let policy = Standard {
+        referrer_policy: ReferrerPolicy::SameOrigin,
+        ..Standard::default()
+    };
+    let address = listen(apply(
+        App::new(db.clone())
+            .with_auth(AuthService::new(db.clone(), development_config()))
+            .into_router(),
+        policy.clone(),
+    ))
+    .await;
+    let mut client = Client::new(address);
+    let form = client
+        .call("GET", "/auth/password-reset", &[], None)
+        .await?;
+    expect_status(&form, 200, "recovery form under same-origin default")?;
+    expect_header(&form, "referrer-policy", "no-referrer")?;
+    expect_one(&form, "referrer-policy")?;
+    let forbidden = client
+        .call(
+            "POST",
+            "/auth/password-reset",
+            &[
+                ("origin", LOCAL),
+                ("content-type", "application/x-www-form-urlencoded"),
+            ],
+            Some("csrf_token=wrong&email=ada@example.com"),
+        )
+        .await?;
+    expect_status(&forbidden, 403, "recovery forbidden")?;
+    if !forbidden
+        .body
+        .contains("Das Formular konnte nicht bestätigt werden.")
+    {
+        return Err(format!(
+            "recovery forbidden page missing: {}",
+            forbidden.body.chars().take(180).collect::<String>()
+        ));
+    }
+    expect_header(&forbidden, "referrer-policy", "no-referrer")?;
+    expect_one(&forbidden, "referrer-policy")?;
+    expect_header(&forbidden, "x-frame-options", "DENY")?;
+    expect_header(&forbidden, "x-content-type-options", "nosniff")?;
+
+    let missing_address = listen(apply(App::new(db).into_router(), policy)).await;
+    let mut missing = Client::new(missing_address);
+    let page = missing
+        .call("GET", "/auth/password-reset/choose", &[], None)
+        .await?;
+    expect_status(&page, 404, "missing auth")?;
+    if !page
+        .body
+        .contains("Authentifizierung ist nicht konfiguriert.")
+    {
+        return Err(format!(
+            "missing auth page missing: {}",
+            page.body.chars().take(180).collect::<String>()
+        ));
+    }
+    expect_header(&page, "referrer-policy", "no-referrer")?;
+    expect_one(&page, "referrer-policy")?;
+    if page.head.to_ascii_lowercase().contains("same-origin") {
+        return Err(format!(
+            "same-origin replaced recovery no-referrer: {}",
+            page.head
+        ));
+    }
     Ok(())
 }
 

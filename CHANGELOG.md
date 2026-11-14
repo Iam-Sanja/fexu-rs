@@ -2,7 +2,8 @@
 
 ## Unreleased — browser security and native admin login
 
-- The security-header layer keeps an explicit safe `Referrer-Policy` and replaces any other value with the configured policy. `nosniff` and `DENY` stay mandatory. `Host` and `X-Forwarded-*` are not origins.
+- The security-header layer keeps one canonical `Referrer-Policy` only when every header field and comma-separated token is that same safe value. Any other combination is replaced by the configured policy. `nosniff` and `DENY` stay mandatory. `Host` and `X-Forwarded-*` are not origins.
+- Password-reset error responses for a rejected form and a missing auth service set `Referrer-Policy: no-referrer` themselves.
 - The native admin login document sends `Referrer-Policy: same-origin`. Password-reset pages keep `no-referrer`.
 - `require_browser_writes` accepts `POST /admin/login` from a fresh cookie jar when `fexu_login_csrf` matches. Other writes still need a session cookie. Foreign origins and unverified `Origin: null` stay rejected.
 
