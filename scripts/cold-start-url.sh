@@ -1,11 +1,14 @@
 # Shared PostgreSQL guard for the embedded cold start.
-# A disposable name is not enough: the host must be loopback, and the URL user
-# must already be a disposable test role. The scripts do not read pg_roles and
-# do not verify that role's privileges. Any query string is refused, including
-# an empty query and parameters such as dbname, host, hostaddr, port, user,
-# password, options, and application_name. The query is not removed before this
-# decision. User, password, and host never satisfy the database-name rule.
-# Unsupported or unclear URLs are refused.
+# A disposable name is not enough: the host must be the literal loopback form
+# 127.0.0.1, localhost, or [::1]. The host is not percent-decoded, because
+# sqlx-postgres 0.8.6 connects to url.host_str() as written. A host containing
+# "%" is refused, as is every other spelling, including socket paths. The URL
+# user must already be a disposable test role. The scripts do not read pg_roles
+# and do not verify that role's privileges. Any query string is refused,
+# including an empty query and parameters such as dbname, host, hostaddr, port,
+# user, password, options, and application_name. The query is not removed before
+# this decision. The database path is decoded once. User, password, and host
+# never satisfy the database-name rule. Unsupported or unclear URLs are refused.
 
 url_decode() {
   local raw="$1"
@@ -120,65 +123,77 @@ cold_start_database_rejection() {
     return 0
   fi
 
+  local userinfo=""
   local hostport="$authority"
-  case "$hostport" in
-    *@*) hostport="${hostport##*@}" ;;
+  case "$authority" in
+    *@*)
+      userinfo="${authority%@*}"
+      hostport="${authority##*@}"
+      ;;
   esac
+  if [ -n "$userinfo" ]; then
+    if ! url_decode "$userinfo" >/dev/null; then
+      echo "database URL user info is not valid URL encoding"
+      return 0
+    fi
+  fi
   if [ -z "$hostport" ]; then
     echo "database URL has no host"
     return 0
   fi
+
+  # Match the host string PgConnectOptions stores. Do not percent-decode it.
   local host=""
-  local decoded_host=""
-  case "$hostport" in
-    \[*\])
-      host="${hostport#\[}"
-      host="${host%%\]*}"
-      ;;
-    \[*:*)
-      host="${hostport#\[}"
-      host="${host%%\]*}"
-      local after=":${hostport#*\]:}"
-      case "$after" in
-        :*[!0-9]*)
-          echo "database URL port is unclear"
-          return 0
-          ;;
-        :)
-          echo "database URL port is unclear"
-          return 0
-          ;;
-      esac
-      ;;
-    *:*:*)
-      echo "database URL host is unclear"
-      return 0
-      ;;
-    *:*)
-      host="${hostport%%:*}"
-      local port="${hostport#*:}"
-      case "$port" in
-        ""|*[!0-9]*)
-          echo "database URL port is unclear"
-          return 0
-          ;;
-      esac
-      ;;
-    *) host="$hostport" ;;
-  esac
-  if ! decoded_host=$(url_decode "$host"); then
-    echo "database URL host is not valid URL encoding"
+  local port=""
+  local has_port=0
+  if [ "$hostport" = "[::1]" ]; then
+    host="[::1]"
+  elif [[ "$hostport" == "[::1]:"* ]]; then
+    host="[::1]"
+    port="${hostport#"[::1]:"}"
+    has_port=1
+  elif [[ "$hostport" == \[* ]]; then
+    echo "a disposable database name does not make this host a cold-start test instance; only a literal loopback host is accepted"
+    return 0
+  elif [[ "$hostport" == *%* ]]; then
+    echo "database URL host is not percent-decoded; only a literal loopback host is accepted, and a socket path is not a cold-start test instance"
+    return 0
+  else
+    case "$hostport" in
+      *:*:*)
+        echo "database URL host is unclear"
+        return 0
+        ;;
+      *:*)
+        host="${hostport%%:*}"
+        port="${hostport#*:}"
+        has_port=1
+        ;;
+      *) host="$hostport" ;;
+    esac
+  fi
+  if [ -z "$host" ]; then
+    echo "database URL has no host"
     return 0
   fi
-  host=$(printf '%s' "$decoded_host" | tr '[:upper:]' '[:lower:]')
-  case "$host" in
-    /*)
-      echo "a disposable database name does not make a socket path a cold-start test instance; only a loopback host is accepted, and the URL user must already be a disposable test role"
+  if [ "$has_port" -eq 1 ]; then
+    case "$port" in
+      ""|*[!0-9]*|0*)
+        echo "database URL port is unclear"
+        return 0
+        ;;
+    esac
+    if [ "${#port}" -gt 5 ] || [ "$port" -gt 65535 ]; then
+      echo "database URL port is unclear"
       return 0
-      ;;
-    127.0.0.1|localhost|::1) ;;
+    fi
+  fi
+  local host_key
+  host_key=$(printf '%s' "$host" | tr '[:upper:]' '[:lower:]')
+  case "$host_key" in
+    127.0.0.1|localhost|"[::1]") ;;
     *)
-      echo "a disposable database name does not make a remote PostgreSQL server a cold-start test instance; only a loopback host is accepted, and the URL user must already be a disposable test role"
+      echo "a disposable database name does not make a remote PostgreSQL server a cold-start test instance; only a literal loopback host is accepted, and the URL user must already be a disposable test role"
       return 0
       ;;
   esac

@@ -1,11 +1,14 @@
 # Shared PostgreSQL guard for the embedded cold start.
-# A disposable name is not enough: the host must be loopback, and the URL user
-# must already be a disposable test role. The scripts do not read pg_roles and
-# do not verify that role's privileges. Any query string is refused, including
-# an empty query and parameters such as dbname, host, hostaddr, port, user,
-# password, options, and application_name. The query is not removed before this
-# decision. User, password, and host never satisfy the database-name rule.
-# Unsupported or unclear URLs are refused.
+# A disposable name is not enough: the host must be the literal loopback form
+# 127.0.0.1, localhost, or [::1]. The host is not percent-decoded, because
+# sqlx-postgres 0.8.6 connects to url.host_str() as written. A host containing
+# "%" is refused, as is every other spelling, including socket paths. The URL
+# user must already be a disposable test role. The scripts do not read pg_roles
+# and do not verify that role's privileges. Any query string is refused,
+# including an empty query and parameters such as dbname, host, hostaddr, port,
+# user, password, options, and application_name. The query is not removed before
+# this decision. The database path is decoded once. User, password, and host
+# never satisfy the database-name rule. Unsupported or unclear URLs are refused.
 
 function ConvertFrom-ColdStartPercentEncoding {
     param([string]$Value)
@@ -57,24 +60,34 @@ function Get-ColdStartDatabaseRejection {
     }
 
     $hostPort = $authority
-    $at = $hostPort.LastIndexOf("@")
+    $at = $authority.LastIndexOf("@")
     if ($at -ge 0) {
-        $hostPort = $hostPort.Substring($at + 1)
+        $userInfo = $authority.Substring(0, $at)
+        $hostPort = $authority.Substring($at + 1)
+        if (-not [string]::IsNullOrEmpty($userInfo)) {
+            try {
+                $null = ConvertFrom-ColdStartPercentEncoding $userInfo
+            } catch {
+                return "database URL user info is not valid URL encoding"
+            }
+        }
     }
     if ([string]::IsNullOrEmpty($hostPort)) {
         return "database URL has no host"
     }
+
+    # Match the host string PgConnectOptions stores. Do not percent-decode it.
     $hostName = ""
-    if ($hostPort.StartsWith("[")) {
-        $end = $hostPort.IndexOf("]")
-        if ($end -lt 2) {
-            return "database URL host is unclear"
-        }
-        $hostName = $hostPort.Substring(1, $end - 1)
-        $after = $hostPort.Substring($end + 1)
-        if ($after.Length -gt 0 -and $after -notmatch '^:[0-9]+$') {
-            return "database URL port is unclear"
-        }
+    $port = $null
+    if ($hostPort -eq "[::1]") {
+        $hostName = "[::1]"
+    } elseif ($hostPort.StartsWith("[::1]:")) {
+        $hostName = "[::1]"
+        $port = $hostPort.Substring(6)
+    } elseif ($hostPort.StartsWith("[")) {
+        return "a disposable database name does not make this host a cold-start test instance; only a literal loopback host is accepted"
+    } elseif ($hostPort.Contains("%")) {
+        return "database URL host is not percent-decoded; only a literal loopback host is accepted, and a socket path is not a cold-start test instance"
     } else {
         $colon = $hostPort.IndexOf(":")
         if ($colon -ge 0) {
@@ -83,24 +96,21 @@ function Get-ColdStartDatabaseRejection {
             }
             $hostName = $hostPort.Substring(0, $colon)
             $port = $hostPort.Substring($colon + 1)
-            if ($port -notmatch '^[0-9]+$') {
-                return "database URL port is unclear"
-            }
         } else {
             $hostName = $hostPort
         }
     }
-    try {
-        $hostName = ConvertFrom-ColdStartPercentEncoding $hostName
-    } catch {
-        return "database URL host is not valid URL encoding"
+    if ([string]::IsNullOrEmpty($hostName)) {
+        return "database URL has no host"
     }
-    $hostName = $hostName.ToLowerInvariant()
-    if ($hostName.StartsWith("/")) {
-        return "a disposable database name does not make a socket path a cold-start test instance; only a loopback host is accepted, and the URL user must already be a disposable test role"
+    if ($null -ne $port) {
+        if ($port -notmatch '^[1-9][0-9]{0,4}$' -or [int]$port -gt 65535) {
+            return "database URL port is unclear"
+        }
     }
-    if ($hostName -ne "127.0.0.1" -and $hostName -ne "localhost" -and $hostName -ne "::1") {
-        return "a disposable database name does not make a remote PostgreSQL server a cold-start test instance; only a loopback host is accepted, and the URL user must already be a disposable test role"
+    $hostKey = $hostName.ToLowerInvariant()
+    if ($hostKey -ne "127.0.0.1" -and $hostKey -ne "localhost" -and $hostKey -ne "[::1]") {
+        return "a disposable database name does not make a remote PostgreSQL server a cold-start test instance; only a literal loopback host is accepted, and the URL user must already be a disposable test role"
     }
     return $null
 }

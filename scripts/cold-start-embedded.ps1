@@ -1,8 +1,9 @@
 # Runs embedded-migrate from a temporary directory while the auth and job
 # migration JSON directories are renamed out of the source tree.
 # The process must not open CARGO_MANIFEST_DIR. A PostgreSQL URL is accepted
-# only when the decoded database name starts with fexu_test_, the host is
-# loopback, and the URL has no query string. The URL user must already be a
+# only when the decoded database name starts with fexu_test_, the host is the
+# literal form 127.0.0.1, localhost, or [::1], and the URL has no query string.
+# The host is not percent-decoded. The URL user must already be a
 # disposable test role; this script does not verify that role's privileges. Without
 # -DatabaseUrl the script creates a fresh SQLite file and does not read the
 # ambient DATABASE_URL. Exit 0 also requires login=ok and a reported job.
