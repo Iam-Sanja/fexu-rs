@@ -560,6 +560,30 @@ impl AdminRegistry {
         meta.per_page
     }
 
+    pub(crate) fn list_order_of(
+        &self,
+        meta: &fexu_core::AdminModelMeta,
+    ) -> Option<&[&'static str]> {
+        if self.sealed {
+            if let Some(item) = self.configured.iter().find(|item| item.key() == meta.key) {
+                return item.list_order();
+            }
+        }
+        None
+    }
+
+    pub(crate) fn filter_order_of(
+        &self,
+        meta: &fexu_core::AdminModelMeta,
+    ) -> Option<&[&'static str]> {
+        if self.sealed {
+            if let Some(item) = self.configured.iter().find(|item| item.key() == meta.key) {
+                return item.filter_order();
+            }
+        }
+        None
+    }
+
     pub(crate) fn links_of(
         &self,
         meta: &fexu_core::AdminModelMeta,
@@ -602,11 +626,10 @@ impl AdminRegistry {
                 .iter()
                 .map(|model| model.descriptor().table)
                 .collect::<Vec<_>>();
-            if crate::configure::relation_targets_registered(model.columns(), &tables).is_err() {
-                return Err(ExtensionError::new(
-                    "admin.relation",
-                    "A foreign key target is not registered in this admin registry.",
-                ));
+            if let Err(detail) =
+                crate::configure::relation_targets_registered(model.columns(), &tables)
+            {
+                return Err(ExtensionError::detailed("admin.relation", detail));
             }
             for link in item.links() {
                 if !self
@@ -614,9 +637,25 @@ impl AdminRegistry {
                     .iter()
                     .any(|candidate| candidate.meta().key == link.child_key)
                 {
-                    return Err(ExtensionError::new(
+                    return Err(ExtensionError::detailed(
                         "admin.relation",
-                        "The many-to-many child model is not registered.",
+                        format!(
+                            "`{}` points at `{}`, which is not registered in this admin.",
+                            link.name, link.child_key
+                        ),
+                    ));
+                }
+                if self
+                    .models
+                    .iter()
+                    .any(|candidate| candidate.descriptor().table == link.join_table)
+                {
+                    return Err(ExtensionError::detailed(
+                        "admin.relation",
+                        format!(
+                            "`{}` uses `{}`, which is a registered model table.",
+                            link.name, link.join_table
+                        ),
                     ));
                 }
             }

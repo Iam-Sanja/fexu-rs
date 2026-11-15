@@ -207,7 +207,7 @@ async fn render(
         Err(error) => {
             tracing::error!(
                 code = error.code,
-                detail = error.detail,
+                detail = %error.detail,
                 "custom admin view failed"
             );
             return error_page(

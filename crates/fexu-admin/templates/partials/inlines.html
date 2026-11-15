@@ -7,7 +7,7 @@
 {% if inline.rows | length == 0 %}
 <p class="empty">{{ i18n.inline_empty }}</p>
 {% else %}
-<div class="table-wrap">
+<div class="table-wrap" tabindex="0">
 <table>
 <caption class="sr-only">{{ inline.label }}</caption>
 <thead><tr><th scope="col">{{ i18n.record }}</th><th scope="col">{{ i18n.actions }}</th></tr></thead>

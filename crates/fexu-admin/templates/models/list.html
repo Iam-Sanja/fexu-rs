@@ -2,7 +2,7 @@
 {% block content %}
 <nav class="crumbs" aria-label="{{ i18n.breadcrumb }}"><a href="/admin">{{ i18n.dashboard }}</a> / <span>{{ model_label }}</span></nav>
 <div class="toolbar">
-<form class="filters" method="get" action="{{ list_path }}">
+<form class="filters" method="get" action="{{ list_path }}" role="search">
 {% if sort %}<input type="hidden" name="sort" value="{{ sort }}">{% endif %}
 {% if dir %}<input type="hidden" name="dir" value="{{ dir }}">{% endif %}
 <div class="filter-fields">
@@ -61,10 +61,10 @@
 {% endif %}
 </nav>
 {% endif %}
-<p class="meta">{{ i18n.total }}: {{ total }} · {{ i18n.results }}: {{ shown }} · {{ i18n.page }} {{ page }}</p>
+<p class="meta" id="list-summary">{{ i18n.total }}: {{ total }} · {{ i18n.results }}: {{ shown }} · {{ i18n.page }} {{ page }}</p>
 {% if rows | length == 0 %}
 <div class="empty-state">
-<p class="empty">{{ i18n.empty }}</p>
+<p class="empty">{% if filtering %}{{ i18n.empty_filtered }}{% else %}{{ i18n.empty }}{% endif %}</p>
 {% if can_create %}<a class="button" href="{{ list_path }}/new">{{ i18n.new_record }}</a>{% endif %}
 </div>
 {% else %}
@@ -89,7 +89,7 @@
 <button type="submit">{{ i18n.bulk_run }}</button>
 </div>
 {% endif %}
-<div class="table-wrap">
+<div class="table-wrap" tabindex="0" aria-labelledby="list-summary">
 <table>
 <caption class="sr-only">{{ model_label }}</caption>
 <thead>
@@ -130,6 +130,7 @@
 {% endif %}
 <nav class="pager" aria-label="{{ i18n.page }}">
 {% if previous %}<a href="{{ previous }}">{{ i18n.previous }}</a>{% else %}<span class="hint">{{ i18n.previous }}</span>{% endif %}
+<span aria-current="page">{{ i18n.page }} {{ page }}</span>
 {% if next_page %}<a href="{{ next_page }}">{{ i18n.next }}</a>{% else %}<span class="hint">{{ i18n.next }}</span>{% endif %}
 </nav>
 {% endblock %}
