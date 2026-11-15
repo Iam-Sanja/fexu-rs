@@ -144,6 +144,7 @@ async fn login_form(
         &mut response,
         &login_cookie(state.auth.as_ref().map(|auth| auth.config()), &token),
     );
+    same_origin_document(&mut response);
     response
 }
 
@@ -209,6 +210,7 @@ async fn login_submit(
         );
         *response.status_mut() = StatusCode::UNAUTHORIZED;
         append_cookie(&mut response, &login_cookie(Some(auth.config()), &token));
+        same_origin_document(&mut response);
         return response;
     };
     match auth
@@ -264,6 +266,7 @@ async fn login_submit(
             );
             *response.status_mut() = StatusCode::UNAUTHORIZED;
             append_cookie(&mut response, &login_cookie(Some(auth.config()), &token));
+            same_origin_document(&mut response);
             response
         }
         Err(_) => {
@@ -7180,6 +7183,16 @@ fn constant_eq(left: &str, right: &str) -> bool {
         .zip(right)
         .fold(0_u8, |diff, (left, right)| diff | (left ^ right))
         == 0
+}
+
+/// Das Login-Dokument sendet bei einem Same-Origin-POST die echte Origin.
+/// `no-referrer` würde Browser dazu bringen, `Origin: null` zu senden. Recovery-Seiten
+/// setzen ihren eigenen Wert und werden hier nicht verändert.
+fn same_origin_document(response: &mut Response) {
+    response.headers_mut().insert(
+        header::REFERRER_POLICY,
+        HeaderValue::from_static("same-origin"),
+    );
 }
 
 fn login_cookie(config: Option<&AuthConfig>, token: &str) -> String {

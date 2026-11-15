@@ -6,16 +6,21 @@
 //!
 //! `X-Content-Type-Options` und `X-Frame-Options` gehören dieser Schicht und werden immer auf
 //! `nosniff` und `DENY` gesetzt. Eine Anwendung kann sie nicht abschwächen.
-//! `Referrer-Policy` gehört ebenfalls dieser Schicht, sofern die Antwort noch keinen Wert hat.
-//! Ein vom Handler gesetzter Wert bleibt erhalten. Recovery-Seiten setzen selbst `no-referrer`.
-//! Die Standardvorgabe ist ebenfalls `no-referrer` und kann über [`Standard::referrer_policy`]
-//! auf einen der aufgezählten Werte geändert werden.
+//! `Referrer-Policy` gehört derselben Schicht. Alle Headerfelder und alle kommaseparierten
+//! Tokens werden gelesen. Nur ein einzelner erlaubter Policy-Wert bleibt erhalten und wird als
+//! genau ein kanonischer Header geschrieben. Mehrere identische erlaubte Werte werden auf diesen
+//! einen Header reduziert. Unterschiedliche, leere oder unsichere Tokens, darunter `unsafe-url`,
+//! `origin` und `no-referrer-when-downgrade`, werden durch die konfigurierte Policy ersetzt.
+//! Recovery-Seiten setzen selbst `no-referrer` und behalten diesen Wert auch dann, wenn die
+//! Konfiguration `same-origin` ist. Die Standardvorgabe ist `no-referrer` und kann über
+//! [`Standard::referrer_policy`] geändert werden. Diese Schicht liest weder `Host` noch
+//! `X-Forwarded-*` und entscheidet keine Origin- oder CSRF-Prüfung.
 //!
 //! Diese Crate ersetzt weder Authentifizierung noch Autorisierung. Den Cookie-CSRF-Schutz setzt
 //! `App::into_router`, nicht diese Schicht.
 
 use axum::extract::Request;
-use axum::http::{header, HeaderValue};
+use axum::http::{header, HeaderMap, HeaderValue};
 use axum::middleware::Next;
 use axum::response::Response;
 use axum::Router;
@@ -42,6 +47,18 @@ impl ReferrerPolicy {
             Self::OriginWhenCrossOrigin => "origin-when-cross-origin",
             Self::StrictOrigin => "strict-origin",
             Self::StrictOriginWhenCrossOrigin => "strict-origin-when-cross-origin",
+        }
+    }
+
+    /// Akzeptiert nur die Policies, die diese Schicht selbst setzen darf.
+    pub fn parse(value: &str) -> Option<Self> {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "no-referrer" => Some(Self::NoReferrer),
+            "same-origin" => Some(Self::SameOrigin),
+            "origin-when-cross-origin" => Some(Self::OriginWhenCrossOrigin),
+            "strict-origin" => Some(Self::StrictOrigin),
+            "strict-origin-when-cross-origin" => Some(Self::StrictOriginWhenCrossOrigin),
+            _ => None,
         }
     }
 }
@@ -125,13 +142,43 @@ async fn security_headers(mut request: Request, next: Next, policy: ReferrerPoli
         HeaderValue::from_static("nosniff"),
     );
     headers.insert(header::X_FRAME_OPTIONS, HeaderValue::from_static("DENY"));
-    if !headers.contains_key(header::REFERRER_POLICY) {
-        headers.insert(
-            header::REFERRER_POLICY,
-            HeaderValue::from_static(policy.as_header()),
-        );
-    }
+    let policy = shared_referrer_policy(headers, policy);
+    headers.remove(header::REFERRER_POLICY);
+    headers.insert(
+        header::REFERRER_POLICY,
+        HeaderValue::from_static(policy.as_header()),
+    );
     response
+}
+
+/// Ein erlaubter Policy-Wert, sonst die konfigurierte Policy.
+///
+/// Mehrere Headerfelder und Kommas werden einzeln gelesen. Die Antwort behält den Wert nur,
+/// wenn jedes Token dieselbe erlaubte Policy ist.
+fn shared_referrer_policy(headers: &HeaderMap, configured: ReferrerPolicy) -> ReferrerPolicy {
+    let mut accepted = None;
+    for value in headers.get_all(header::REFERRER_POLICY) {
+        let Ok(text) = value.to_str() else {
+            return configured;
+        };
+        for token in text.split(',') {
+            let token = token.trim();
+            if token.is_empty() {
+                return configured;
+            }
+            let Some(policy) = ReferrerPolicy::parse(token) else {
+                return configured;
+            };
+            if let Some(previous) = accepted {
+                if previous != policy {
+                    return configured;
+                }
+            } else {
+                accepted = Some(policy);
+            }
+        }
+    }
+    accepted.unwrap_or(configured)
 }
 
 /// Nur der Pfad. Query-Werte wie Passwörter oder Tokens werden nicht protokolliert.
@@ -197,8 +244,9 @@ fn note(request: &mut Request, name: &str) {
 
 #[cfg(test)]
 mod tests {
-    use super::{apply, incoming_request_id, logged_path, Standard};
+    use super::{apply, incoming_request_id, logged_path, ReferrerPolicy, Standard};
     use axum::extract::Request;
+    use axum::response::IntoResponse;
     use axum::routing::get;
     use axum::Router;
     use std::io::{Read, Write};
@@ -284,6 +332,156 @@ mod tests {
                 .contains("referrer-policy: same-origin"),
             "{body}"
         );
+    }
+
+    #[test]
+    fn unsafe_referrer_policy_is_replaced_without_weakening_other_headers() {
+        for unsafe_policy in [
+            "unsafe-url",
+            "origin",
+            "no-referrer-when-downgrade",
+            "",
+            "same-origin, no-referrer",
+        ] {
+            let app = apply(
+                Router::new().route(
+                    "/health",
+                    get(move || async move {
+                        ([(axum::http::header::REFERRER_POLICY, unsafe_policy)], "ok")
+                    }),
+                ),
+                Standard::default(),
+            );
+            let body = exchange(
+                app,
+                "GET /health HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
+            );
+            let lower = body.to_ascii_lowercase();
+            assert!(
+                lower.contains("referrer-policy: no-referrer"),
+                "{unsafe_policy} -> {body}"
+            );
+            assert!(!lower.contains("unsafe-url"), "{body}");
+            assert!(!lower.contains("no-referrer-when-downgrade"), "{body}");
+            assert!(lower.contains("x-frame-options: deny"), "{body}");
+            assert!(lower.contains("x-content-type-options: nosniff"), "{body}");
+        }
+    }
+
+    #[test]
+    fn referrer_policy_collapses_to_one_header_after_the_full_chain() {
+        let cases = [
+            (
+                ReferrerPolicy::NoReferrer,
+                &["same-origin", "unsafe-url"][..],
+                "no-referrer",
+            ),
+            (
+                ReferrerPolicy::NoReferrer,
+                &["unsafe-url", "same-origin"][..],
+                "no-referrer",
+            ),
+            (
+                ReferrerPolicy::NoReferrer,
+                &["same-origin, unsafe-url"][..],
+                "no-referrer",
+            ),
+            (
+                ReferrerPolicy::NoReferrer,
+                &["same-origin", "no-referrer"][..],
+                "no-referrer",
+            ),
+            (
+                ReferrerPolicy::SameOrigin,
+                &["no-referrer", "strict-origin"][..],
+                "same-origin",
+            ),
+            (
+                ReferrerPolicy::NoReferrer,
+                &["same-origin", "same-origin"][..],
+                "same-origin",
+            ),
+            (
+                ReferrerPolicy::NoReferrer,
+                &["same-origin, same-origin"][..],
+                "same-origin",
+            ),
+            (
+                ReferrerPolicy::NoReferrer,
+                &["SAME-ORIGIN", "same-origin"][..],
+                "same-origin",
+            ),
+            (
+                ReferrerPolicy::NoReferrer,
+                &["same-origin"][..],
+                "same-origin",
+            ),
+            (ReferrerPolicy::NoReferrer, &[][..], "no-referrer"),
+            (ReferrerPolicy::SameOrigin, &[][..], "same-origin"),
+        ];
+        for (configured, values, expected) in cases {
+            let body = exchange(
+                routed(values, configured),
+                "GET /health HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
+            );
+            let head = body.split("\r\n\r\n").next().unwrap_or(&body);
+            let found: Vec<_> = head
+                .lines()
+                .filter_map(|line| {
+                    let (name, value) = line.split_once(':')?;
+                    name.eq_ignore_ascii_case("referrer-policy")
+                        .then(|| value.trim().to_owned())
+                })
+                .collect();
+            assert_eq!(found, vec![expected.to_owned()], "{values:?} -> {body}");
+            let lower = body.to_ascii_lowercase();
+            assert!(!lower.contains("unsafe-url"), "{body}");
+            assert!(lower.contains("x-frame-options: deny"), "{body}");
+            assert!(lower.contains("x-content-type-options: nosniff"), "{body}");
+        }
+    }
+
+    fn routed(values: &'static [&'static str], policy: ReferrerPolicy) -> Router {
+        apply(
+            Router::new().route(
+                "/health",
+                get(move || async move {
+                    let mut response = "ok".into_response();
+                    for value in values {
+                        response.headers_mut().append(
+                            axum::http::header::REFERRER_POLICY,
+                            axum::http::HeaderValue::from_static(value),
+                        );
+                    }
+                    response
+                }),
+            ),
+            Standard {
+                referrer_policy: policy,
+                ..Standard::default()
+            },
+        )
+    }
+
+    #[test]
+    fn recovery_no_referrer_survives_a_same_origin_default() {
+        let app = apply(
+            Router::new().route(
+                "/auth/password-reset",
+                get(|| async { ([(axum::http::header::REFERRER_POLICY, "no-referrer")], "ok") }),
+            ),
+            Standard {
+                referrer_policy: super::ReferrerPolicy::SameOrigin,
+                ..Standard::default()
+            },
+        );
+        let body = exchange(
+            app,
+            "GET /auth/password-reset HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
+        );
+        let lower = body.to_ascii_lowercase();
+        assert!(lower.contains("referrer-policy: no-referrer"), "{body}");
+        assert!(!lower.contains("referrer-policy: same-origin"), "{body}");
     }
 
     #[test]

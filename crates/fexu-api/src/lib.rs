@@ -41,6 +41,9 @@ pub mod urls;
 pub mod views;
 pub mod web;
 
+#[cfg(test)]
+mod browser_security;
+
 pub struct App {
     db: DatabaseConnection,
     auth: Option<AuthService>,

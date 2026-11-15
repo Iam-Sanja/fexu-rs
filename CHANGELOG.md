@@ -10,6 +10,13 @@
 - `inspect_framework` and the auth and jobs status commands report a missing table or a missing column from the latest applied framework snapshot as an error. The latest snapshot is the highest migration number, not the last array entry. They do not recreate the table or column and do not describe that database as fully migrated. Empty and absent application directories stay optional. Checksums of the checked-in migration files are unchanged.
 - Cold-start Bash and PowerShell accept a PostgreSQL URL only when it has no query string, the decoded database name starts with `fexu_test_`, and the host is the literal form `127.0.0.1`, `localhost`, or `[::1]`. The host is not percent-decoded. Every query parameter is refused. The URL user must already be a disposable test role; the scripts do not verify that role's privileges. Both scripts require `login=ok` and a reported job. Linux CI runs the Bash script and Windows CI runs the PowerShell script.
 
+## Unreleased — browser security and native admin login
+
+- The security-header layer keeps one canonical `Referrer-Policy` only when every header field and comma-separated token is that same safe value. Any other combination is replaced by the configured policy. `nosniff` and `DENY` stay mandatory. `Host` and `X-Forwarded-*` are not origins.
+- Password-reset error responses for a rejected form and a missing auth service set `Referrer-Policy: no-referrer` themselves.
+- The native admin login document sends `Referrer-Policy: same-origin`. Password-reset pages keep `no-referrer`.
+- `require_browser_writes` accepts `POST /admin/login` from a fresh cookie jar when `fexu_login_csrf` matches. Other writes still need a session cookie. Foreign origins and unverified `Origin: null` stay rejected.
+
 ## Unreleased — fexu-cli 0.1.1
 
 - `fexu new <name>` and `fexu new project <name>` write `fexu = "=0.1.0"` unless `--fexu-path` is set. The fullstack template keeps `features = ["admin-ui"]` on that registry dependency. The api template adds no features.
