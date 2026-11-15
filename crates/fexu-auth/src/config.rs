@@ -28,7 +28,9 @@ pub struct AuthConfig {
     pub trusted_proxies: Vec<String>,
     pub login_max_attempts: u32,
     pub login_window_secs: i64,
-    /// Stabiler HMAC-Schlüssel für sitzungsgebundene CSRF-Tokens. Ein Neustart darf ihn nicht neu würfeln.
+    /// HMAC-Schlüssel für sitzungsgebundene CSRF-Tokens.
+    /// `try_from_env` behält ihn über `FEXU_CSRF_SECRET` oder `.fexu/csrf.key`.
+    /// `development` zieht bei jedem Aufruf einen neuen Schlüssel.
     pub csrf_secret: [u8; 32],
     /// AES-256-GCM-Schlüssel für TOTP. 32 Byte, unabhängig vom CSRF-Geheimnis.
     pub mfa_key: [u8; 32],
@@ -57,6 +59,8 @@ impl std::fmt::Debug for AuthConfig {
 }
 
 impl AuthConfig {
+    /// Lokale Voreinstellung. Jeder Aufruf erhält ein eigenes CSRF-Geheimnis.
+    /// Ein laufender Prozess liest den dauerhaften Schlüssel über [`Self::try_from_env`].
     pub fn development() -> Self {
         Self {
             environment: Environment::Development,
@@ -74,7 +78,7 @@ impl AuthConfig {
             trusted_proxies: Vec::new(),
             login_max_attempts: 5,
             login_window_secs: 15 * 60,
-            csrf_secret: *b"fexu-dev-csrf-key-32-bytes!!!!!!",
+            csrf_secret: fresh_csrf_secret(),
             mfa_key: development_mfa_key(),
         }
     }
@@ -252,6 +256,12 @@ fn load_csrf_secret() -> Result<[u8; 32], String> {
     Ok(secret)
 }
 
+fn fresh_csrf_secret() -> [u8; 32] {
+    let mut secret = [0u8; 32];
+    getrandom::getrandom(&mut secret).expect("csrf secret");
+    secret
+}
+
 fn development_mfa_key() -> [u8; 32] {
     static KEY: std::sync::OnceLock<[u8; 32]> = std::sync::OnceLock::new();
     *KEY.get_or_init(|| {
@@ -372,6 +382,31 @@ mod tests {
                 None => std::env::remove_var(name),
             }
         }
+    }
+
+    #[test]
+    fn development_draws_a_distinct_csrf_secret_each_call() {
+        let first = AuthConfig::development();
+        let second = AuthConfig::development();
+        assert!(
+            first.csrf_secret != second.csrf_secret,
+            "development CSRF secrets must differ"
+        );
+        assert!(first.csrf_secret.iter().any(|byte| *byte != 0));
+        let rendered = format!("{first:?}");
+        assert!(rendered.contains("[redacted]"));
+        assert!(
+            !rendered.contains(&hex_key(&first.csrf_secret)),
+            "debug output contains the csrf secret"
+        );
+        assert!(
+            !rendered.contains(&hex_key(&first.mfa_key)),
+            "debug output contains the mfa key"
+        );
+    }
+
+    fn hex_key(bytes: &[u8]) -> String {
+        bytes.iter().map(|byte| format!("{byte:02x}")).collect()
     }
 
     #[test]

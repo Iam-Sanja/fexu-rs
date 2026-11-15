@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased — development CSRF keys
+
+- `AuthConfig::development` draws a new 32-byte CSRF key on every call. `try_from_env` still loads `FEXU_CSRF_SECRET` or `.fexu/csrf.key`. Token and HMAC formats are unchanged. Debug output keeps both secrets redacted.
+
 ## Unreleased — parallel PostgreSQL fixtures
 
 - Disposable PostgreSQL fixtures clone `template0` and keep administrative sessions off `template0` and `template1`. Concurrent `STRATEGY FILE_COPY` is not used; those copies stalled on Windows PostgreSQL 18. `drop_database` still drops only `fexu_test_` plus 32 hexadecimal characters, and only when the current role owns that database (#117).

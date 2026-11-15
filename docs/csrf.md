@@ -51,7 +51,7 @@ Logout, password change and expiration revoke or discard the session. After that
 - `Referrer-Policy: no-referrer` allows browsers to send `Origin: null` to an HTML form POST, even if the page is same-origin. This only applies if `Sec-Fetch-Site: same-origin` is additionally available. One side cannot set this header itself. `null` with `cross-site`, `same-site` or without this header remains rejected. `null` is not on the Allowlist.
 - The session cookie remains `HttpOnly`.
 - The comparison uses `constant_eq`.
-- Development uses the fixed key `fexu-dev-csrf-key-32-bytes!`.
+- `AuthConfig::development` draws a new 32-byte CSRF key on every call. `try_from_env` still uses `FEXU_CSRF_SECRET` or `.fexu/csrf.key`.
 - `FEXU_CSRF_SECRET` is 64 hex characters. Otherwise, Fexu reads `.fexu/csrf.key` and creates the file once if it is missing. Production should set the environment variable so that a restart does not invalidate all sessions.
 - Anonymous browser forms that call `authenticate_browser_form` use the same HMAC. The cookie is `fexu_anonymous`: HttpOnly, `Path=/`, no `Domain`, SameSite from the auth configuration, and `Secure` when `cookie_secure` is set. The raw token is not returned as JSON and is not written to the auth error text.
 - `GET /auth/anonymous` reuses or creates that session and returns only `csrf_token`. It does not authenticate a user.

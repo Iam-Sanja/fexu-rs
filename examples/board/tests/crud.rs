@@ -5,18 +5,23 @@ use fexu::App;
 
 use board::{prepare_database, BoardApp};
 
-const PASSWORD: &str = "correct-horse-battery";
+fn fixture_password() -> String {
+    let mut bytes = [0u8; 16];
+    getrandom::getrandom(&mut bytes).expect("test password");
+    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
+}
 
 async fn exercise(db: fexu::db::driver::DatabaseConnection) {
     prepare_database(&db).await.expect("schema");
+    let password = fixture_password();
     let auth = AuthService::new(db.clone(), AuthConfig::development());
-    auth.create_user("owner@example.com", PASSWORD, false, false)
+    auth.create_user("owner@example.com", &password, false, false)
         .await
         .expect("owner");
-    auth.create_user("other@example.com", PASSWORD, false, false)
+    auth.create_user("other@example.com", &password, false, false)
         .await
         .expect("other");
-    auth.create_user("guest@example.com", PASSWORD, false, false)
+    auth.create_user("guest@example.com", &password, false, false)
         .await
         .expect("guest");
     for action in ["read", "create", "update", "delete"] {
@@ -42,9 +47,9 @@ async fn exercise(db: fexu::db::driver::DatabaseConnection) {
     let mut other = TestClient::new(router.clone());
     let mut guest = TestClient::new(router.clone());
     let mut anonymous = TestClient::new(router);
-    sign_in(&mut owner, &auth, "owner@example.com").await;
-    sign_in(&mut other, &auth, "other@example.com").await;
-    sign_in(&mut guest, &auth, "guest@example.com").await;
+    sign_in(&mut owner, &auth, "owner@example.com", &password).await;
+    sign_in(&mut other, &auth, "other@example.com", &password).await;
+    sign_in(&mut guest, &auth, "guest@example.com", &password).await;
 
     let closed = anonymous
         .get("/board/items")
@@ -321,9 +326,9 @@ async fn exercise(db: fexu::db::driver::DatabaseConnection) {
     let _ = csrf_token_from_html(&html).expect("token helper");
 }
 
-async fn sign_in(client: &mut TestClient, auth: &AuthService, email: &str) {
+async fn sign_in(client: &mut TestClient, auth: &AuthService, email: &str, password: &str) {
     let session = auth
-        .login(email, PASSWORD, "board-test")
+        .login(email, password, "board-test")
         .await
         .expect("login");
     client.set_cookie("fexu_session", &session.token);
