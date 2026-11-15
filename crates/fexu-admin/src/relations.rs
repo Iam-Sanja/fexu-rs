@@ -211,6 +211,17 @@ pub async fn replace_links(
     parent: Uuid,
     children: &[Uuid],
 ) -> Result<(), FexuError> {
+    let tx = db.begin().await.map_err(FexuError::database)?;
+    let result = replace_links_in(&tx, link, parent, children).await;
+    fexu_db::conclude(tx, result, FexuError::database).await
+}
+
+pub(crate) async fn replace_links_in(
+    db: &impl ConnectionTrait,
+    link: ManyToMany,
+    parent: Uuid,
+    children: &[Uuid],
+) -> Result<(), FexuError> {
     if !safe_ident(link.join_table)
         || !safe_ident(link.parent_column)
         || !safe_ident(link.child_column)
@@ -229,12 +240,11 @@ pub async fn replace_links(
         }
         unique.push(*child);
     }
-    let tx = db.begin().await.map_err(FexuError::database)?;
     let mut delete = Query::delete();
     delete.from_table(Alias::new(link.join_table)).and_where(
         Expr::col(Alias::new(link.parent_column)).eq(Value::Uuid(Some(Box::new(parent)))),
     );
-    tx.execute(statement(&tx, &delete)?)
+    db.execute(statement(db, &delete)?)
         .await
         .map_err(FexuError::database)?;
     for child in unique {
@@ -249,11 +259,10 @@ pub async fn replace_links(
                 Value::Uuid(Some(Box::new(parent))).into(),
                 Value::Uuid(Some(Box::new(child))).into(),
             ]);
-        tx.execute(statement(&tx, &insert)?)
+        db.execute(statement(db, &insert)?)
             .await
             .map_err(FexuError::database)?;
     }
-    tx.commit().await.map_err(FexuError::database)?;
     Ok(())
 }
 

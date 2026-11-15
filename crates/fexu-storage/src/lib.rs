@@ -12,7 +12,8 @@ mod signed;
 
 pub use access::{OwnerAccess, StorageAccess, StorageAction};
 pub use http::{
-    multipart_text_field, read_multipart, routes, FormPart, MultipartError, MULTIPART_BODY_LIMIT,
+    multipart_text_field, read_multipart, read_multipart_repeated, routes, FormPart,
+    MultipartError, MULTIPART_BODY_LIMIT,
 };
 pub use local::{
     detect_type, inspect_image, sanitize_name, BeforeSave, CleanupReport, ImageHeaderCheck,

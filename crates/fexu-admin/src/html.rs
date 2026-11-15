@@ -9,9 +9,7 @@ use crate::http::{
 };
 use crate::localization::{bulk_notice, catalog, normalize, notice, validation_text};
 use crate::registry::{redact, sensitive, AdminRegistry, ManagedModel};
-use crate::relations::{
-    current_members, lookup_page, posted_members, replace_links, scoped_membership,
-};
+use crate::relations::{current_members, lookup_page, posted_members, scoped_membership};
 use crate::rendering::render;
 use axum::body::Bytes;
 use axum::extract::{Extension, Path, Query, RawQuery, State};
@@ -5169,13 +5167,20 @@ async fn row_save(
             object.insert(field.name.to_owned(), value.clone());
         }
     }
-    let form = parse_form(&body);
-    for field in allowed {
-        let Some(column) = model.columns().iter().find(|column| column.name == *field) else {
-            continue;
-        };
-        let posted = form.get(*field).map(String::as_str).unwrap_or("");
-        object.insert((*field).to_owned(), typed_value(column, posted));
+    let form = match row_form(&body) {
+        Ok(form) => form,
+        Err(()) => {
+            return row_json(
+                StatusCode::UNPROCESSABLE_ENTITY,
+                json!({ "ok": false, "error": catalog(&locale).get("forbidden").and_then(Value::as_str).unwrap_or("Rejected") }),
+            )
+        }
+    };
+    if apply_row_fields(&mut object, model.columns(), allowed, &form).is_err() {
+        return row_json(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            json!({ "ok": false, "error": catalog(&locale).get("forbidden").and_then(Value::as_str).unwrap_or("Rejected") }),
+        );
     }
     match model
         .update(
@@ -6319,13 +6324,20 @@ fn validation_field(fields: &[fexu_core::AdminFieldMeta], message: &str) -> Stri
     matched
 }
 
-fn posted_link_values(body: &Bytes) -> Map<String, Value> {
+fn posted_link_values(repeated: &HashMap<String, Vec<String>>) -> Map<String, Value> {
     let mut posted = Map::new();
-    for name in repeated(body, "m2m_present") {
-        if posted.contains_key(&name) {
+    let Some(names) = repeated.get("m2m_present") else {
+        return posted;
+    };
+    for name in names {
+        if posted.contains_key(name) {
             continue;
         }
-        posted.insert(name.clone(), json!(repeated(body, &format!("m2m.{name}"))));
+        let values = repeated
+            .get(&format!("m2m.{name}"))
+            .cloned()
+            .unwrap_or_default();
+        posted.insert(name.clone(), json!(values));
     }
     posted
 }
@@ -6343,20 +6355,25 @@ async fn plan_memberships(
     user: &AuthUser,
     model: &dyn ManagedModel,
     parent: Option<Uuid>,
-    body: &Bytes,
+    repeated: &HashMap<String, Vec<String>>,
 ) -> Result<Vec<PlannedLink>, (String, &'static str)> {
     let links = registry.links_of(model.meta());
     if links.is_empty() {
         return Ok(Vec::new());
     }
-    let present = repeated(body, "m2m_present");
+    let present = repeated.get("m2m_present").cloned().unwrap_or_default();
     let mut planned = Vec::new();
     for link in links {
         if !present.iter().any(|name| name == link.name) {
             continue;
         }
-        let requested = posted_members(&repeated(body, &format!("m2m.{}", link.name)))
-            .map_err(|code| (link.name.to_owned(), code))?;
+        let requested = posted_members(
+            repeated
+                .get(&format!("m2m.{}", link.name))
+                .map(Vec::as_slice)
+                .unwrap_or(&[]),
+        )
+        .map_err(|code| (link.name.to_owned(), code))?;
         let current = match parent {
             Some(parent) => current_members(&state.db, link.relation(), parent)
                 .await
@@ -6416,22 +6433,6 @@ async fn visible_member_ids(
         }
     }
     visible
-}
-
-async fn commit_memberships(
-    state: &AppState,
-    planned: &[PlannedLink],
-    parent: Uuid,
-) -> Result<(), (String, &'static str)> {
-    for item in planned {
-        if !item.changed {
-            continue;
-        }
-        replace_links(&state.db, item.link, parent, &item.next)
-            .await
-            .map_err(|_| (item.name.clone(), "admin.relation"))?;
-    }
-    Ok(())
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -6836,6 +6837,7 @@ struct ModelUpload {
 
 struct PostedModel {
     fields: HashMap<String, String>,
+    repeated: HashMap<String, Vec<String>>,
     uploads: Vec<(String, ModelUpload)>,
 }
 
@@ -6848,16 +6850,31 @@ fn read_model_body(headers: &HeaderMap, body: &Bytes) -> Result<PostedModel, ()>
         .to_ascii_lowercase()
         .starts_with("multipart/form-data")
     {
+        let mut fields = HashMap::new();
+        let mut repeated = HashMap::new();
+        for pair in String::from_utf8_lossy(body).split('&') {
+            if pair.is_empty() {
+                continue;
+            }
+            let (key, value) = pair.split_once('=').unwrap_or((pair, ""));
+            store_text(&mut fields, &mut repeated, decode(key), decode(value))?;
+        }
         return Ok(PostedModel {
-            fields: parse_form(body),
+            fields,
+            repeated,
             uploads: Vec::new(),
         });
     }
-    let parts = fexu_storage::read_multipart(content_type, body).map_err(|_| ())?;
+    let parts = fexu_storage::read_multipart_repeated(content_type, body).map_err(|_| ())?;
     let mut fields = HashMap::new();
+    let mut repeated = HashMap::new();
     let mut uploads = Vec::new();
+    let mut file_names = std::collections::HashSet::new();
     for part in parts {
         if let Some(field) = part.name.strip_prefix("file.") {
+            if field.is_empty() || !file_names.insert(field.to_owned()) {
+                return Err(());
+            }
             if let Some(filename) = part.filename.filter(|name| !name.is_empty()) {
                 if !part.bytes.is_empty() {
                     uploads.push((
@@ -6871,13 +6888,42 @@ fn read_model_body(headers: &HeaderMap, body: &Bytes) -> Result<PostedModel, ()>
             }
             continue;
         }
-        if part.filename.is_none() {
-            if let Ok(text) = String::from_utf8(part.bytes) {
-                fields.insert(part.name, text);
-            }
+        if part.filename.is_some() {
+            return Err(());
         }
+        let text = String::from_utf8(part.bytes).map_err(|_| ())?;
+        store_text(&mut fields, &mut repeated, part.name, text)?;
     }
-    Ok(PostedModel { fields, uploads })
+    Ok(PostedModel {
+        fields,
+        repeated,
+        uploads,
+    })
+}
+
+fn store_text(
+    fields: &mut HashMap<String, String>,
+    repeated: &mut HashMap<String, Vec<String>>,
+    name: String,
+    text: String,
+) -> Result<(), ()> {
+    if name == "m2m_present" || name.starts_with("m2m.") {
+        if !text.is_empty() {
+            repeated.entry(name).or_default().push(text);
+        }
+        return Ok(());
+    }
+    match fields.get(&name).map(String::as_str) {
+        None => {
+            fields.insert(name, text);
+            Ok(())
+        }
+        Some("false") if text == "true" => {
+            fields.insert(name, text);
+            Ok(())
+        }
+        _ => Err(()),
+    }
 }
 
 fn apply_image_uploads(
@@ -6906,21 +6952,66 @@ fn apply_image_uploads(
     Ok(())
 }
 
-async fn keep_uploads(
+async fn commit_model(
     db: &fexu_db::driver::DatabaseConnection,
-    model_key: &str,
-    record: Uuid,
-    uploads: &[(String, ModelUpload)],
-) -> Result<(), ()> {
-    for (field, upload) in uploads {
-        let Some(kind) = crate::files::image_type(&upload.bytes) else {
-            return Err(());
+    user: &AuthUser,
+    model: &dyn ManagedModel,
+    id: Option<Uuid>,
+    object: Map<String, Value>,
+    tail: &crate::compose::SaveTail<'_>,
+) -> Result<Uuid, FexuError> {
+    let tx = db.begin().await.map_err(FexuError::database)?;
+    let saved = async {
+        let scope = access_scope(model, user, true);
+        let saved = if let Some(id) = id {
+            let before = model.read_in(&tx, id, &scope).await?;
+            let after = model
+                .update_in(&tx, id, Value::Object(object), &scope, user)
+                .await?;
+            audit_saved(&tx, user, model, "update", before.as_ref(), &after).await?;
+            id
+        } else {
+            let after = model.create_in(&tx, Value::Object(object), user).await?;
+            let saved = after
+                .get("id")
+                .and_then(Value::as_str)
+                .and_then(|value| Uuid::parse_str(value).ok())
+                .ok_or(FexuError::NotFound)?;
+            audit_saved(&tx, user, model, "create", None, &after).await?;
+            saved
         };
-        crate::files::save(db, model_key, record, field, kind, &upload.bytes)
-            .await
-            .map_err(|_| ())?;
+        crate::compose::write_tail(&tx, model.meta().key, saved, tail).await?;
+        Ok(saved)
     }
-    Ok(())
+    .await;
+    fexu_db::conclude(tx, saved, FexuError::database).await
+}
+
+async fn audit_saved(
+    tx: &fexu_db::driver::DatabaseTransaction,
+    user: &AuthUser,
+    model: &dyn ManagedModel,
+    action: &str,
+    before: Option<&Value>,
+    after: &Value,
+) -> Result<(), FexuError> {
+    audit::insert(
+        tx,
+        &Event {
+            actor_id: user.id,
+            model_key: model.meta().key.to_owned(),
+            record_id: after
+                .get("id")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_owned(),
+            action: action.to_owned(),
+            outcome: "ok".to_owned(),
+            summary: audit::change_summary(model.meta(), before, Some(after)),
+            operation_id: None,
+        },
+    )
+    .await
 }
 
 async fn record_file(
@@ -7056,6 +7147,7 @@ async fn save_form(
     }
     let PostedModel {
         fields: form,
+        repeated,
         uploads,
     } = match read_model_body(headers, body) {
         Ok(parsed) => parsed,
@@ -7093,7 +7185,7 @@ async fn save_form(
         )
         .await;
     }
-    let posted_links = posted_link_values(body);
+    let posted_links = posted_link_values(&repeated);
     if !posted_links.is_empty() {
         raw.insert("_m2m".into(), Value::Object(posted_links));
     }
@@ -7193,28 +7285,73 @@ async fn save_form(
         )
         .await;
     }
-    let planned = match plan_memberships(state, registry, &user, model.as_ref(), id, body).await {
-        Ok(planned) => planned,
-        Err((name, code)) => {
-            let text = validation_text(&locale, code);
-            raw.insert("_m2m_error".into(), json!({ name: text }));
-            return form_page(
-                state,
-                headers,
-                registry,
-                model_key,
-                id,
-                raw,
-                FormFeedback {
-                    notice: "",
-                    alert: &text,
-                },
-            )
-            .await;
-        }
+    let planned =
+        match plan_memberships(state, registry, &user, model.as_ref(), id, &repeated).await {
+            Ok(planned) => planned,
+            Err((name, code)) => {
+                let text = validation_text(&locale, code);
+                raw.insert("_m2m_error".into(), json!({ name: text }));
+                return form_page(
+                    state,
+                    headers,
+                    registry,
+                    model_key,
+                    id,
+                    raw,
+                    FormFeedback {
+                        notice: "",
+                        alert: &text,
+                    },
+                )
+                .await;
+            }
+        };
+    let links: Vec<crate::compose::StoredLink<'_>> = planned
+        .iter()
+        .filter(|item| item.changed)
+        .map(|item| crate::compose::StoredLink {
+            name: &item.name,
+            link: item.link,
+            children: &item.next,
+        })
+        .collect();
+    let mut files = Vec::new();
+    for (field, upload) in &uploads {
+        let Some(kind) = crate::files::image_type(&upload.bytes) else {
+            continue;
+        };
+        files.push(crate::compose::StoredFile {
+            field,
+            kind,
+            bytes: upload.bytes.as_slice(),
+        });
+    }
+    if files.len() != uploads.len()
+        || (!files.is_empty() && crate::files::ensure(&state.db).await.is_err())
+    {
+        return error_page(
+            state,
+            headers,
+            registry,
+            &locale,
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "forbidden",
+            true,
+            &user.email,
+        )
+        .await;
+    }
+    let draft = form
+        .get("_draft")
+        .and_then(|value| Uuid::parse_str(value).ok())
+        .map(|token| (token, user.session_id, user.id));
+    let tail = crate::compose::SaveTail {
+        links: &links,
+        files: &files,
+        draft,
     };
     if formed {
-        return match crate::compose::save(
+        return match crate::compose::save_with(
             &state.db,
             state.auth.as_ref().unwrap(),
             &user,
@@ -7223,49 +7360,11 @@ async fn save_form(
             id,
             object,
             &form,
+            tail,
         )
         .await
         {
             crate::compose::SaveResult::Saved(saved) => {
-                if let Err((name, code)) = commit_memberships(state, &planned, saved).await {
-                    let text = validation_text(&locale, code);
-                    raw.insert("_m2m_error".into(), json!({ name: text }));
-                    return form_page(
-                        state,
-                        headers,
-                        registry,
-                        model_key,
-                        Some(saved),
-                        raw,
-                        FormFeedback {
-                            notice: "",
-                            alert: &text,
-                        },
-                    )
-                    .await;
-                }
-                if let Some(token) = form
-                    .get("_draft")
-                    .and_then(|value| Uuid::parse_str(value).ok())
-                {
-                    let _ = drafts::delete(&state.db, token, user.session_id, user.id).await;
-                }
-                if keep_uploads(&state.db, model.meta().key, saved, &uploads)
-                    .await
-                    .is_err()
-                {
-                    return error_page(
-                        state,
-                        headers,
-                        registry,
-                        &locale,
-                        StatusCode::UNPROCESSABLE_ENTITY,
-                        "forbidden",
-                        true,
-                        &user.email,
-                    )
-                    .await;
-                }
                 let notice = if id.is_some() { "saved" } else { "created" };
                 let target = match save {
                     "list" => format!("/admin/models/{model_key}?notice={notice}"),
@@ -7363,87 +7462,19 @@ async fn save_form(
             )
             .await;
         }
-        model
-            .update(
-                &state.db,
-                id,
-                Value::Object(object),
-                &access_scope(model.as_ref(), &user, true),
-                &user,
-            )
-            .await
+        commit_model(&state.db, &user, model.as_ref(), Some(id), object, &tail).await
     } else {
-        model.create(&state.db, Value::Object(object), &user).await
+        commit_model(&state.db, &user, model.as_ref(), None, object, &tail).await
     };
     match result {
-        Ok(created) => {
-            let Some(saved) = created
-                .get("id")
-                .and_then(Value::as_str)
-                .and_then(|value| Uuid::parse_str(value).ok())
-            else {
-                return error_page(
-                    state,
-                    headers,
-                    registry,
-                    &locale,
-                    StatusCode::UNPROCESSABLE_ENTITY,
-                    "forbidden",
-                    true,
-                    &user.email,
-                )
-                .await;
-            };
-            if let Err((name, code)) = commit_memberships(state, &planned, saved).await {
-                let text = validation_text(&locale, code);
-                raw.insert("_m2m_error".into(), json!({ name: text }));
-                return form_page(
-                    state,
-                    headers,
-                    registry,
-                    model_key,
-                    Some(saved),
-                    raw,
-                    FormFeedback {
-                        notice: "",
-                        alert: &text,
-                    },
-                )
-                .await;
-            }
-            if let Some(token) = form
-                .get("_draft")
-                .and_then(|value| Uuid::parse_str(value).ok())
-            {
-                let _ = drafts::delete(&state.db, token, user.session_id, user.id).await;
-            }
-            if keep_uploads(&state.db, model.meta().key, saved, &uploads)
-                .await
-                .is_err()
-            {
-                return error_page(
-                    state,
-                    headers,
-                    registry,
-                    &locale,
-                    StatusCode::UNPROCESSABLE_ENTITY,
-                    "forbidden",
-                    true,
-                    &user.email,
-                )
-                .await;
-            }
+        Ok(saved) => {
             let notice = if id.is_some() { "saved" } else { "created" };
-            let target = created
-                .get("id")
-                .and_then(Value::as_str)
-                .map(|value| match save {
-                    "list" => format!("/admin/models/{model_key}?notice={notice}"),
-                    "edit" => format!("/admin/models/{model_key}/{value}?notice={notice}"),
-                    "new" => format!("/admin/models/{model_key}/new?notice={notice}"),
-                    _ => format!("/admin/models/{model_key}/{value}?notice={notice}"),
-                })
-                .unwrap_or_else(|| format!("/admin/models/{model_key}?notice=saved"));
+            let target = match save {
+                "list" => format!("/admin/models/{model_key}?notice={notice}"),
+                "edit" => format!("/admin/models/{model_key}/{saved}?notice={notice}"),
+                "new" => format!("/admin/models/{model_key}/new?notice={notice}"),
+                _ => format!("/admin/models/{model_key}/{saved}?notice={notice}"),
+            };
             redirect(&target)
         }
         Err(FexuError::Validation(message)) => {
@@ -12193,6 +12224,46 @@ pub(crate) fn csrf_token_from(headers: &HeaderMap, body: &Bytes) -> String {
         .unwrap_or_default()
 }
 
+fn row_form(body: &Bytes) -> Result<HashMap<String, String>, ()> {
+    let mut values = HashMap::new();
+    for pair in String::from_utf8_lossy(body).split('&') {
+        if pair.is_empty() {
+            continue;
+        }
+        let (key, value) = pair.split_once('=').unwrap_or((pair, ""));
+        if values.insert(decode(key), decode(value)).is_some() {
+            return Err(());
+        }
+    }
+    Ok(values)
+}
+
+fn apply_row_fields(
+    object: &mut Map<String, Value>,
+    columns: &[ColumnSpec],
+    allowed: &[&str],
+    form: &HashMap<String, String>,
+) -> Result<(), ()> {
+    for key in form.keys() {
+        if key == "csrf_token" {
+            continue;
+        }
+        if !allowed.contains(&key.as_str()) {
+            return Err(());
+        }
+    }
+    for field in allowed {
+        let Some(posted) = form.get(*field) else {
+            continue;
+        };
+        let Some(column) = columns.iter().find(|column| column.name == *field) else {
+            continue;
+        };
+        object.insert((*field).to_owned(), typed_value(column, posted));
+    }
+    Ok(())
+}
+
 pub(crate) fn parse_form(body: &Bytes) -> HashMap<String, String> {
     let mut values = HashMap::new();
     for pair in String::from_utf8_lossy(body).split('&') {
@@ -13081,5 +13152,687 @@ mod relation_label_tests {
         assert_eq!(hidden_cell["href"], "");
         assert_eq!(missing_cell["href"], "");
         assert_ne!(hidden_cell["text"].as_str(), Some(id));
+    }
+}
+
+#[cfg(test)]
+mod posted_body_tests {
+    use super::{apply_row_fields, read_model_body, row_form};
+    use axum::body::Bytes;
+    use axum::http::{header, HeaderMap, HeaderValue};
+    use fexu_core::{ColumnKind, ColumnSpec};
+    use serde_json::{json, Map};
+
+    fn text_column(name: &'static str) -> ColumnSpec {
+        ColumnSpec {
+            name,
+            kind: ColumnKind::Text,
+            nullable: true,
+            primary_key: false,
+            default_bool: None,
+            unique: false,
+            indexed: false,
+            foreign_table: None,
+            foreign_column: None,
+            on_delete: None,
+            precision: 0,
+            scale: 0,
+            choices: &[],
+        }
+    }
+
+    #[test]
+    fn missing_list_fields_keep_their_stored_value() {
+        let columns = [text_column("street"), text_column("city")];
+        let mut object = Map::new();
+        object.insert("street".into(), json!("Lindengasse"));
+        object.insert("city".into(), json!("Wien"));
+        let form = row_form(&Bytes::from_static(b"csrf_token=abc&street=Neu")).unwrap();
+        apply_row_fields(&mut object, &columns, &["street", "city"], &form).unwrap();
+        assert_eq!(object["street"], json!("Neu"));
+        assert_eq!(object["city"], json!("Wien"));
+
+        let mut untouched = object.clone();
+        let unknown = row_form(&Bytes::from_static(b"csrf_token=abc&street=Weg&note=x")).unwrap();
+        assert!(apply_row_fields(&mut untouched, &columns, &["street", "city"], &unknown).is_err());
+        assert_eq!(untouched["street"], json!("Neu"));
+        assert_eq!(untouched["city"], json!("Wien"));
+        assert!(row_form(&Bytes::from_static(b"city=Wien&city=Graz")).is_err());
+    }
+
+    #[test]
+    fn duplicate_multipart_names_are_rejected() {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            header::CONTENT_TYPE,
+            HeaderValue::from_static("multipart/form-data; boundary=bound"),
+        );
+        let duplicate_text = Bytes::from(
+            "--bound\r\nContent-Disposition: form-data; name=\"title\"\r\n\r\nAlt\r\n\
+--bound\r\nContent-Disposition: form-data; name=\"title\"\r\n\r\nNeu\r\n\
+--bound--\r\n",
+        );
+        assert!(read_model_body(&headers, &duplicate_text).is_err());
+        let duplicate_file = Bytes::from(
+            "--bound\r\nContent-Disposition: form-data; name=\"file.cover\"; filename=\"a.gif\"\r\n\r\nGIF89a\r\n\
+--bound\r\nContent-Disposition: form-data; name=\"file.cover\"; filename=\"b.gif\"\r\n\r\nGIF89a\r\n\
+--bound--\r\n",
+        );
+        assert!(read_model_body(&headers, &duplicate_file).is_err());
+        let checked = Bytes::from(
+            "--bound\r\nContent-Disposition: form-data; name=\"active\"\r\n\r\nfalse\r\n\
+--bound\r\nContent-Disposition: form-data; name=\"active\"\r\n\r\ntrue\r\n\
+--bound\r\nContent-Disposition: form-data; name=\"m2m.tags\"\r\n\r\n11111111-1111-4111-8111-111111111111\r\n\
+--bound\r\nContent-Disposition: form-data; name=\"m2m.tags\"\r\n\r\n22222222-2222-4222-8222-222222222222\r\n\
+--bound--\r\n",
+        );
+        let parsed = read_model_body(&headers, &checked).unwrap();
+        assert_eq!(
+            parsed.fields.get("active").map(String::as_str),
+            Some("true")
+        );
+        assert_eq!(parsed.repeated.get("m2m.tags").map(Vec::len), Some(2));
+        let urlencoded = Bytes::from_static(b"title=Alt&title=Neu");
+        let mut plain = HeaderMap::new();
+        plain.insert(
+            header::CONTENT_TYPE,
+            HeaderValue::from_static("application/x-www-form-urlencoded"),
+        );
+        assert!(read_model_body(&plain, &urlencoded).is_err());
+    }
+}
+
+#[cfg(test)]
+mod store_rollback_tests {
+    use super::commit_model;
+    use crate::compose::{save_with, SaveTail, StoredFile, StoredLink};
+    use crate::files::{self, fail_next_save};
+    use crate::registry::ManagedModel;
+    use fexu_auth::{AuthConfig, AuthService, AuthUser};
+    use fexu_core::{
+        AdminFieldMeta, AdminInline, AdminModelMeta, ColumnKind, ColumnSpec, FexuError,
+        ModelDescriptor, QueryScope, ReferentialAction,
+    };
+    use fexu_db::driver::{
+        ConnectionTrait, DatabaseConnection, DatabaseTransaction, Statement, Value as DbValue,
+    };
+    use fexu_db::{DeleteOutcome, ManyToMany};
+    use serde_json::{json, Map, Value};
+    use std::sync::Arc;
+    use uuid::Uuid;
+
+    const ID_FIELD: AdminFieldMeta = AdminFieldMeta {
+        name: "id",
+        label: "Id",
+        list_display: false,
+        list_link: false,
+        searchable: false,
+        sortable: false,
+        filterable: false,
+        readonly: true,
+        hidden: false,
+        sensitive: false,
+        fieldset: "",
+    };
+    const TITLE_FIELD: AdminFieldMeta = AdminFieldMeta {
+        name: "title",
+        label: "Title",
+        list_display: true,
+        list_link: false,
+        searchable: false,
+        sortable: false,
+        filterable: false,
+        readonly: false,
+        hidden: false,
+        sensitive: false,
+        fieldset: "",
+    };
+    const SHEET_FIELD: AdminFieldMeta = AdminFieldMeta {
+        name: "sheet_id",
+        label: "Sheet",
+        list_display: false,
+        list_link: false,
+        searchable: false,
+        sortable: false,
+        filterable: false,
+        readonly: false,
+        hidden: false,
+        sensitive: false,
+        fieldset: "",
+    };
+    const LABEL_FIELD: AdminFieldMeta = AdminFieldMeta {
+        name: "label",
+        label: "Label",
+        list_display: true,
+        list_link: false,
+        searchable: false,
+        sortable: false,
+        filterable: false,
+        readonly: false,
+        hidden: false,
+        sensitive: false,
+        fieldset: "",
+    };
+    static SHEET_FIELDS: [AdminFieldMeta; 2] = [ID_FIELD, TITLE_FIELD];
+    static LINE_FIELDS: [AdminFieldMeta; 3] = [ID_FIELD, SHEET_FIELD, LABEL_FIELD];
+
+    const fn key_column(name: &'static str) -> ColumnSpec {
+        ColumnSpec {
+            name,
+            kind: ColumnKind::Uuid,
+            nullable: false,
+            primary_key: true,
+            default_bool: None,
+            unique: false,
+            indexed: false,
+            foreign_table: None,
+            foreign_column: None,
+            on_delete: None,
+            precision: 0,
+            scale: 0,
+            choices: &[],
+        }
+    }
+    const fn text_column(name: &'static str) -> ColumnSpec {
+        ColumnSpec {
+            name,
+            kind: ColumnKind::Text,
+            nullable: false,
+            primary_key: false,
+            default_bool: None,
+            unique: false,
+            indexed: false,
+            foreign_table: None,
+            foreign_column: None,
+            on_delete: None,
+            precision: 0,
+            scale: 0,
+            choices: &[],
+        }
+    }
+    const SHEET_LINK: ColumnSpec = ColumnSpec {
+        name: "sheet_id",
+        kind: ColumnKind::Uuid,
+        nullable: false,
+        primary_key: false,
+        default_bool: None,
+        unique: false,
+        indexed: true,
+        foreign_table: Some("probe_sheets"),
+        foreign_column: Some("id"),
+        on_delete: Some(ReferentialAction::Cascade),
+        precision: 0,
+        scale: 0,
+        choices: &[],
+    };
+    static SHEET_COLUMNS: [ColumnSpec; 2] = [key_column("id"), text_column("title")];
+    static LINE_COLUMNS: [ColumnSpec; 3] = [key_column("id"), SHEET_LINK, text_column("label")];
+    static INLINE: [AdminInline; 1] = [AdminInline {
+        name: "lines",
+        child_table: "probe_lines",
+        column: "sheet_id",
+        label: "",
+        fields: &[],
+        readonly_fields: &[],
+        min_count: 0,
+        max_count: 5,
+        extra: 0,
+        can_add: true,
+        can_change: true,
+        can_delete: true,
+        ordering: None,
+        form: true,
+    }];
+    static SHEET_META: AdminModelMeta = AdminModelMeta {
+        key: "probe_sheets",
+        label: "Sheets",
+        permission: Some("sheets"),
+        fields: &SHEET_FIELDS,
+        ordering: None,
+        per_page: 25,
+        fieldsets: &[],
+        inlines: &INLINE,
+        date_hierarchy: None,
+    };
+    static LINE_META: AdminModelMeta = AdminModelMeta {
+        key: "probe_lines",
+        label: "Lines",
+        permission: Some("sheets"),
+        fields: &LINE_FIELDS,
+        ordering: None,
+        per_page: 25,
+        fieldsets: &[],
+        inlines: &[],
+        date_hierarchy: None,
+    };
+    static SHEET_DESC: ModelDescriptor = ModelDescriptor {
+        name: "probe_sheet",
+        table: "probe_sheets",
+        api_path: "/api/v1/probe_sheets",
+        allow_anonymous: false,
+        permission: Some("sheets"),
+        requires_object_policy: false,
+    };
+    static LINE_DESC: ModelDescriptor = ModelDescriptor {
+        name: "probe_line",
+        table: "probe_lines",
+        api_path: "/api/v1/probe_lines",
+        allow_anonymous: false,
+        permission: Some("sheets"),
+        requires_object_policy: false,
+    };
+
+    struct Sheet;
+    struct Line;
+
+    async fn exec(db: &impl ConnectionTrait, sql: &str, values: Vec<DbValue>) {
+        let backend = db.get_database_backend();
+        db.execute(Statement::from_sql_and_values(backend, sql, values))
+            .await
+            .unwrap();
+    }
+
+    async fn tally(db: &DatabaseConnection, sql: &str) -> usize {
+        let backend = db.get_database_backend();
+        db.query_all(Statement::from_string(backend, sql.to_owned()))
+            .await
+            .unwrap()
+            .len()
+    }
+
+    fn titled(title: &str) -> Map<String, Value> {
+        let mut object = Map::new();
+        object.insert("title".into(), json!(title));
+        object
+    }
+
+    async fn title_of(db: &DatabaseConnection, id: Uuid) -> String {
+        let backend = db.get_database_backend();
+        let row = db
+            .query_one(Statement::from_sql_and_values(
+                backend,
+                "SELECT title FROM probe_sheets WHERE id = ?",
+                [DbValue::from(id.to_string())],
+            ))
+            .await
+            .unwrap()
+            .unwrap();
+        row.try_get("", "title").unwrap()
+    }
+
+    #[async_trait::async_trait]
+    impl ManagedModel for Sheet {
+        fn meta(&self) -> &'static AdminModelMeta {
+            &SHEET_META
+        }
+        fn descriptor(&self) -> &'static ModelDescriptor {
+            &SHEET_DESC
+        }
+        fn columns(&self) -> &'static [ColumnSpec] {
+            &SHEET_COLUMNS
+        }
+        fn policy_bound(&self) -> bool {
+            false
+        }
+        fn read_scope(&self, _: &AuthUser) -> QueryScope {
+            QueryScope::All
+        }
+        fn write_scope(&self, _: &AuthUser) -> QueryScope {
+            QueryScope::All
+        }
+        async fn page(
+            &self,
+            _: &DatabaseConnection,
+            _: &[&str],
+            _: Option<&str>,
+            _: &str,
+            _: bool,
+            _: &[(&str, DbValue)],
+            _: &[(&str, bool, DbValue)],
+            _: u64,
+            _: u64,
+            _: &QueryScope,
+        ) -> Result<(Vec<Value>, bool, i64), FexuError> {
+            Ok((Vec::new(), false, 0))
+        }
+        async fn read(
+            &self,
+            _: &DatabaseConnection,
+            _: Uuid,
+            _: &QueryScope,
+        ) -> Result<Option<Value>, FexuError> {
+            Ok(None)
+        }
+        async fn create(
+            &self,
+            _: &DatabaseConnection,
+            _: Value,
+            _: &AuthUser,
+        ) -> Result<Value, FexuError> {
+            Err(FexuError::NotFound)
+        }
+        async fn update(
+            &self,
+            _: &DatabaseConnection,
+            _: Uuid,
+            _: Value,
+            _: &QueryScope,
+            _: &AuthUser,
+        ) -> Result<Value, FexuError> {
+            Err(FexuError::NotFound)
+        }
+        async fn remove(
+            &self,
+            _: &DatabaseConnection,
+            _: Uuid,
+            _: &QueryScope,
+            _: &AuthUser,
+        ) -> Result<DeleteOutcome, FexuError> {
+            Ok(DeleteOutcome::Missing)
+        }
+        fn object_allows(&self, _: &AuthUser, _: &str, _: &Value) -> bool {
+            true
+        }
+        async fn read_in(
+            &self,
+            tx: &DatabaseTransaction,
+            id: Uuid,
+            _: &QueryScope,
+        ) -> Result<Option<Value>, FexuError> {
+            let backend = tx.get_database_backend();
+            let Some(row) = tx
+                .query_one(Statement::from_sql_and_values(
+                    backend,
+                    "SELECT title FROM probe_sheets WHERE id = ?",
+                    [DbValue::from(id.to_string())],
+                ))
+                .await
+                .map_err(FexuError::database)?
+            else {
+                return Ok(None);
+            };
+            let title: String = row.try_get("", "title").map_err(FexuError::database)?;
+            Ok(Some(json!({ "id": id, "title": title })))
+        }
+        async fn create_in(
+            &self,
+            tx: &DatabaseTransaction,
+            body: Value,
+            _: &AuthUser,
+        ) -> Result<Value, FexuError> {
+            let id = Uuid::new_v4();
+            let title = body["title"].as_str().unwrap_or("").to_owned();
+            exec(
+                tx,
+                "INSERT INTO probe_sheets (id, title) VALUES (?, ?)",
+                vec![DbValue::from(id.to_string()), DbValue::from(title.clone())],
+            )
+            .await;
+            Ok(json!({ "id": id.to_string(), "title": title }))
+        }
+        async fn update_in(
+            &self,
+            tx: &DatabaseTransaction,
+            id: Uuid,
+            body: Value,
+            _: &QueryScope,
+            _: &AuthUser,
+        ) -> Result<Value, FexuError> {
+            let title = body["title"].as_str().unwrap_or("").to_owned();
+            let backend = tx.get_database_backend();
+            let result = tx
+                .execute(Statement::from_sql_and_values(
+                    backend,
+                    "UPDATE probe_sheets SET title = ? WHERE id = ?",
+                    [DbValue::from(title.clone()), DbValue::from(id.to_string())],
+                ))
+                .await
+                .map_err(FexuError::database)?;
+            if result.rows_affected() == 0 {
+                return Err(FexuError::NotFound);
+            }
+            Ok(json!({ "id": id.to_string(), "title": title }))
+        }
+        async fn delete_in(
+            &self,
+            _: &DatabaseTransaction,
+            _: Uuid,
+            _: &QueryScope,
+            _: &AuthUser,
+        ) -> Result<DeleteOutcome, FexuError> {
+            Ok(DeleteOutcome::Missing)
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl ManagedModel for Line {
+        fn meta(&self) -> &'static AdminModelMeta {
+            &LINE_META
+        }
+        fn descriptor(&self) -> &'static ModelDescriptor {
+            &LINE_DESC
+        }
+        fn columns(&self) -> &'static [ColumnSpec] {
+            &LINE_COLUMNS
+        }
+        fn policy_bound(&self) -> bool {
+            false
+        }
+        fn read_scope(&self, _: &AuthUser) -> QueryScope {
+            QueryScope::All
+        }
+        fn write_scope(&self, _: &AuthUser) -> QueryScope {
+            QueryScope::All
+        }
+        async fn page(
+            &self,
+            _: &DatabaseConnection,
+            _: &[&str],
+            _: Option<&str>,
+            _: &str,
+            _: bool,
+            _: &[(&str, DbValue)],
+            _: &[(&str, bool, DbValue)],
+            _: u64,
+            _: u64,
+            _: &QueryScope,
+        ) -> Result<(Vec<Value>, bool, i64), FexuError> {
+            Ok((Vec::new(), false, 0))
+        }
+        async fn read(
+            &self,
+            _: &DatabaseConnection,
+            _: Uuid,
+            _: &QueryScope,
+        ) -> Result<Option<Value>, FexuError> {
+            Ok(None)
+        }
+        async fn create(
+            &self,
+            _: &DatabaseConnection,
+            _: Value,
+            _: &AuthUser,
+        ) -> Result<Value, FexuError> {
+            Err(FexuError::NotFound)
+        }
+        async fn update(
+            &self,
+            _: &DatabaseConnection,
+            _: Uuid,
+            _: Value,
+            _: &QueryScope,
+            _: &AuthUser,
+        ) -> Result<Value, FexuError> {
+            Err(FexuError::NotFound)
+        }
+        async fn remove(
+            &self,
+            _: &DatabaseConnection,
+            _: Uuid,
+            _: &QueryScope,
+            _: &AuthUser,
+        ) -> Result<DeleteOutcome, FexuError> {
+            Ok(DeleteOutcome::Missing)
+        }
+        fn object_allows(&self, _: &AuthUser, _: &str, _: &Value) -> bool {
+            true
+        }
+        async fn read_in(
+            &self,
+            _: &DatabaseTransaction,
+            _: Uuid,
+            _: &QueryScope,
+        ) -> Result<Option<Value>, FexuError> {
+            Ok(None)
+        }
+        async fn create_in(
+            &self,
+            tx: &DatabaseTransaction,
+            body: Value,
+            _: &AuthUser,
+        ) -> Result<Value, FexuError> {
+            let id = Uuid::new_v4();
+            let sheet = body["sheet_id"].as_str().unwrap_or("").to_owned();
+            let label = body["label"].as_str().unwrap_or("").to_owned();
+            exec(
+                tx,
+                "INSERT INTO probe_lines (id, sheet_id, label) VALUES (?, ?, ?)",
+                vec![
+                    DbValue::from(id.to_string()),
+                    DbValue::from(sheet),
+                    DbValue::from(label),
+                ],
+            )
+            .await;
+            Ok(json!({ "id": id.to_string() }))
+        }
+        async fn update_in(
+            &self,
+            _: &DatabaseTransaction,
+            _: Uuid,
+            _: Value,
+            _: &QueryScope,
+            _: &AuthUser,
+        ) -> Result<Value, FexuError> {
+            Err(FexuError::NotFound)
+        }
+        async fn delete_in(
+            &self,
+            _: &DatabaseTransaction,
+            _: Uuid,
+            _: &QueryScope,
+            _: &AuthUser,
+        ) -> Result<DeleteOutcome, FexuError> {
+            Ok(DeleteOutcome::Missing)
+        }
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn file_failure_rolls_back_record_links_and_inlines() {
+        let db = fexu_db::connect("sqlite::memory:").await.unwrap();
+        fexu_auth::apply_migrations(&db).await.unwrap();
+        let auth = Arc::new(AuthService::new(db.clone(), AuthConfig::development()));
+        let created = auth
+            .create_user(
+                "probe@example.invalid",
+                &Uuid::new_v4().simple().to_string(),
+                true,
+                true,
+            )
+            .await
+            .unwrap();
+        let user = AuthUser {
+            id: created.id,
+            email: created.email,
+            is_active: created.is_active,
+            is_staff: created.is_staff,
+            is_superuser: created.is_superuser,
+            session_id: Uuid::new_v4(),
+        };
+        for sql in [
+            "CREATE TABLE probe_sheets (id TEXT PRIMARY KEY, title TEXT NOT NULL)",
+            "CREATE TABLE probe_lines (id TEXT PRIMARY KEY, sheet_id TEXT NOT NULL, label TEXT NOT NULL)",
+            "CREATE TABLE probe_tags (sheet_id TEXT NOT NULL, tag_id TEXT NOT NULL)",
+        ] {
+            exec(&db, sql, Vec::new()).await;
+        }
+        files::ensure(&db).await.unwrap();
+        let sheet = Sheet;
+        let tag = Uuid::from_u128(7);
+        let members = [tag];
+        let bytes = b"GIF89a";
+        let link = StoredLink {
+            name: "tags",
+            link: ManyToMany {
+                join_table: "probe_tags",
+                parent_column: "sheet_id",
+                child_column: "tag_id",
+            },
+            children: &members,
+        };
+        let file = StoredFile {
+            field: "file_name",
+            kind: "image/gif",
+            bytes,
+        };
+        let tail = SaveTail {
+            links: std::slice::from_ref(&link),
+            files: std::slice::from_ref(&file),
+            draft: None,
+        };
+        fail_next_save();
+        let failed = commit_model(&db, &user, &sheet, None, titled("Neu"), &tail).await;
+        assert!(failed.is_err());
+        assert_eq!(tally(&db, "SELECT id FROM probe_sheets").await, 0);
+        assert_eq!(tally(&db, "SELECT sheet_id FROM probe_tags").await, 0);
+
+        let existing = Uuid::new_v4();
+        exec(
+            &db,
+            "INSERT INTO probe_sheets (id, title) VALUES (?, ?)",
+            vec![DbValue::from(existing.to_string()), DbValue::from("Alt")],
+        )
+        .await;
+        fail_next_save();
+        let kept = commit_model(&db, &user, &sheet, Some(existing), titled("Neu"), &tail).await;
+        assert!(kept.is_err());
+        assert_eq!(title_of(&db, existing).await, "Alt");
+
+        let child: Arc<dyn ManagedModel> = Arc::new(Line);
+        let mut parent_body = Map::new();
+        parent_body.insert("title".into(), json!("Blatt"));
+        let mut form = std::collections::HashMap::new();
+        form.insert("inline_lines_0_label".into(), "Zeile".into());
+        fail_next_save();
+        let inline = save_with(
+            &db,
+            auth.as_ref(),
+            &user,
+            &sheet,
+            |key| (key == "probe_lines").then(|| child.clone()),
+            None,
+            parent_body,
+            &form,
+            SaveTail {
+                links: &[],
+                files: std::slice::from_ref(&file),
+                draft: None,
+            },
+        )
+        .await;
+        assert!(matches!(inline, crate::compose::SaveResult::Invalid(_)));
+        assert_eq!(tally(&db, "SELECT id FROM probe_sheets").await, 1);
+        assert_eq!(tally(&db, "SELECT id FROM probe_lines").await, 0);
+
+        let stored = commit_model(&db, &user, &sheet, None, titled("Bleibt"), &tail)
+            .await
+            .unwrap();
+        assert_eq!(tally(&db, "SELECT id FROM probe_sheets").await, 2);
+        assert_eq!(tally(&db, "SELECT sheet_id FROM probe_tags").await, 1);
+        let loaded = files::load(&db, "probe_sheets", stored, "file_name")
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(loaded.1.as_slice(), bytes);
     }
 }

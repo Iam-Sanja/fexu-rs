@@ -310,7 +310,7 @@ impl std::error::Error for MultipartError {}
 ///
 /// Authentication can read `csrf_token` before a later filename is rejected.
 pub fn multipart_text_field(content_type: &str, body: &[u8], field: &str) -> Option<String> {
-    parse_parts(content_type, body, false)
+    parse_parts(content_type, body, false, true)
         .ok()
         .and_then(|parts| {
             parts.into_iter().find_map(|part| {
@@ -324,13 +324,24 @@ pub fn multipart_text_field(content_type: &str, body: &[u8], field: &str) -> Opt
 }
 
 pub fn read_multipart(content_type: &str, body: &[u8]) -> Result<Vec<FormPart>, MultipartError> {
-    parse_parts(content_type, body, true)
+    parse_parts(content_type, body, true, false)
+}
+
+/// Wie [`read_multipart`], behält aber wiederholte Namen.
+///
+/// Der Admin entscheidet danach, welche Namen eine Wiederholung tragen dürfen.
+pub fn read_multipart_repeated(
+    content_type: &str,
+    body: &[u8],
+) -> Result<Vec<FormPart>, MultipartError> {
+    parse_parts(content_type, body, true, true)
 }
 
 fn parse_parts(
     content_type: &str,
     body: &[u8],
     check_filenames: bool,
+    keep_duplicates: bool,
 ) -> Result<Vec<FormPart>, MultipartError> {
     if body.len() > MULTIPART_BODY_LIMIT {
         return Err(MultipartError::TooLarge);
@@ -363,7 +374,7 @@ fn parse_parts(
         if name.is_empty() || name.len() > 80 || name.chars().any(|char| char.is_control()) {
             return Err(MultipartError::Malformed);
         }
-        if !names.insert(name.clone()) {
+        if !keep_duplicates && !names.insert(name.clone()) {
             return Err(MultipartError::DuplicateField(name));
         }
         let filename = header_value(&header, "filename");
@@ -607,5 +618,19 @@ JPEG\r\n\
             super::read_multipart("multipart/form-data; boundary=bound", named_empty),
             Err(super::MultipartError::InvalidFilename(_))
         ));
+        let repeated_file = b"\
+--bound\r\nContent-Disposition: form-data; name=\"file.cover\"; filename=\"a.gif\"\r\n\r\nGIF89a\r\n\
+--bound\r\nContent-Disposition: form-data; name=\"file.cover\"; filename=\"b.gif\"\r\n\r\nGIF89a\r\n\
+--bound--\r\n";
+        assert!(matches!(
+            super::read_multipart("multipart/form-data; boundary=bound", repeated_file),
+            Err(super::MultipartError::DuplicateField(_))
+        ));
+        let repeated =
+            super::read_multipart_repeated("multipart/form-data; boundary=bound", repeated_file)
+                .unwrap();
+        assert_eq!(repeated.len(), 2);
+        assert_eq!(repeated[0].name, "file.cover");
+        assert_eq!(repeated[1].name, "file.cover");
     }
 }

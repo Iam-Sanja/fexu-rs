@@ -22,6 +22,24 @@ pub enum SaveResult {
     Missing,
 }
 
+pub(crate) struct StoredFile<'a> {
+    pub field: &'a str,
+    pub kind: &'a str,
+    pub bytes: &'a [u8],
+}
+
+pub(crate) struct StoredLink<'a> {
+    pub name: &'a str,
+    pub link: fexu_db::ManyToMany,
+    pub children: &'a [Uuid],
+}
+
+pub(crate) struct SaveTail<'a> {
+    pub links: &'a [StoredLink<'a>],
+    pub files: &'a [StoredFile<'a>],
+    pub draft: Option<(Uuid, Uuid, Uuid)>,
+}
+
 pub async fn groups(
     db: &DatabaseConnection,
     auth: &AuthService,
@@ -114,6 +132,39 @@ pub async fn save(
     parent_body: Map<String, Value>,
     form: &HashMap<String, String>,
 ) -> SaveResult {
+    save_with(
+        db,
+        auth,
+        user,
+        parent,
+        child_of,
+        id,
+        parent_body,
+        form,
+        SaveTail {
+            links: &[],
+            files: &[],
+            draft: None,
+        },
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn save_with<F>(
+    db: &DatabaseConnection,
+    auth: &AuthService,
+    user: &AuthUser,
+    parent: &dyn ManagedModel,
+    child_of: F,
+    id: Option<Uuid>,
+    parent_body: Map<String, Value>,
+    form: &HashMap<String, String>,
+    tail: SaveTail<'_>,
+) -> SaveResult
+where
+    F: Fn(&str) -> Option<std::sync::Arc<dyn ManagedModel>>,
+{
     let parsed = match parse(parent, &child_of, form) {
         Ok(parsed) => parsed,
         Err(code) => return SaveResult::Invalid(redisplay(&parent_body, form, &code)),
@@ -125,7 +176,7 @@ pub async fn save(
         }
     };
     let operation = Uuid::new_v4();
-    let result = apply(
+    let applied = apply(
         auth,
         user,
         parent,
@@ -138,6 +189,13 @@ pub async fn save(
         operation,
     )
     .await;
+    let result = match applied {
+        Ok(saved) => match write_tail(&tx, parent.meta().key, saved, &tail).await {
+            Ok(()) => Ok(saved),
+            Err(error) => Err(error),
+        },
+        Err(error) => Err(error),
+    };
     match fexu_db::conclude(tx, result, FexuError::database).await {
         Ok(saved) => SaveResult::Saved(saved),
         Err(FexuError::NotFound) => SaveResult::Missing,
@@ -150,6 +208,31 @@ pub async fn save(
         }
         Err(_) => SaveResult::Invalid(redisplay(&parent_body, form, "validation.inline_failed")),
     }
+}
+
+pub(crate) async fn write_tail(
+    tx: &DatabaseTransaction,
+    model_key: &str,
+    record: Uuid,
+    tail: &SaveTail<'_>,
+) -> Result<(), FexuError> {
+    for link in tail.links {
+        crate::relations::replace_links_in(tx, link.link, record, link.children)
+            .await
+            .map_err(|_| FexuError::Validation(format!("admin.relation:{}", link.name)))?;
+    }
+    for file in tail.files {
+        crate::files::save_on(tx, model_key, record, file.field, file.kind, file.bytes)
+            .await
+            .map_err(|error| match error {
+                FexuError::Validation(code) => FexuError::Validation(code),
+                _ => FexuError::Validation("admin.store".into()),
+            })?;
+    }
+    if let Some((draft, session, actor)) = tail.draft {
+        drafts::delete(tx, draft, session, actor).await?;
+    }
+    Ok(())
 }
 
 pub async fn store_extra(

@@ -895,6 +895,13 @@ pub fn validation_text(locale: &str, detail: &str) -> String {
             .unwrap_or(detail)
             .to_owned();
     }
+    if detail.contains("admin.store") {
+        return if german {
+            "Die Datei konnte nicht gespeichert werden.".into()
+        } else {
+            "The file could not be stored.".into()
+        };
+    }
     if detail.contains("admin.relation") {
         return catalog(locale)["m2m_invalid"]
             .as_str()

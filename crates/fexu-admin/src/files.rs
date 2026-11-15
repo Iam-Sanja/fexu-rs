@@ -11,15 +11,25 @@ use uuid::Uuid;
 const FILES: &str = "_fexu_record_files";
 pub(crate) const IMAGE_BYTES: usize = 900_000;
 
-pub(crate) async fn save(
-    db: &DatabaseConnection,
+pub(crate) async fn ensure(db: &DatabaseConnection) -> Result<(), FexuError> {
+    ensure_table(db).await
+}
+
+/// Schreibt das Bild auf der übergebenen Verbindung. Der Aufrufer committet.
+pub(crate) async fn save_on(
+    db: &impl ConnectionTrait,
     model_key: &str,
     record: Uuid,
     field: &str,
     content_type: &str,
     bytes: &[u8],
 ) -> Result<(), FexuError> {
-    ensure_table(db).await?;
+    #[cfg(test)]
+    if FAIL_SAVE.with(|flag| flag.replace(false)) {
+        return Err(FexuError::database(std::io::Error::other(
+            "record file write failed",
+        )));
+    }
     let backend = db.get_database_backend();
     let mut delete = Query::delete();
     delete
@@ -137,6 +147,16 @@ pub(crate) async fn delete_record(
         .and_where(Expr::col(Alias::new("model_key")).eq(model_key))
         .and_where(Expr::col(Alias::new("record_id")).eq(record.to_string()));
     execute(db, backend, &delete).await
+}
+
+#[cfg(test)]
+thread_local! {
+    static FAIL_SAVE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+#[cfg(test)]
+pub(crate) fn fail_next_save() {
+    FAIL_SAVE.with(|flag| flag.set(true));
 }
 
 pub(crate) fn image_type(bytes: &[u8]) -> Option<&'static str> {
