@@ -4204,7 +4204,7 @@ async fn admin_modeladmin_order_timeline_and_keyboard_markup() {
     assert!(home.body.contains("Noch kein Menü"));
     assert!(!home.body.contains("model-card"));
     assert!(home.body.contains("href=\"#content\""));
-    let account = call(
+    let own_page = call(
         "GET",
         "/admin/account".into(),
         None,
@@ -4212,8 +4212,8 @@ async fn admin_modeladmin_order_timeline_and_keyboard_markup() {
     )
     .await
     .unwrap();
-    assert_eq!(account.status, 200, "{}", account.body);
-    assert!(!account.body.contains("id=\"pref-locale\""));
+    assert_eq!(own_page.status, 200, "{}", own_page.body);
+    assert!(!own_page.body.contains("id=\"pref-locale\""));
     let settings = call(
         "GET",
         "/admin/settings".into(),

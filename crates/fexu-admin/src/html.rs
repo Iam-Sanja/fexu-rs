@@ -811,16 +811,7 @@ async fn account_password_save(
         .await;
     };
     let form = parse_form(&body);
-    let current = form
-        .get("current_password")
-        .map(String::as_str)
-        .unwrap_or("");
-    let password = form.get("password").map(String::as_str).unwrap_or("");
-    let confirm = form
-        .get("password_confirm")
-        .map(String::as_str)
-        .unwrap_or("");
-    if password != confirm || current.is_empty() || password.is_empty() {
+    let Some((current, password)) = posted_password_change(&form) else {
         return password_page(
             &state,
             &headers,
@@ -833,7 +824,7 @@ async fn account_password_save(
                 .unwrap_or("The passwords do not match."),
         )
         .await;
-    }
+    };
     match auth.change_password(&user, current, password).await {
         Ok(cleared) => {
             let mut response = redirect("/admin/login");
@@ -869,6 +860,19 @@ async fn account_password_save(
             .await
         }
     }
+}
+
+fn posted_password_change(form: &HashMap<String, String>) -> Option<(&str, &str)> {
+    let current = form
+        .get("current_password")
+        .map(String::as_str)
+        .filter(|value| !value.is_empty())?;
+    let password = form
+        .get("password")
+        .map(String::as_str)
+        .filter(|value| !value.is_empty())?;
+    let confirm = form.get("password_confirm").map(String::as_str)?;
+    (password == confirm).then_some((current, password))
 }
 
 async fn password_page(
@@ -13834,5 +13838,32 @@ mod store_rollback_tests {
             .unwrap()
             .unwrap();
         assert_eq!(loaded.1.as_slice(), bytes);
+    }
+}
+
+#[cfg(test)]
+mod password_change_tests {
+    use super::posted_password_change;
+    use std::collections::HashMap;
+
+    #[test]
+    fn missing_password_fields_stay_absent() {
+        let mut form = HashMap::new();
+        assert!(posted_password_change(&form).is_none());
+        form.insert("current_password".into(), String::new());
+        form.insert("password".into(), "next-phrase".into());
+        form.insert("password_confirm".into(), "next-phrase".into());
+        assert!(posted_password_change(&form).is_none());
+        form.insert("current_password".into(), "current-phrase".into());
+        form.insert("password".into(), String::new());
+        assert!(posted_password_change(&form).is_none());
+        form.insert("password".into(), "next-phrase".into());
+        form.insert("password_confirm".into(), "other-phrase".into());
+        assert!(posted_password_change(&form).is_none());
+        form.insert("password_confirm".into(), "next-phrase".into());
+        assert_eq!(
+            posted_password_change(&form),
+            Some(("current-phrase", "next-phrase"))
+        );
     }
 }

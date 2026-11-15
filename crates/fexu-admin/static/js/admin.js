@@ -280,6 +280,23 @@ for (const input of document.querySelectorAll("input[data-keep-query]")) {
     input.value = window.location.pathname + window.location.search;
 }
 
+function relatedRecordPath(key, id, kind) {
+    if (kind !== "view" && kind !== "change" && kind !== "delete") {
+        return "";
+    }
+    if (!key || !id) {
+        return "";
+    }
+    const record = `/admin/models/${encodeURIComponent(key)}/${encodeURIComponent(id)}`;
+    if (kind === "change") {
+        return `${record}/edit`;
+    }
+    if (kind === "delete") {
+        return `${record}/delete`;
+    }
+    return record;
+}
+
 for (const root of document.querySelectorAll("[data-related-root]")) {
     const select = root.querySelector("select");
     const key = root.getAttribute("data-related-key");
@@ -293,17 +310,12 @@ for (const root of document.querySelectorAll("[data-related-root]")) {
             if (kind === "add") {
                 continue;
             }
-            if (!id) {
+            const path = relatedRecordPath(key, id, kind);
+            if (!path) {
                 link.hidden = true;
                 continue;
             }
-            if (kind === "view") {
-                link.href = `/admin/models/${key}/${id}`;
-            } else if (kind === "change") {
-                link.href = `/admin/models/${key}/${id}/edit`;
-            } else if (kind === "delete") {
-                link.href = `/admin/models/${key}/${id}/delete`;
-            }
+            link.href = path;
             link.hidden = false;
         }
     };
