@@ -920,8 +920,8 @@ pub(crate) async fn insert_session(
 }
 
 pub(crate) fn csrf_for_session(secret: &[u8; 32], session_id: Uuid, token_hash: &str) -> String {
-    use hmac::{Hmac, Mac};
-    let mut mac = Hmac::<sha2::Sha256>::new_from_slice(secret).expect("csrf hmac key");
+    use hmac::{Hmac, KeyInit, Mac};
+    let mut mac = <Hmac<sha2::Sha256> as KeyInit>::new_from_slice(secret).expect("csrf hmac key");
     mac.update(b"fexu-csrf-v1");
     mac.update(session_id.as_bytes());
     mac.update(token_hash.as_bytes());
@@ -1098,4 +1098,20 @@ fn canonical_origin(value: &str) -> Option<String> {
 
 pub fn csrf_header_name() -> &'static str {
     "x-csrf-token"
+}
+
+#[cfg(test)]
+mod crypto_compat {
+    use super::csrf_for_session;
+    use uuid::Uuid;
+
+    #[test]
+    fn csrf_signature_matches_the_fixed_hmac_sha256_vector() {
+        let secret = [0x11u8; 32];
+        let session = Uuid::parse_str("00000000-0000-0000-0000-000000000002").unwrap();
+        let token_hash = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        let signature = csrf_for_session(&secret, session, token_hash);
+        assert_eq!(signature, "F5XN4pTS8tsA3O-G7GOw-26bkNN-Vt_XOQxHTOLN70E");
+        assert_eq!(signature.len(), 43);
+    }
 }

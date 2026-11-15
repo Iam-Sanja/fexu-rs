@@ -5,10 +5,10 @@
 
 use crate::error::AuthError;
 use crate::service::constant_eq;
-use aes_gcm::aead::{Aead, KeyInit, Payload};
+use aes_gcm::aead::{Aead, KeyInit as AeadKeyInit, Payload};
 use aes_gcm::{AeadCore, Aes256Gcm, Nonce};
 use argon2::password_hash::rand_core::{OsRng, RngCore};
-use hmac::{Hmac, Mac};
+use hmac::{Hmac, KeyInit, Mac};
 use sha1::Sha1;
 use sha2::Sha256;
 use uuid::Uuid;
@@ -22,7 +22,7 @@ const RECOVERY_ALPHABET: &[u8] = b"ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 /// Schlüssel, mit dem ältere TOTP-Geheimnisse und Recovery-Hashes gebaut wurden.
 /// Das ist HMAC-SHA256 über das CSRF-Geheimnis, nicht der aktuelle MFA-Schlüssel.
 pub fn legacy_mfa_key(csrf_secret: &[u8; 32]) -> [u8; 32] {
-    let mut mac = <HmacSha256 as Mac>::new_from_slice(csrf_secret).expect("mfa key length");
+    let mut mac = <HmacSha256 as KeyInit>::new_from_slice(csrf_secret).expect("mfa key length");
     mac.update(b"fexu-mfa-v1");
     mac.finalize().into_bytes().into()
 }
@@ -142,7 +142,7 @@ pub fn totp_code(secret: &[u8], unix: i64, digits: u32) -> Result<String, AuthEr
         return Err(AuthError::Validation("totp digits are invalid".into()));
     }
     let counter = unix.div_euclid(30) as u64;
-    let mut mac = <HmacSha1 as Mac>::new_from_slice(secret)
+    let mut mac = <HmacSha1 as KeyInit>::new_from_slice(secret)
         .map_err(|_| AuthError::Validation("totp secret is invalid".into()))?;
     mac.update(&counter.to_be_bytes());
     let digest = mac.finalize().into_bytes();
@@ -242,7 +242,7 @@ pub fn current_recovery_record(key: &[u8; 32], user_id: Uuid, normalized: &str) 
 }
 
 fn keyed_recovery(key: &[u8; 32], label: &[u8], user_id: Uuid, normalized: &str) -> String {
-    let mut mac = <HmacSha256 as Mac>::new_from_slice(key).expect("recovery key");
+    let mut mac = <HmacSha256 as KeyInit>::new_from_slice(key).expect("recovery key");
     mac.update(label);
     mac.update(user_id.as_bytes());
     mac.update(normalized.as_bytes());
@@ -313,7 +313,7 @@ fn reauth_mac(
     session_id: Uuid,
     expires_at: i64,
 ) -> String {
-    let mut mac = <HmacSha256 as Mac>::new_from_slice(key).expect("reauth key");
+    let mut mac = <HmacSha256 as KeyInit>::new_from_slice(key).expect("reauth key");
     mac.update(label);
     mac.update(user_id.as_bytes());
     mac.update(session_id.as_bytes());
@@ -365,11 +365,12 @@ fn decode_hex(value: &str) -> Result<Vec<u8>, AuthError> {
 mod tests {
     use super::{
         accept_totp, legacy_mfa_key, legacy_reauth_proof, open, open_stored, recovery_format,
-        recovery_hash, seal, seal_format, totp_code, RecoveryFormat, SealFormat,
+        recovery_hash, seal, seal_format, totp_code, HmacSha1, RecoveryFormat, SealFormat,
     };
-    use aes_gcm::aead::KeyInit;
+    use aes_gcm::aead::KeyInit as AeadKeyInit;
     use aes_gcm::Aes256Gcm;
     use argon2::password_hash::rand_core::OsRng;
+    use hmac::{KeyInit, Mac};
     use uuid::Uuid;
 
     #[test]
@@ -464,5 +465,134 @@ mod tests {
         ));
         assert!(!proof.contains("fexu-dev"));
         assert!(!legacy_proof.contains("fexu-dev"));
+    }
+
+    fn hmac_sha1_hex(key: &[u8], data: &[u8]) -> String {
+        let mut mac = <HmacSha1 as KeyInit>::new_from_slice(key).unwrap();
+        mac.update(data);
+        super::hex(&mac.finalize().into_bytes())
+    }
+
+    #[test]
+    fn rfc2202_hmac_sha1_vectors() {
+        let key4 = [
+            0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e,
+            0x0f, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19,
+        ];
+        let repeated_dd = [0xdd; 50];
+        let repeated_cd = [0xcd; 50];
+        let cases: &[(&str, &[u8], &[u8])] = &[
+            (
+                "b617318655057264e28bc0b6fb378c8ef146be00",
+                &[0x0b; 20],
+                b"Hi There",
+            ),
+            (
+                "effcdf6ae5eb2fa2d27416d5f184df9c259a7c79",
+                b"Jefe",
+                b"what do ya want for nothing?",
+            ),
+            (
+                "125d7342b9ac11cd91a39af48aa17b4f63f175d3",
+                &[0xaa; 20],
+                &repeated_dd,
+            ),
+            (
+                "4c9007f4026250c6bc8414f9bf50c86c2d7235da",
+                &key4,
+                &repeated_cd,
+            ),
+            (
+                "4c1a03424b55e07fe7f27be1d58bb9324a9a5a04",
+                &[0x0c; 20],
+                b"Test With Truncation",
+            ),
+            (
+                "aa4ae5e15272d00e95705637ce8a3b55ed402112",
+                &[0xaa; 80],
+                b"Test Using Larger Than Block-Size Key - Hash Key First",
+            ),
+            (
+                "e8e99d0f45237d786d6bbaa7965c7808bbff1a91",
+                &[0xaa; 80],
+                b"Test Using Larger Than Block-Size Key and Larger Than One Block-Size Data",
+            ),
+        ];
+        for (expected, key, data) in cases {
+            assert_eq!(hmac_sha1_hex(key, data), *expected);
+        }
+    }
+
+    #[test]
+    fn rfc6238_sha1_six_digits_keep_leading_zeros() {
+        let secret = b"12345678901234567890";
+        let cases = [
+            (59_i64, "287082"),
+            (1_111_111_109, "081804"),
+            (1_111_111_111, "050471"),
+            (1_234_567_890, "005924"),
+            (2_000_000_000, "279037"),
+            (20_000_000_000, "353130"),
+        ];
+        for (unix, code) in cases {
+            assert_eq!(totp_code(secret, unix, 6).unwrap(), code);
+            assert_eq!(code.len(), 6);
+        }
+    }
+
+    #[test]
+    fn totp_window_accepts_neighbors_and_rejects_replay() {
+        let secret = b"12345678901234567890";
+        let now = 59_i64;
+        assert_eq!(accept_totp(secret, "755224", now, None).unwrap(), 0);
+        assert_eq!(accept_totp(secret, "287082", now, None).unwrap(), 1);
+        assert_eq!(accept_totp(secret, "359152", now, None).unwrap(), 2);
+        assert!(accept_totp(secret, "969429", now, None).is_err());
+        assert!(accept_totp(secret, "287082", now, Some(1)).is_err());
+        assert!(accept_totp(secret, "755224", now, Some(1)).is_err());
+        assert_eq!(accept_totp(secret, "359152", now, Some(1)).unwrap(), 2);
+    }
+
+    #[test]
+    fn legacy_recovery_and_reauth_hmac_keep_published_bytes() {
+        let csrf = [0x11u8; 32];
+        let key = [0x42u8; 32];
+        let user = Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap();
+        let session = Uuid::parse_str("00000000-0000-0000-0000-000000000002").unwrap();
+        assert_eq!(
+            super::hex(&legacy_mfa_key(&csrf)),
+            "0ccf407db9da1845c8b6f4400c55e64cb007528509cac32a0e2036cb707c4b47"
+        );
+        assert_eq!(
+            recovery_hash(&key, user, "ABCDEFGHJK"),
+            "2de6d22df5227b70a7307c654a4aea77b48f73210877ace426ea93e5af2f6ac3"
+        );
+        assert_eq!(
+            super::current_recovery_record(&key, user, "ABCDEFGHJK"),
+            "v2.196376076485f82a9f2a3e04a055f88186200e203a3b1017399dd3e28672fe63"
+        );
+        let current = super::reauth_proof(&key, user, session, 1_300);
+        let legacy = legacy_reauth_proof(&key, user, session, 1_300);
+        assert_eq!(
+            current,
+            "v2.1300.c396df286ae5b1112b8bae16102e68896228b9b26d440901927f93f9032bf255"
+        );
+        assert_eq!(
+            legacy,
+            "v1.1300.be59e03b3e3165c9aacf011ea8d6e56753fe4aa99c90b1b038e2cc8451f6139b"
+        );
+        assert!(super::reauth_valid(
+            &key, &key, user, session, &current, 1_000
+        ));
+        assert!(super::reauth_valid(
+            &key, &key, user, session, &legacy, 1_000
+        ));
+        let other = [0x24u8; 32];
+        assert!(!super::reauth_valid(
+            &other, &key, user, session, &current, 1_000
+        ));
+        assert!(!super::reauth_valid(
+            &key, &other, user, session, &legacy, 1_000
+        ));
     }
 }
