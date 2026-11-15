@@ -1,16 +1,29 @@
 //! Typisierte Werte mit Versionspräfix. Ein abweichendes Präfix ist ein Fehler.
 
-use crate::backend::{validate_key, validate_namespace, CacheBackend};
+use crate::backend::{validate_key, validate_namespace, CacheBackend, Publish, RawLookup};
 use crate::error::CacheError;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use std::collections::HashMap;
 use std::future::Future;
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio::sync::Notify;
 
 const MAGIC: &[u8; 4] = b"FXC1";
+
+/// Ergebnis einer typisierten Suche.
+///
+/// `get` bildet `Miss` und `Expired` auf `None` ab. `lookup` unterscheidet sie.
+/// Ein abgelaufener Eintrag wird beim ersten Lesen entfernt. Der nächste Aufruf ist `Miss`.
+/// Ein späteres Backend, das abgelaufene Schlüssel selbst löscht, kann `Expired` als `Miss` melden.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CacheLookup<T> {
+    Hit(T),
+    Miss,
+    Expired,
+}
 
 pub struct TypedCache<B> {
     backend: B,
@@ -21,6 +34,7 @@ pub struct TypedCache<B> {
 struct Flight {
     result: Mutex<Option<Result<Vec<u8>, CacheError>>>,
     notify: Notify,
+    waiters: AtomicU32,
 }
 
 impl<B> TypedCache<B> {
@@ -35,18 +49,42 @@ impl<B> TypedCache<B> {
     pub fn backend(&self) -> &B {
         &self.backend
     }
+
+    #[cfg(test)]
+    pub(crate) fn parked_waiters(&self) -> u32 {
+        let guard = self
+            .flights
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        guard
+            .values()
+            .map(|flight| flight.waiters.load(Ordering::SeqCst))
+            .sum()
+    }
 }
 
 impl<B: CacheBackend> TypedCache<B> {
+    pub async fn lookup<T: DeserializeOwned>(
+        &self,
+        namespace: &str,
+        key: &str,
+    ) -> Result<CacheLookup<T>, CacheError> {
+        match self.backend.lookup_raw(namespace, key).await? {
+            RawLookup::Miss => Ok(CacheLookup::Miss),
+            RawLookup::Expired => Ok(CacheLookup::Expired),
+            RawLookup::Hit(bytes) => decode::<T>(&bytes, self.version).map(CacheLookup::Hit),
+        }
+    }
+
     pub async fn get<T: DeserializeOwned>(
         &self,
         namespace: &str,
         key: &str,
     ) -> Result<Option<T>, CacheError> {
-        let Some(bytes) = self.backend.get_raw(namespace, key).await? else {
-            return Ok(None);
-        };
-        decode::<T>(&bytes, self.version).map(Some)
+        Ok(match self.lookup(namespace, key).await? {
+            CacheLookup::Hit(value) => Some(value),
+            CacheLookup::Miss | CacheLookup::Expired => None,
+        })
     }
 
     pub async fn set<T: Serialize>(
@@ -70,8 +108,8 @@ impl<B: CacheBackend> TypedCache<B> {
         self.backend.invalidate_namespace(namespace).await
     }
 
-    /// Ein gleichzeitiger Aufruf für denselben Schlüssel wartet auf den ersten Produzenten.
-    /// Das gilt nur in diesem Prozess. Ein zweiter Prozess rechnet selbst.
+    /// Gleichzeitige Aufrufe auf diesem `TypedCache` warten auf den ersten Produzenten.
+    /// Ein zweiter `TypedCache`, auch auf demselben Speicher, und ein zweiter Prozess rechnen selbst.
     pub async fn get_or_set<T, F, Fut>(
         &self,
         namespace: &str,
@@ -86,6 +124,9 @@ impl<B: CacheBackend> TypedCache<B> {
     {
         validate_namespace(namespace)?;
         validate_key(key)?;
+        if ttl.is_some_and(|ttl| ttl.is_zero()) {
+            return Err(CacheError::InvalidTtl);
+        }
         if let Some(value) = self.get(namespace, key).await? {
             return Ok(value);
         }
@@ -100,6 +141,13 @@ impl<B: CacheBackend> TypedCache<B> {
             key: flight_key.clone(),
             flight: flight.clone(),
             armed: true,
+        };
+        let token = match self.backend.current_token(namespace, key).await {
+            Ok(token) => token,
+            Err(error) => {
+                guard.finish(Err(error.clone()));
+                return Err(error);
+            }
         };
         let produced = produce().await;
         let value = match produced {
@@ -117,16 +165,24 @@ impl<B: CacheBackend> TypedCache<B> {
             }
         };
         let bytes = encode(self.version, &payload);
-        if let Err(error) = self
+        match self
             .backend
-            .put_raw(namespace, key, bytes.clone(), ttl)
+            .put_raw_if_current(namespace, key, bytes.clone(), ttl, token)
             .await
         {
-            guard.finish(Err(error.clone()));
-            return Err(error);
+            Ok(Publish::Stored) => {
+                guard.finish(Ok(bytes));
+                Ok(value)
+            }
+            Ok(Publish::Superseded) => {
+                guard.finish(Err(CacheError::Superseded));
+                Err(CacheError::Superseded)
+            }
+            Err(error) => {
+                guard.finish(Err(error.clone()));
+                Err(error)
+            }
         }
-        guard.finish(Ok(bytes));
-        Ok(value)
     }
 }
 
@@ -162,6 +218,7 @@ fn elect(flights: &Mutex<HashMap<String, Arc<Flight>>>, key: &str) -> (Arc<Fligh
     let flight = Arc::new(Flight {
         result: Mutex::new(None),
         notify: Notify::new(),
+        waiters: AtomicU32::new(0),
     });
     guard.insert(key.to_owned(), flight.clone());
     (flight, true)
@@ -205,7 +262,17 @@ async fn wait_for(flight: Arc<Flight>) -> Result<Vec<u8>, CacheError> {
         {
             return result;
         }
+        flight.waiters.fetch_add(1, Ordering::SeqCst);
+        let _parked = WaiterGuard(&flight.waiters);
         notified.await;
+    }
+}
+
+struct WaiterGuard<'a>(&'a AtomicU32);
+
+impl Drop for WaiterGuard<'_> {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::SeqCst);
     }
 }
 

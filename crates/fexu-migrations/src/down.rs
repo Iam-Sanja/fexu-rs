@@ -178,80 +178,6 @@ mod tests {
         .unwrap();
     }
 
-    mod postgres_isolation {
-        use fexu_db::driver::{ConnectionTrait, DatabaseBackend, Statement};
-
-        pub struct IsolatedPostgres {
-            pub url: String,
-            db_name: String,
-            admin_url: String,
-        }
-
-        async fn admin_connection(
-            prefix: &str,
-        ) -> Result<fexu_db::driver::DatabaseConnection, String> {
-            for db in ["template1", "postgres", "fexu"] {
-                let url = format!("{prefix}/{db}");
-                if let Ok(connection) = fexu_db::connect(&url).await {
-                    return Ok(connection);
-                }
-            }
-            Err("could not open a PostgreSQL admin connection".to_owned())
-        }
-
-        impl IsolatedPostgres {
-            pub async fn open(base_url: &str) -> Result<Self, String> {
-                let base = base_url.split('?').next().unwrap_or(base_url);
-                let (prefix, _) = base
-                    .rsplit_once('/')
-                    .ok_or_else(|| "DATABASE_URL must include a database name.".to_owned())?;
-                let db_name = format!("fexu_test_{}", uuid::Uuid::new_v4().simple());
-                let admin_url = format!("{prefix}/template1");
-                let admin = admin_connection(prefix).await?;
-                admin
-                    .execute(Statement::from_string(
-                        DatabaseBackend::Postgres,
-                        format!("CREATE DATABASE \"{db_name}\""),
-                    ))
-                    .await
-                    .map_err(|error| error.to_string())?;
-                admin.close().await.map_err(|error| error.to_string())?;
-                Ok(Self {
-                    url: format!("{prefix}/{db_name}"),
-                    db_name,
-                    admin_url,
-                })
-            }
-
-            pub async fn close(self) -> Result<(), String> {
-                let base = self.admin_url.split('?').next().unwrap_or(&self.admin_url);
-                let (prefix, _) = base
-                    .rsplit_once('/')
-                    .ok_or_else(|| "DATABASE_URL must include a database name.".to_owned())?;
-                let admin = admin_connection(prefix).await?;
-                let escaped = self.db_name.replace('\'', "''");
-                let _ = admin
-                    .execute(Statement::from_string(
-                        DatabaseBackend::Postgres,
-                        format!(
-                            "SELECT pg_terminate_backend(pid) FROM pg_stat_activity \
-                             WHERE datname = '{escaped}' AND pid <> pg_backend_pid()"
-                        ),
-                    ))
-                    .await;
-                admin
-                    .execute(Statement::from_string(
-                        DatabaseBackend::Postgres,
-                        format!("DROP DATABASE IF EXISTS \"{}\" WITH (FORCE)", self.db_name),
-                    ))
-                    .await
-                    .map_err(|error| error.to_string())?;
-                admin.close().await.map_err(|error| error.to_string())?;
-                Ok(())
-            }
-        }
-    }
-
     async fn roundtrip(url: &str, backend: DatabaseBackend) {
         let db = fexu_db::connect(url).await.unwrap();
         if backend == DatabaseBackend::Postgres {
@@ -522,12 +448,12 @@ mod tests {
             return;
         }
         for _ in 0..2 {
-            let isolated = postgres_isolation::IsolatedPostgres::open(&base_url)
+            let isolated = fexu_db::DisposablePostgres::create(&base_url)
                 .await
                 .expect("isolated PostgreSQL database");
-            roundtrip(&isolated.url, DatabaseBackend::Postgres).await;
+            roundtrip(isolated.url(), DatabaseBackend::Postgres).await;
             isolated
-                .close()
+                .drop_database()
                 .await
                 .expect("drop isolated PostgreSQL database");
         }

@@ -415,10 +415,11 @@ async fn debug_output_redacts_session_cookie_and_csrf_secrets() {
     assert!(rendered.contains("ada@example.com"));
     assert!(rendered.contains("[redacted]"));
 
-    let config = format!("{:?}", AuthConfig::development());
-    assert!(!config.contains("fexu-dev-csrf-key-32-bytes!"));
-    assert!(config.contains("[redacted]"));
-    assert!(config.contains("fexu_session"));
+    let config = AuthConfig::development();
+    let rendered_config = format!("{config:?}");
+    assert!(rendered_config.contains("[redacted]"));
+    assert!(!rendered_config.contains("fexu-dev-csrf"));
+    assert!(rendered_config.contains("fexu_session"));
 
     let session = auth
         .ensure_anonymous_session(&HeaderMap::new())

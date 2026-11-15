@@ -1,9 +1,11 @@
 //! Begrenzter Prozessspeicher. Er ist kein gemeinsamer Cache mehrerer Instanzen.
 
-use crate::backend::{validate_key, validate_namespace, CacheBackend};
+use crate::backend::{
+    validate_key, validate_namespace, CacheBackend, Publish, RawLookup, WriteToken,
+};
 use crate::error::CacheError;
 use async_trait::async_trait;
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -36,6 +38,19 @@ struct MemoryState {
     entries: HashMap<(String, String), Slot>,
     bytes: usize,
     limits: MemoryLimits,
+    epochs: Epochs,
+}
+
+/// Prozesslokale Marken. Vergessene Marken heben `floor` an, damit ein alter
+/// Token eher abgelehnt als nach einer Löschung noch akzeptiert wird.
+struct Epochs {
+    clock: u64,
+    floor: u64,
+    namespaces: HashMap<String, u64>,
+    namespace_order: VecDeque<(String, u64)>,
+    keys: HashMap<(String, String), u64>,
+    key_order: VecDeque<((String, String), u64)>,
+    cap: usize,
 }
 
 struct Slot {
@@ -62,13 +77,14 @@ impl MemoryCache {
         now_ms: Arc<dyn Fn() -> i64 + Send + Sync>,
     ) -> Result<Self, CacheError> {
         if limits.max_entries == 0 || limits.max_bytes == 0 {
-            return Err(CacheError::TooLarge);
+            return Err(CacheError::InvalidLimits);
         }
         Ok(Self {
             inner: Arc::new(MemoryInner {
                 state: Mutex::new(MemoryState {
                     entries: HashMap::new(),
                     bytes: 0,
+                    epochs: Epochs::new(limits.max_entries.saturating_mul(8).max(64)),
                     limits,
                 }),
                 now_ms,
@@ -83,7 +99,7 @@ impl MemoryCache {
 
 #[async_trait]
 impl CacheBackend for MemoryCache {
-    async fn get_raw(&self, namespace: &str, key: &str) -> Result<Option<Vec<u8>>, CacheError> {
+    async fn lookup_raw(&self, namespace: &str, key: &str) -> Result<RawLookup, CacheError> {
         validate_namespace(namespace)?;
         validate_key(key)?;
         let mut state = lock(&self.inner.state);
@@ -94,9 +110,12 @@ impl CacheBackend for MemoryCache {
             .is_some_and(|slot| expired(slot, self.now()));
         if expired {
             remove_key(&mut state, &map_key);
-            return Ok(None);
+            return Ok(RawLookup::Expired);
         }
-        Ok(state.entries.get(&map_key).map(|slot| slot.bytes.clone()))
+        match state.entries.get(&map_key) {
+            Some(slot) => Ok(RawLookup::Hit(slot.bytes.clone())),
+            None => Ok(RawLookup::Miss),
+        }
     }
 
     async fn put_raw(
@@ -109,40 +128,51 @@ impl CacheBackend for MemoryCache {
         validate_namespace(namespace)?;
         validate_key(key)?;
         if ttl.is_some_and(|ttl| ttl.is_zero()) {
-            return Err(CacheError::InvalidKey);
+            return Err(CacheError::InvalidTtl);
         }
         let mut state = lock(&self.inner.state);
-        if bytes.len() > state.limits.max_bytes {
-            return Err(CacheError::TooLarge);
-        }
+        let now = self.now();
         let map_key = (namespace.to_owned(), key.to_owned());
-        remove_key(&mut state, &map_key);
-        evict_expired(&mut state, self.now());
-        while state.entries.len() >= state.limits.max_entries
-            || state.bytes.saturating_add(bytes.len()) > state.limits.max_bytes
-        {
-            if !evict_one(&mut state) {
-                return Err(CacheError::TooLarge);
-            }
+        store_locked(&mut state, map_key.clone(), bytes, ttl, now)?;
+        state.epochs.note_key(&map_key.0, &map_key.1);
+        Ok(())
+    }
+
+    async fn current_token(&self, namespace: &str, key: &str) -> Result<WriteToken, CacheError> {
+        validate_namespace(namespace)?;
+        validate_key(key)?;
+        let state = lock(&self.inner.state);
+        Ok(state.epochs.observe())
+    }
+
+    async fn put_raw_if_current(
+        &self,
+        namespace: &str,
+        key: &str,
+        bytes: Vec<u8>,
+        ttl: Option<Duration>,
+        token: WriteToken,
+    ) -> Result<Publish, CacheError> {
+        validate_namespace(namespace)?;
+        validate_key(key)?;
+        if ttl.is_some_and(|ttl| ttl.is_zero()) {
+            return Err(CacheError::InvalidTtl);
+        }
+        let mut state = lock(&self.inner.state);
+        if !state.epochs.allows(namespace, key, token) {
+            return Ok(Publish::Superseded);
         }
         let now = self.now();
-        let expires_at_ms = ttl.map(|ttl| now.saturating_add(millis(ttl)));
-        state.bytes = state.bytes.saturating_add(bytes.len());
-        state.entries.insert(
-            map_key,
-            Slot {
-                bytes,
-                stored_at_ms: now,
-                expires_at_ms,
-            },
-        );
-        Ok(())
+        let map_key = (namespace.to_owned(), key.to_owned());
+        store_locked(&mut state, map_key, bytes, ttl, now)?;
+        Ok(Publish::Stored)
     }
 
     async fn delete_raw(&self, namespace: &str, key: &str) -> Result<(), CacheError> {
         validate_namespace(namespace)?;
         validate_key(key)?;
         let mut state = lock(&self.inner.state);
+        state.epochs.note_key(namespace, key);
         remove_key(&mut state, &(namespace.to_owned(), key.to_owned()));
         Ok(())
     }
@@ -150,6 +180,7 @@ impl CacheBackend for MemoryCache {
     async fn invalidate_namespace(&self, namespace: &str) -> Result<(), CacheError> {
         validate_namespace(namespace)?;
         let mut state = lock(&self.inner.state);
+        state.epochs.note_namespace(namespace);
         let keys: Vec<_> = state
             .entries
             .keys()
@@ -160,6 +191,114 @@ impl CacheBackend for MemoryCache {
             remove_key(&mut state, &key);
         }
         Ok(())
+    }
+}
+
+fn store_locked(
+    state: &mut MemoryState,
+    map_key: (String, String),
+    bytes: Vec<u8>,
+    ttl: Option<Duration>,
+    now: i64,
+) -> Result<(), CacheError> {
+    if bytes.len() > state.limits.max_bytes {
+        return Err(CacheError::TooLarge);
+    }
+    remove_key(state, &map_key);
+    evict_expired(state, now);
+    while state.entries.len() >= state.limits.max_entries
+        || state.bytes.saturating_add(bytes.len()) > state.limits.max_bytes
+    {
+        if !evict_one(state) {
+            return Err(CacheError::TooLarge);
+        }
+    }
+    let expires_at_ms = ttl.map(|ttl| now.saturating_add(millis(ttl)));
+    state.bytes = state.bytes.saturating_add(bytes.len());
+    state.entries.insert(
+        map_key,
+        Slot {
+            bytes,
+            stored_at_ms: now,
+            expires_at_ms,
+        },
+    );
+    Ok(())
+}
+
+impl Epochs {
+    fn new(cap: usize) -> Self {
+        Self {
+            clock: 0,
+            floor: 0,
+            namespaces: HashMap::new(),
+            namespace_order: VecDeque::new(),
+            keys: HashMap::new(),
+            key_order: VecDeque::new(),
+            cap,
+        }
+    }
+
+    fn observe(&self) -> WriteToken {
+        WriteToken {
+            observed: self.clock,
+        }
+    }
+
+    fn allows(&self, namespace: &str, key: &str, token: WriteToken) -> bool {
+        // u64::MAX ist kein unterscheidbarer Stand mehr. Dann lieber kein Eintrag.
+        if token.observed == u64::MAX || token.observed < self.floor {
+            return false;
+        }
+        let namespace_epoch = self.namespaces.get(namespace).copied().unwrap_or(0);
+        let key_epoch = self
+            .keys
+            .get(&(namespace.to_owned(), key.to_owned()))
+            .copied()
+            .unwrap_or(0);
+        namespace_epoch <= token.observed && key_epoch <= token.observed
+    }
+
+    fn note_namespace(&mut self, namespace: &str) {
+        let epoch = self.bump();
+        self.namespaces.insert(namespace.to_owned(), epoch);
+        self.namespace_order
+            .push_back((namespace.to_owned(), epoch));
+        self.prune();
+    }
+
+    fn note_key(&mut self, namespace: &str, key: &str) {
+        let epoch = self.bump();
+        let map_key = (namespace.to_owned(), key.to_owned());
+        self.keys.insert(map_key.clone(), epoch);
+        self.key_order.push_back((map_key, epoch));
+        self.prune();
+    }
+
+    fn bump(&mut self) -> u64 {
+        self.clock = self.clock.saturating_add(1);
+        self.clock
+    }
+
+    fn prune(&mut self) {
+        while self.key_order.len() > self.cap {
+            let Some((key, epoch)) = self.key_order.pop_front() else {
+                break;
+            };
+            if self.keys.get(&key).copied() == Some(epoch) {
+                self.keys.remove(&key);
+                self.floor = self.floor.max(epoch);
+            }
+        }
+        while self.namespace_order.len() > self.cap {
+            let Some((namespace, epoch)) = self.namespace_order.pop_front() else {
+                break;
+            };
+            if self.namespaces.get(&namespace).copied() == Some(epoch) {
+                self.namespaces.remove(&namespace);
+                self.floor = self.floor.max(epoch);
+            }
+        }
     }
 }
 

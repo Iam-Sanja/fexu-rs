@@ -52,14 +52,14 @@ pub use packages::{
 };
 pub use plan::{plan_database, plan_database_in, PlanFinding, PlanLevel, PlanReport};
 pub use project::{
-    discover_project, load_schema_from_command, redact_database_url, DeclaredApp, ProjectConfig,
-    Settings,
+    discover_project, load_schema_from_command, redact_database_url, ApiDocsSettings, DeclaredApp,
+    ProjectConfig, ResolvedApiDocs, Settings,
 };
 pub use runner::{
     apply_directory, apply_directory_with_history, apply_files_with_history,
     apply_namespaced_directory, migration_status, migration_status_in, namespaced_status,
-    reseal_unapplied, revert_latest, revert_namespaced, status_of_files, ApplyReport, RevertPlan,
-    StatusReport,
+    note_missing_applied_tables, reseal_unapplied, revert_latest, revert_namespaced,
+    status_of_files, ApplyReport, RevertPlan, StatusReport,
 };
 pub use snapshot::{
     is_identifier, ColumnSnapshot, ExternalTableSnapshot, ForeignKeySnapshot, IndexSnapshot,

@@ -30,6 +30,8 @@ let router = fexu::web::prepare(router, &settings);
 
 | Route | Code | Response |
 |---|---|---|
+| `GET /api/openapi.json` | 200 | OpenAPI 3.1 for registered routes. Absent when documentation is disabled. Not an admin catalog |
+| `GET /api/docs` | 200 | Swagger UI for that document. Same access rule as the JSON route. Try-it-out is off unless configured |
 | `GET /healthz` | 200 |`{"status":"ok"}`; no DB readiness test|
 | `GET /readyz` | 200 / 503 |`{"status":"ready"}` after `SELECT 1`, or problem JSON. This does not migrate.|
 | `GET /api/v1/products` | 200 | `{"data":[...],"limit":100,"next":null,"has_more":false}` |

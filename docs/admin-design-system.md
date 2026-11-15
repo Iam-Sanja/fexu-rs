@@ -14,7 +14,7 @@ The layout is a grid with a `16rem` sidebar and a content area. The sidebar show
 
 The header shows the page title, email address, language, theme and logout control. Language and theme changes use POST on `/admin/preferences`; logout is a CSRF-protected POST. A skip link targets `#content`.
 
-Below 800 pixels, the grid becomes one column. The sidebar remains an expanded vertical list beneath the header and works without JavaScript.
+Below 800 pixels, the grid becomes one column. The sidebar starts collapsed behind a checkbox labelled Navigation. The links stay out of the tab order until that control is checked. No script is required. At 801 pixels and above the control is removed and the sidebar stays open. Wide tables can be focused and scrolled from the keyboard. The record name stays visible while a table scrolls sideways.
 
 ## Tokens
 

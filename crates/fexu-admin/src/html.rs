@@ -144,6 +144,7 @@ async fn login_form(
         &mut response,
         &login_cookie(state.auth.as_ref().map(|auth| auth.config()), &token),
     );
+    same_origin_document(&mut response);
     response
 }
 
@@ -209,6 +210,7 @@ async fn login_submit(
         );
         *response.status_mut() = StatusCode::UNAUTHORIZED;
         append_cookie(&mut response, &login_cookie(Some(auth.config()), &token));
+        same_origin_document(&mut response);
         return response;
     };
     match auth
@@ -264,6 +266,7 @@ async fn login_submit(
             );
             *response.status_mut() = StatusCode::UNAUTHORIZED;
             append_cookie(&mut response, &login_cookie(Some(auth.config()), &token));
+            same_origin_document(&mut response);
             response
         }
         Err(_) => {
@@ -684,8 +687,13 @@ async fn model_list(
         &params,
         &sort,
         descending,
+        registry.list_order_of(model.meta()),
     );
-    let links = link_names(registry.field_slice(model.meta()), model.columns());
+    let links = link_names(
+        registry.field_slice(model.meta()),
+        model.columns(),
+        registry.list_order_of(model.meta()),
+    );
     let relations = match relation_names(&registry, &state, &user, model.columns(), &rows).await {
         Ok(relations) => relations,
         Err(_) => {
@@ -983,6 +991,7 @@ async fn model_detail(
     );
     let csrf = session_csrf(state.auth.as_ref().unwrap(), &headers).await;
     let list_path = format!("/admin/models/{model_key}");
+    let history = record_history(&state, &user, &locale, model.meta().key, &id.to_string()).await;
     page_as(
         &state,
         &user,
@@ -1006,7 +1015,8 @@ async fn model_detail(
             "list_path": list_path,
             "id": id.to_string(),
             "history_href": history_href(model.meta().key, &id.to_string()),
-            "history": record_history(&state, &user, model.meta().key, &id.to_string()).await,
+            "history": history.events,
+            "history_more": history.more,
             "fields": fields,
             "can_update": false,
             "can_delete": can_delete,
@@ -1632,6 +1642,21 @@ async fn role_permissions_page(
         .await;
     }
     let csrf = session_csrf(auth, &headers).await;
+    let history = if record_id.is_some() {
+        record_history(
+            &state,
+            &user,
+            &locale,
+            "_fexu_users",
+            roles
+                .first()
+                .and_then(|role| role["name"].as_str())
+                .unwrap_or(""),
+        )
+        .await
+    } else {
+        RecordHistory::none()
+    };
     page_as(
         &state,
         &user,
@@ -1650,11 +1675,8 @@ async fn role_permissions_page(
         &flash(&locale, params.get("notice").map(String::as_str).unwrap_or("")),
         "",
         json!({ "roles": roles, "record_role": record_id.is_some(),
-            "history": if record_id.is_some() {
-                record_history(&state, &user, "_fexu_users", roles.first().and_then(|role| role["name"].as_str()).unwrap_or("")).await
-            } else {
-                Vec::<Value>::new()
-            },
+            "history": history.events,
+            "history_more": history.more,
             "history_href": roles.first().and_then(|role| role["name"].as_str()).map(|name| history_href("_fexu_users", name)).unwrap_or_default() }),
     )
     .await
@@ -2578,6 +2600,19 @@ async fn form_page(
         .and_then(Value::as_str)
         .map(str::to_owned)
         .unwrap_or_else(|| back.clone());
+    let history = match id {
+        Some(record_id) => {
+            record_history(
+                state,
+                &user,
+                &locale,
+                model.meta().key,
+                &record_id.to_string(),
+            )
+            .await
+        }
+        None => RecordHistory::none(),
+    };
     let mut response = page_as(
         state,
         &user,
@@ -2608,10 +2643,8 @@ async fn form_page(
                 None
             },
             "history_href": id.map(|value| history_href(model.meta().key, &value.to_string())).unwrap_or_default(),
-            "history": match id {
-                Some(record_id) => record_history(state, &user, model.meta().key, &record_id.to_string()).await,
-                None => Vec::new(),
-            },
+            "history": history.events,
+            "history_more": history.more,
             "model_label": model.meta().label,
             "list_path": list_path,
             "action": action,
@@ -3571,8 +3604,12 @@ fn resolved_sort(
     }
 }
 
-fn link_names(fields: &[fexu_core::AdminFieldMeta], specs: &[ColumnSpec]) -> Vec<&'static str> {
-    let listed = listed_fields(fields, specs);
+fn link_names(
+    fields: &[fexu_core::AdminFieldMeta],
+    specs: &[ColumnSpec],
+    order: Option<&[&str]>,
+) -> Vec<&'static str> {
+    let listed = listed_fields(fields, specs, order);
     let chosen: Vec<&'static str> = listed
         .iter()
         .filter(|field| field.list_link)
@@ -3596,9 +3633,10 @@ fn list_columns(
     params: &HashMap<String, String>,
     sort: &str,
     descending: bool,
+    order: Option<&[&str]>,
 ) -> Vec<Value> {
     let dir = if descending { "desc" } else { "asc" };
-    listed_fields(fields, specs)
+    listed_fields(fields, specs, order)
         .into_iter()
         .map(|field| {
             let next_dir = if sort == field.name && dir != "desc" {
@@ -3624,7 +3662,7 @@ fn list_columns(
 
 /// Spalten der Liste.
 ///
-/// 1. Felder mit `#[admin(list_display)]` in Struct-Reihenfolge. `id` bleibt dabei, weil das Makro es immer als Listenspalte führt.
+/// 1. Felder mit `list_display` in der Reihenfolge von `ModelAdmin`, sonst in Struct-Reihenfolge. `id` bleibt dabei, wenn es noch als Listenspalte markiert ist.
 /// 2. Ohne solche Felder das erste sichtbare Textfeld, danach `id`.
 /// 3. Ohne Textfeld das erste andere sichtbare Feld, danach `id`.
 /// 4. Sonst nur `id`.
@@ -3633,6 +3671,7 @@ fn list_columns(
 fn listed_fields<'a>(
     fields: &'a [fexu_core::AdminFieldMeta],
     specs: &[ColumnSpec],
+    order: Option<&[&str]>,
 ) -> Vec<&'a fexu_core::AdminFieldMeta> {
     let visible = |field: &fexu_core::AdminFieldMeta| !field.hidden && !sensitive(field.name);
     let explicit: Vec<_> = fields
@@ -3640,10 +3679,12 @@ fn listed_fields<'a>(
         .filter(|field| field.list_display && field.name != "id" && visible(field))
         .collect();
     if !explicit.is_empty() {
-        return fields
+        let mut chosen: Vec<_> = fields
             .iter()
             .filter(|field| field.list_display && visible(field))
             .collect();
+        apply_column_order(&mut chosen, order);
+        return chosen;
     }
     let mut chosen = Vec::new();
     let text = fields.iter().find(|field| {
@@ -3663,7 +3704,20 @@ fn listed_fields<'a>(
     {
         chosen.push(id);
     }
+    apply_column_order(&mut chosen, order);
     chosen
+}
+
+fn apply_column_order(fields: &mut [&fexu_core::AdminFieldMeta], order: Option<&[&str]>) {
+    let Some(order) = order else {
+        return;
+    };
+    fields.sort_by_key(|field| {
+        order
+            .iter()
+            .position(|name| *name == field.name)
+            .unwrap_or(usize::MAX)
+    });
 }
 
 fn column_kind(specs: &[ColumnSpec], name: &str) -> Option<ColumnKind> {
@@ -3757,6 +3811,17 @@ async fn filter_inputs(
             "yes": catalog(locale)["yes"].as_str().unwrap_or("Yes"),
             "no": catalog(locale)["no"].as_str().unwrap_or("No")
         }));
+    }
+    if let Some(order) = registry.filter_order_of(meta) {
+        filters.sort_by(|left, right| {
+            let rank = |item: &Value| {
+                item.get("name")
+                    .and_then(Value::as_str)
+                    .and_then(|name| order.iter().position(|entry| *entry == name))
+                    .unwrap_or(usize::MAX)
+            };
+            rank(left).cmp(&rank(right))
+        });
     }
     filters
 }
@@ -4235,6 +4300,7 @@ async fn user_detail(
         .collect::<Vec<_>>();
     let permissions = auth.list_user_permissions(id).await.unwrap_or_default();
     let csrf = session_csrf(auth, &headers).await;
+    let history = record_history(&state, &actor, &locale, "_fexu_users", &id.to_string()).await;
     page_as(
         &state,
         &actor,
@@ -4263,7 +4329,8 @@ async fn user_detail(
             "permissions": permissions,
             "can_edit": !target.is_superuser,
             "history_href": history_href("_fexu_users", &id.to_string()),
-            "history": record_history(&state, &actor, "_fexu_users", &id.to_string()).await
+            "history": history.events,
+            "history_more": history.more
         }),
     )
     .await
@@ -4773,9 +4840,16 @@ async fn user_form(
         .unwrap_or_default();
     let csrf = session_csrf(auth, headers).await;
     let history = if let Some(record_id) = id {
-        record_history(state, &actor, "_fexu_users", &record_id.to_string()).await
+        record_history(
+            state,
+            &actor,
+            &locale,
+            "_fexu_users",
+            &record_id.to_string(),
+        )
+        .await
     } else {
-        Vec::new()
+        RecordHistory::none()
     };
     let record_history_href = id
         .map(|record_id| history_href("_fexu_users", &record_id.to_string()))
@@ -4816,7 +4890,8 @@ async fn user_form(
             "assigned": assigned,
             "permissions": if let Some(id) = id { auth.list_user_permissions(id).await.unwrap_or_default() } else { Vec::new() },
             "history_href": record_history_href,
-            "history": history
+            "history": history.events,
+            "history_more": history.more
         }),
     )
     .await;
@@ -7110,6 +7185,16 @@ fn constant_eq(left: &str, right: &str) -> bool {
         == 0
 }
 
+/// Das Login-Dokument sendet bei einem Same-Origin-POST die echte Origin.
+/// `no-referrer` würde Browser dazu bringen, `Origin: null` zu senden. Recovery-Seiten
+/// setzen ihren eigenen Wert und werden hier nicht verändert.
+fn same_origin_document(response: &mut Response) {
+    response.headers_mut().insert(
+        header::REFERRER_POLICY,
+        HeaderValue::from_static("same-origin"),
+    );
+}
+
 fn login_cookie(config: Option<&AuthConfig>, token: &str) -> String {
     let secure = config.is_some_and(|config| config.cookie_secure);
     let same = match config.map(|config| config.same_site) {
@@ -7340,27 +7425,61 @@ fn channel_lin(channel: u8) -> f64 {
 
 const RECORD_HISTORY_LIMIT: usize = 8;
 
+struct RecordHistory {
+    events: Vec<Value>,
+    more: bool,
+}
+
+impl RecordHistory {
+    fn none() -> Self {
+        Self {
+            events: Vec::new(),
+            more: false,
+        }
+    }
+}
+
 async fn record_history(
     state: &AppState,
     user: &AuthUser,
+    locale: &str,
     model_key: &str,
     record_id: &str,
-) -> Vec<Value> {
+) -> RecordHistory {
     if model_key.is_empty() || record_id.is_empty() {
-        return Vec::new();
+        return RecordHistory::none();
     }
     let actor = (!user.is_superuser).then_some(user.id);
-    let Ok((events, _)) =
+    let Ok((events, has_more)) =
         audit::matching(&state.db, actor, Some(model_key), Some(record_id), 0).await
     else {
-        return Vec::new();
+        return RecordHistory::none();
     };
-    events
+    let more = has_more || events.len() > RECORD_HISTORY_LIMIT;
+    let events: Vec<_> = events.into_iter().take(RECORD_HISTORY_LIMIT).collect();
+    let mut emails = std::collections::HashMap::<uuid::Uuid, String>::new();
+    if user.is_superuser {
+        if let Some(auth) = state.auth.as_ref() {
+            for event in &events {
+                if event.actor_id == user.id || emails.contains_key(&event.actor_id) {
+                    continue;
+                }
+                if let Ok(Some(account)) = auth.get_user(event.actor_id).await {
+                    emails.insert(event.actor_id, account.email);
+                }
+            }
+        }
+    }
+    let rendered = events
         .into_iter()
-        .take(RECORD_HISTORY_LIMIT)
         .map(|event| {
             let actor_label = if event.actor_id == user.id {
                 user.email.clone()
+            } else if user.is_superuser {
+                emails
+                    .get(&event.actor_id)
+                    .cloned()
+                    .unwrap_or_else(|| event.actor_id.to_string())
             } else {
                 event.actor_id.to_string()
             };
@@ -7370,11 +7489,39 @@ async fn record_history(
                 "when_iso": formatted.as_ref().map(|(_, iso)| iso.clone()).unwrap_or_default(),
                 "actor": actor_label,
                 "action": event.action,
+                "action_label": action_label(locale, &event.action),
                 "outcome": event.outcome,
                 "summary": event.summary,
             })
         })
-        .collect()
+        .collect();
+    RecordHistory {
+        events: rendered,
+        more,
+    }
+}
+
+fn action_label(locale: &str, action: &str) -> String {
+    let key = match action {
+        "create" => "audit_create",
+        "update" => "audit_update",
+        "delete" => "audit_delete",
+        "bulk_update" => "audit_bulk_update",
+        "bulk_delete" => "audit_bulk_delete",
+        "user_create" => "audit_user_create",
+        "user_update" => "audit_user_update",
+        "password_reset" => "audit_password_reset",
+        "role_assign" => "audit_role_assign",
+        "role_revoke" => "audit_role_revoke",
+        "permission_grant" => "audit_permission_grant",
+        "permission_revoke" => "audit_permission_revoke",
+        _ => return action.to_owned(),
+    };
+    catalog(locale)
+        .get(key)
+        .and_then(Value::as_str)
+        .unwrap_or(action)
+        .to_owned()
 }
 
 fn history_href(model: &str, record: &str) -> String {

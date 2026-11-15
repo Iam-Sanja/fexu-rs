@@ -8,28 +8,32 @@
 
 `fexu migrate status`, `fexu check`, `fexu doctor`, `fexu dev` and `fexu upgrade --check` or `--dry-run` share read-only diagnostics. These checks apply no migrations and create neither history tables nor SQLite files.
 
-Auth files live in `crates/fexu-auth/migrations`, with history in `_fexu_auth_migrations`. Project migrations use `migrations_dir` and `_fexu_migrations`. Declared `[app.<name>]` packages share that table with namespaced IDs such as `shop:0001_initial`. The CLI reads TOML rather than `registry.migrations` and reports this limit as `app.migration.runtime`; startup compares both declarations.
+Auth and job migrations are embedded in the binary. Their history tables are `_fexu_auth_migrations` and `_fexu_job_migrations`. The diagnostic loads those resources from the process, not from `CARGO_MANIFEST_DIR`. Project migrations use `migrations_dir` and `_fexu_migrations`. An absent or empty application directory is optional and is not treated as a successful auth or jobs migration. Declared `[app.<name>]` packages share the application history table with namespaced IDs such as `shop:0001_initial`. The CLI reads TOML rather than `registry.migrations` and reports this limit as `app.migration.runtime`; startup compares both declarations.
 
 ## Report
 
-Each deviation is a `Diagnostic` with range `Auth` or `App`, migration ID, level `Ok`, `Warn` or `Error`, stable code and text. Applied, pending and conflicted files remain separate.
+Each deviation is a `Diagnostic` with range `Auth`, `Jobs` or `App`, migration ID, level `Ok`, `Warn` or `Error`, stable code and text. Applied, pending and conflicted files remain separate.
 
 Stable codes:
 
 | Code | Level | Meaning |
 |---|---|---|
-| `migration.auth.pending` | Warning |Auth file is not in `_fexu_auth_migrations`|
+| `migration.auth.pending` | Warning |Auth migration is not in `_fexu_auth_migrations`|
+| `migration.jobs.pending` | Warning |Job migration is not in `_fexu_job_migrations`|
 | `migration.app.pending` | Warning |App file is not in `_fexu_migrations`|
 | `migration.history.missing` | Warning | The history table is missing; diagnostics do not create it |
 | `migration.checksum_mismatch` | Error |Saved checksum and file do not match|
 | `migration.unknown` | Error |An applied ID no longer has a file|
 | `migration.order` | Error |The order of files and history is wrong|
 | `migration.schema_conflict` | Warning |The loaded model does not correspond to the migration target|
-| `migration.auth.table_missing` | Error |`0002_admin_journal` or `0003_audit_operation` is applied, the table or `operation_id` is missing|
+| `migration.auth.table_missing` | Error |An applied auth migration's table is missing, including `_fexu_users`. This is not reported as success and the table is not recreated.|
+| `migration.auth.column_missing` | Error |A column required by the latest applied auth snapshot is missing, including `operation_id` after `0003_audit_operation`. The column is not added back.|
+| `migration.jobs.table_missing` | Error |An applied job migration's table is missing, including `_fexu_jobs`. This is not reported as success and the table is not recreated.|
+| `migration.jobs.column_missing` | Error |A column required by the latest applied job snapshot is missing, including `cron_expression` or `cron_zone` after `0002_job_schedule`. The column is not added back.|
 | `migration.database.missing` |Warning in Check, Doctor, Dev and Upgrade. Error in `migrate status`|The SQLite file does not exist|
 | `migration.database.unavailable` | Error |The existing file is not a readable database. This is not a success|
 
-`0002_admin_journal` relates to `_fexu_admin_audit` and `_fexu_admin_drafts`. `0003_audit_operation` relates to the column `operation_id`. As long as these files are only pending, this is a warning and not a silent creation.
+`0002_admin_journal` relates to `_fexu_admin_audit` and `_fexu_admin_drafts`. `0003_audit_operation` relates to the column `operation_id`. `0002_job_schedule` relates to `cron_expression` and `cron_zone` on `_fexu_jobs`. The latest applied migration is chosen by migration number, including when the file list is unsorted. Only that snapshot's tables and columns are required. A pending column-only migration does not make its columns required, and a checksum conflict stays visible beside a missing column. As long as these files are only pending, this is a warning and not a silent creation. The check does not repair the schema.
 
 ## Reading without writing
 

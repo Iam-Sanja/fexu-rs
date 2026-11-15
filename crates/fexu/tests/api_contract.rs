@@ -162,7 +162,7 @@ async fn exercise(mut client: TestClient) {
     assert_eq!(ready["status"], "ready");
 
     let document = client
-        .get("/openapi.json")
+        .get("/api/openapi.json")
         .await
         .unwrap()
         .assert_status(StatusCode::OK)
@@ -191,6 +191,13 @@ async fn exercise(mut client: TestClient) {
     assert!(parameters.iter().any(|item| item["name"] == "filter"));
     assert!(document["paths"].get("/readyz").is_some());
     assert!(document["paths"].get("/admin").is_none());
+    fexu::openapi::validate_document(&document).unwrap();
+    let missing = client
+        .get("/api/v1/contract_items/00000000-0000-4000-8000-000000000099")
+        .await
+        .unwrap();
+    assert_eq!(missing.status(), StatusCode::NOT_FOUND);
+    assert_eq!(missing.json().unwrap()["status"], 404);
 }
 
 #[tokio::test]

@@ -1,18 +1,15 @@
 //! Sitzungsgebundene Hinweise. Die Tabelle entsteht nur durch `create_flash_table`.
 
 use fexu_core::FexuError;
-use fexu_db::driver::sea_query::{
-    Alias, Expr, Order, PostgresQueryBuilder, Query, SqliteQueryBuilder,
-};
-use fexu_db::driver::{
-    ConnectionTrait, DatabaseBackend, DatabaseConnection, Statement, TransactionTrait, Value,
-};
+use fexu_db::driver::sea_query::{Alias, Expr, PostgresQueryBuilder, Query, SqliteQueryBuilder};
+use fexu_db::driver::{ConnectionTrait, DatabaseBackend, DatabaseConnection, Statement, Value};
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FlashLevel {
     Success,
     Info,
+    Warning,
     Error,
 }
 
@@ -21,6 +18,7 @@ impl FlashLevel {
         match self {
             Self::Success => "success",
             Self::Info => "info",
+            Self::Warning => "warning",
             Self::Error => "error",
         }
     }
@@ -29,6 +27,7 @@ impl FlashLevel {
         match value {
             "success" => Some(Self::Success),
             "info" => Some(Self::Info),
+            "warning" => Some(Self::Warning),
             "error" => Some(Self::Error),
             _ => None,
         }
@@ -111,48 +110,53 @@ pub async fn push_flash(
     Ok(())
 }
 
-/// Liest die Hinweise der Sitzung und löscht sie in derselben Transaktion.
+/// Löscht die Hinweise einer Sitzung und gibt genau diese Zeilen zurück.
+///
+/// Eine `DELETE … RETURNING`-Anweisung. Eine parallel eingefügte Zeile bleibt liegen,
+/// und dieselbe Zeile kann nicht an zwei Requests ausgeliefert werden.
 pub async fn take_flashes(
     db: &DatabaseConnection,
     session_id: Uuid,
 ) -> Result<Vec<FlashMessage>, FexuError> {
-    let tx = db.begin().await.map_err(FexuError::database)?;
-    let mut select = Query::select();
-    select
-        .columns([Alias::new("level"), Alias::new("body")])
-        .from(Alias::new(TABLE))
+    let mut delete = Query::delete();
+    delete
+        .from_table(Alias::new(TABLE))
         .and_where(
             Expr::col(Alias::new("session_id"))
                 .eq(Value::String(Some(Box::new(session_id.to_string())))),
         )
-        .order_by(Alias::new("created_at"), Order::Asc);
-    let rows = tx
-        .query_all(statement(&tx, &select)?)
+        .returning(Query::returning().columns([
+            Alias::new("id"),
+            Alias::new("level"),
+            Alias::new("body"),
+            Alias::new("created_at"),
+        ]));
+    let rows = db
+        .query_all(statement(db, &delete)?)
         .await
         .map_err(FexuError::database)?;
-    let mut messages = Vec::new();
+    let mut taken = Vec::with_capacity(rows.len());
     for row in rows {
+        let id = row
+            .try_get::<String>("", "id")
+            .map_err(FexuError::database)?;
         let level = row
             .try_get::<String>("", "level")
             .map_err(FexuError::database)?;
         let text = row
             .try_get::<String>("", "body")
             .map_err(FexuError::database)?;
+        let created_at = row
+            .try_get::<i64>("", "created_at")
+            .or_else(|_| row.try_get::<i32>("", "created_at").map(i64::from))
+            .map_err(FexuError::database)?;
         let Some(level) = FlashLevel::parse(&level) else {
             continue;
         };
-        messages.push(FlashMessage { level, text });
+        taken.push((created_at, id, FlashMessage { level, text }));
     }
-    let mut delete = Query::delete();
-    delete.from_table(Alias::new(TABLE)).and_where(
-        Expr::col(Alias::new("session_id"))
-            .eq(Value::String(Some(Box::new(session_id.to_string())))),
-    );
-    tx.execute(statement(&tx, &delete)?)
-        .await
-        .map_err(FexuError::database)?;
-    tx.commit().await.map_err(FexuError::database)?;
-    Ok(messages)
+    taken.sort_by(|left, right| left.0.cmp(&right.0).then_with(|| left.1.cmp(&right.1)));
+    Ok(taken.into_iter().map(|(_, _, message)| message).collect())
 }
 
 pub fn render_flashes(messages: &[FlashMessage]) -> String {
@@ -200,7 +204,9 @@ fn statement(
 
 #[cfg(test)]
 mod tests {
-    use super::{create_flash_table, push_flash, render_flashes, take_flashes, FlashLevel};
+    use super::{
+        create_flash_table, push_flash, render_flashes, take_flashes, FlashLevel, FlashMessage,
+    };
     use uuid::Uuid;
 
     async fn exercise(db: &fexu_db::driver::DatabaseConnection) {
@@ -231,10 +237,38 @@ mod tests {
         assert!(take_flashes(db, other).await.unwrap().is_empty());
     }
 
+    #[test]
+    fn warning_text_is_escaped_in_the_template_fragment() {
+        let html = render_flashes(&[FlashMessage {
+            level: FlashLevel::Warning,
+            text: "<b>careful</b>".to_owned(),
+        }]);
+        assert!(html.contains("data-level=\"warning\""));
+        assert!(html.contains("&lt;b&gt;"));
+        assert!(!html.contains("<b>"));
+    }
+
     #[tokio::test]
     async fn sqlite_flash_is_consumed_once_per_session() {
         let db = fexu_db::connect("sqlite::memory:").await.unwrap();
         exercise(&db).await;
+    }
+
+    #[tokio::test]
+    async fn sqlite_parallel_flash_takes_return_each_message_once() {
+        let path = std::env::temp_dir().join(format!("fexu-flash-{}.sqlite3", Uuid::new_v4()));
+        let url = format!(
+            "sqlite://{}?mode=rwc",
+            path.display().to_string().replace('\\', "/")
+        );
+        let primary = fexu_db::connect(&url).await.expect("primary sqlite");
+        let secondary = fexu_db::connect(&url).await.expect("secondary sqlite");
+        assert_parallel_consume(primary.clone(), secondary.clone()).await;
+        primary.close().await.expect("close primary");
+        secondary.close().await.expect("close secondary");
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_file(path.with_extension("sqlite3-wal"));
+        let _ = std::fs::remove_file(path.with_extension("sqlite3-shm"));
     }
 
     #[tokio::test]
@@ -248,5 +282,84 @@ mod tests {
         exercise(&db).await;
         db.close().await.expect("close");
         disposable.drop_database().await.expect("drop");
+    }
+
+    #[tokio::test]
+    #[ignore = "requires DATABASE_URL, CREATEDB, and an approved PostgreSQL test database"]
+    async fn postgres_parallel_flash_takes_return_each_message_once() {
+        let admin = std::env::var("DATABASE_URL").expect("DATABASE_URL");
+        let disposable = fexu_db::DisposablePostgres::create(&admin)
+            .await
+            .expect("isolated postgres");
+        let db = fexu_db::connect(disposable.url()).await.expect("postgres");
+        assert_parallel_consume(db.clone(), db.clone()).await;
+        db.close().await.expect("close");
+        disposable.drop_database().await.expect("drop");
+    }
+
+    async fn assert_parallel_consume(
+        primary: fexu_db::driver::DatabaseConnection,
+        secondary: fexu_db::driver::DatabaseConnection,
+    ) {
+        create_flash_table(&primary).await.expect("flash table");
+        let session = Uuid::new_v4();
+        let other = Uuid::new_v4();
+        let mut expected = Vec::new();
+        for index in 0..30 {
+            let text = format!("m{index:02}");
+            push_flash(&primary, session, FlashLevel::Warning, &text)
+                .await
+                .expect("seed");
+            expected.push(text);
+        }
+        push_flash(&primary, other, FlashLevel::Error, "other-stays")
+            .await
+            .expect("other");
+        let mut tasks = Vec::new();
+        for index in 0..8 {
+            let db = if index % 2 == 0 {
+                primary.clone()
+            } else {
+                secondary.clone()
+            };
+            tasks.push(tokio::spawn(async move {
+                take_flashes(&db, session).await.expect("take")
+            }));
+        }
+        let writer = tokio::spawn({
+            let db = secondary.clone();
+            async move {
+                let mut late = Vec::new();
+                for index in 0..10 {
+                    let text = format!("late{index:02}");
+                    push_flash(&db, session, FlashLevel::Info, &text)
+                        .await
+                        .expect("late");
+                    late.push(text);
+                    tokio::task::yield_now().await;
+                }
+                late
+            }
+        });
+        let mut seen = Vec::new();
+        for task in tasks {
+            for message in task.await.expect("join") {
+                seen.push(message.text);
+            }
+        }
+        expected.extend(writer.await.expect("writer"));
+        for message in take_flashes(&primary, session).await.expect("drain") {
+            seen.push(message.text);
+        }
+        seen.sort();
+        expected.sort();
+        assert_eq!(seen, expected);
+        let remaining = take_flashes(&secondary, other).await.expect("other take");
+        assert_eq!(remaining.len(), 1);
+        assert_eq!(remaining[0].text, "other-stays");
+        assert!(take_flashes(&primary, other)
+            .await
+            .expect("empty")
+            .is_empty());
     }
 }

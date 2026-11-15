@@ -1,5 +1,32 @@
 # Changelog
 
+## Unreleased — development CSRF keys
+
+- `AuthConfig::development` draws a new 32-byte CSRF key on every call. `try_from_env` still loads `FEXU_CSRF_SECRET` or `.fexu/csrf.key`. Token and HMAC formats are unchanged. Debug output keeps both secrets redacted.
+
+## Unreleased — parallel PostgreSQL fixtures
+
+- Disposable PostgreSQL fixtures clone `template0` and keep administrative sessions off `template0` and `template1`. Concurrent `STRATEGY FILE_COPY` is not used; those copies stalled on Windows PostgreSQL 18. `drop_database` still drops only `fexu_test_` plus 32 hexadecimal characters, and only when the current role owns that database (#117).
+
+## Unreleased — embedded framework migrations
+
+- Auth and job migrations stay embedded in the binary. A relocated `embedded-migrate` process no longer needs the crate `migrations/` directories. `scripts/cold-start-embedded.sh` hides those directories, and CI runs that check for SQLite and for `fexu_test_relocated`.
+- `inspect_framework` and the auth and jobs status commands report a missing table or a missing column from the latest applied framework snapshot as an error. The latest snapshot is the highest migration number, not the last array entry. They do not recreate the table or column and do not describe that database as fully migrated. Empty and absent application directories stay optional. Checksums of the checked-in migration files are unchanged.
+- Cold-start Bash and PowerShell accept a PostgreSQL URL only when it has no query string, the decoded database name starts with `fexu_test_`, and the host is the literal form `127.0.0.1`, `localhost`, or `[::1]`. The host is not percent-decoded. Every query parameter is refused. The URL user must already be a disposable test role; the scripts do not verify that role's privileges. Both scripts require `login=ok` and a reported job. Linux CI runs the Bash script and Windows CI runs the PowerShell script.
+
+## Unreleased — browser security and native admin login
+
+- The security-header layer keeps one canonical `Referrer-Policy` only when every header field and comma-separated token is that same safe value. Any other combination is replaced by the configured policy. `nosniff` and `DENY` stay mandatory. `Host` and `X-Forwarded-*` are not origins.
+- Password-reset error responses for a rejected form and a missing auth service set `Referrer-Policy: no-referrer` themselves.
+- The native admin login document sends `Referrer-Policy: same-origin`. Password-reset pages keep `no-referrer`.
+- `require_browser_writes` accepts `POST /admin/login` from a fresh cookie jar when `fexu_login_csrf` matches. Other writes still need a session cookie. Foreign origins and unverified `Origin: null` stay rejected.
+
+## Unreleased — OpenAPI paths and production defaults
+
+- The default document is `GET /api/openapi.json` and the default Swagger UI is `GET /api/docs`. `GET /openapi.json` and `GET /docs` are not mounted and are not redirected. Set `schema_path` and `path` in `[api.docs]`, or `json_path` and `ui_path` on `OpenApiOptions`, to keep the previous paths.
+- `App::new` without `with_settings` follows the same omitted-section rule as `[api.docs]`. `FEXU_ENV=production` mounts no documentation routes unless the application calls `openapi`. `OpenApiOptions::default` does not read the environment. `openapi` and `without_openapi` still replace the file and the environment.
+- Session-protected documentation responses, including HTML, JSON, Swagger assets, the initializer, the license files and auth failures, use `Cache-Control: private, no-store`. Public static assets keep `public, max-age=86400`.
+
 ## Unreleased — fexu-cli 0.1.1
 
 - `fexu new <name>` and `fexu new project <name>` write `fexu = "=0.1.0"` unless `--fexu-path` is set. The fullstack template keeps `features = ["admin-ui"]` on that registry dependency. The api template adds no features.

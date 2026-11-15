@@ -14,4 +14,14 @@ pub enum CacheError {
     Corrupt,
     #[error("cache backend failed")]
     Backend,
+    #[error("cache limits must be greater than zero")]
+    InvalidLimits,
+    #[error("cache ttl must be greater than zero")]
+    InvalidTtl,
+    #[error("authenticated output is not stored in a shared cache")]
+    AuthenticatedContent,
+    #[error("user-scoped cache requires an authenticated viewer")]
+    UnauthenticatedViewer,
+    #[error("cache write was superseded by a delete or invalidation")]
+    Superseded,
 }

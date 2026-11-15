@@ -11,10 +11,12 @@
 <a class="skip" href="#content">{{ i18n.skip }}</a>
 <div class="shell">
 {% if signed_in and nav %}
-<aside class="sidebar">
+<aside class="sidebar" aria-label="{{ i18n.navigation }}">
 <p class="brand">{{ app_name }}</p>
 <p class="brand-note">{{ site_header }}</p>
-<nav aria-label="{{ i18n.navigation }}">
+<input class="nav-switch" id="admin-nav" type="checkbox" aria-controls="admin-nav-panel">
+<label class="nav-switch-label" for="admin-nav">{{ i18n.navigation }}</label>
+<nav id="admin-nav-panel" aria-label="{{ i18n.navigation }}">
 {% for section in nav_sections %}
 {% if section.label %}<p class="nav-label" id="nav-{{ section.key }}">{{ section.label }}</p>{% endif %}
 {% if section.key == "apps" %}

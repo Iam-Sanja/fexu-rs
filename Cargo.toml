@@ -8,7 +8,8 @@ members = [
   "crates/fexu-middleware", "crates/fexu-mail", "crates/fexu-jobs",
   "examples/myshop",
   "examples/notes",
-  "examples/desk"
+  "examples/desk",
+  "examples/board"
 ]
 
 [workspace.package]
@@ -41,7 +42,7 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 clap = { version = "4", features = ["derive"] }
 tera = "1"
-sha2 = "0.10"
+sha2 = "0.11.1"
 argon2 = "0.5"
 rpassword = "7"
 
