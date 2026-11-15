@@ -81,6 +81,57 @@ pub fn render_notice(text: &str) -> String {
     format!("<p role=\"status\">{}</p>", escape(text))
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PageLinks {
+    pub page: u32,
+    pub pages: u32,
+    pub prev: Option<String>,
+    pub next: Option<String>,
+}
+
+/// Previous and next links for one local path. The page size stays in `extra`.
+pub fn page_links(
+    path: &str,
+    query: PageQuery,
+    total: u64,
+    extra: &[(&str, &str)],
+) -> Result<PageLinks, CrudError> {
+    let (_offset, limit) = page_window(query)?;
+    if total > 1_000_000 {
+        return Err(CrudError::new(
+            "crud.page",
+            "pagination stops at one million rows",
+        ));
+    }
+    let pages = if total == 0 {
+        1
+    } else {
+        u32::try_from(total.div_ceil(limit)).unwrap_or(10_000)
+    };
+    if query.page > pages {
+        return Err(CrudError::new(
+            "crud.page",
+            "page starts at 1 and page_size is from 1 to 100",
+        ));
+    }
+    let prev = if query.page > 1 {
+        Some(pagination_href(path, query.page - 1, extra)?)
+    } else {
+        None
+    };
+    let next = if u64::from(query.page) * limit < total {
+        Some(pagination_href(path, query.page + 1, extra)?)
+    } else {
+        None
+    };
+    Ok(PageLinks {
+        page: query.page,
+        pages,
+        prev,
+        next,
+    })
+}
+
 pub async fn scoped_list(
     db: &impl ConnectionTrait,
     table: &str,
@@ -131,7 +182,9 @@ fn local_path(path: &str) -> bool {
         && !path.contains("..")
         && !path.contains("://")
         && path.len() <= 200
-        && !path.chars().any(|char| char.is_control())
+        && !path
+            .chars()
+            .any(|char| char.is_control() || matches!(char, '"' | '\'' | '<' | '>' | '&'))
 }
 
 fn safe_key(key: &str) -> bool {
@@ -202,5 +255,44 @@ mod tests {
             .unwrap(),
             (25, 25)
         );
+        let links = super::page_links(
+            "/board/items",
+            PageQuery {
+                page: 2,
+                page_size: 2,
+            },
+            5,
+            &[("page_size", "2")],
+        )
+        .unwrap();
+        assert_eq!(links.pages, 3);
+        assert_eq!(
+            links.prev.as_deref(),
+            Some("/board/items?page_size=2&page=1")
+        );
+        assert_eq!(
+            links.next.as_deref(),
+            Some("/board/items?page_size=2&page=3")
+        );
+        assert!(super::page_links(
+            "https://evil.example/items",
+            PageQuery {
+                page: 1,
+                page_size: 2
+            },
+            4,
+            &[],
+        )
+        .is_err());
+        assert!(super::page_links(
+            "/board/items",
+            PageQuery {
+                page: 4,
+                page_size: 2
+            },
+            5,
+            &[],
+        )
+        .is_err());
     }
 }

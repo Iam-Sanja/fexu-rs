@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Delete</title>
+  {% if canonical %}<link rel="canonical" href="{{ canonical | safe }}">{% endif %}
+</head>
+<body>
+  <ul class="flashes">
+  {% for flash in flashes %}
+    <li data-level="{{ flash.level }}">{{ flash.text }}</li>
+  {% endfor %}
+  </ul>
+  <form method="post" action="{{ action | safe }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf }}">
+    <p>Delete {{ label }}?</p>
+    <button type="submit">Delete</button>
+  </form>
+  <a href="{{ list_url | safe }}">Back</a>
+</body>
+</html>
