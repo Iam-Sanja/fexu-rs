@@ -25,11 +25,12 @@ mod cookie_guard;
 mod extract;
 mod listing;
 pub mod openapi;
+mod swagger_ui;
 pub mod testing;
 
 pub use cookie_guard::require_browser;
 pub use listing::ApiPage;
-pub use openapi::{OpenApiOperation, OpenApiOptions};
+pub use openapi::{DocsAccess, OpenApiOperation, OpenApiOptions, OpenApiUi};
 
 use extract::{ApiJson, ListQuery, RecordId};
 
@@ -63,6 +64,7 @@ pub struct App {
     statics: Vec<apps::StaticMount>,
     browser_required: bool,
     openapi: OpenApiOptions,
+    openapi_explicit: bool,
     openapi_operations: Vec<OpenApiOperation>,
     documented: Vec<openapi::DocumentedModel>,
     strict_migrations: bool,
@@ -89,6 +91,7 @@ impl App {
             statics: Vec::new(),
             browser_required: false,
             openapi: OpenApiOptions::default(),
+            openapi_explicit: false,
             openapi_operations: Vec::new(),
             documented: Vec::new(),
             strict_migrations: false,
@@ -104,14 +107,18 @@ impl App {
         self
     }
 
-    /// Replaces the OpenAPI JSON path, the optional explorer, or turns both off.
+    /// Replaces the OpenAPI document, Swagger UI and access rules.
+    ///
+    /// This wins over `[api.docs]` from [`Self::with_settings`].
     pub fn openapi(mut self, options: OpenApiOptions) -> Self {
         self.openapi = options;
+        self.openapi_explicit = true;
         self
     }
 
     pub fn without_openapi(mut self) -> Self {
         self.openapi.enabled = false;
+        self.openapi_explicit = true;
         self
     }
 
@@ -334,7 +341,10 @@ impl App {
         self.build_router()
     }
 
-    fn build_router(self) -> Result<Router, crate::apps::AppError> {
+    fn build_router(mut self) -> Result<Router, crate::apps::AppError> {
+        if !self.openapi_explicit {
+            self.openapi = openapi::implicit_options(self.settings.as_ref());
+        }
         let needs_validation = !self.sealed
             && (!self.installed.is_empty()
                 || self
@@ -421,16 +431,17 @@ impl App {
             auth: self.auth,
             mail: self.mail,
         };
-        let router = {
-            let mut routes = mount(self.routes);
-            if let Some(registry) = self.admin {
-                routes = fexu_admin::mount(routes, registry);
-            }
-            routes
+        let mut routes = mount(self.routes);
+        if let Some(registry) = self.admin {
+            routes = fexu_admin::mount(routes, registry);
         }
-        .route("/healthz", get(|| async { Json(json!({"status": "ok"})) }))
-        .route("/readyz", get(readyz))
-        .layer(axum::middleware::from_fn_with_state(
+        routes = routes
+            .route("/healthz", get(|| async { Json(json!({"status": "ok"})) }))
+            .route("/readyz", get(readyz));
+        if let Some(specification) = specification {
+            routes = openapi::mount(routes, specification, &openapi_options);
+        }
+        let router = routes.layer(axum::middleware::from_fn_with_state(
             state.clone(),
             cookie_guard::enforce,
         ));
@@ -442,8 +453,7 @@ impl App {
         } else {
             router
         };
-        let router = router.with_state(state);
-        let mut router = router;
+        let mut router = router.with_state(state);
         for mount in self.statics {
             let mut options = fexu_static::StaticOptions::new(mount.directory);
             options.url_prefix = mount.prefix;
@@ -451,11 +461,6 @@ impl App {
         }
         let mut catalog = self.catalog;
         catalog.set_routes(self.names.clone());
-        let router = if let Some(specification) = specification {
-            openapi::mount(router, specification, &openapi_options)
-        } else {
-            router
-        };
         let router = router.layer(axum::Extension(std::sync::Arc::new(catalog)));
         let router = router.layer(axum::Extension(std::sync::Arc::new(self.names)));
         if let Some(settings) = self.settings {

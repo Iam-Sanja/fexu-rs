@@ -420,6 +420,7 @@ mod tests {
             jobs_max_attempts: 1,
             jobs_retention_hours: 1,
             jobs_jitter: false,
+            api_docs: Default::default(),
             custom: BTreeMap::new(),
             apps: Vec::new(),
         }

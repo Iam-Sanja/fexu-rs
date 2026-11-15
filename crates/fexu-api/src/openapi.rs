@@ -2,21 +2,29 @@
 //!
 //! The document lists generated model routes, the health check, the auth routes
 //! that `mount` always installs, and operations added with [`super::App::document`].
-//! Admin routes are not part of this registry and do not appear.
+//! Admin routes are not part of this registry and do not appear. Swagger UI is an
+//! optional view of this same document; it is not a second schema generator.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Arc;
 
-use axum::response::Html;
+use axum::extract::State;
+use axum::http::{header, HeaderMap, HeaderValue, StatusCode};
+use axum::response::{Html, IntoResponse, Response};
 use axum::routing::get;
 use axum::{Json, Router};
+use fexu_auth::{AppState, AuthError};
 use fexu_core::{
-    AdminFieldMeta, AdminModelMeta, ColumnKind, ColumnSpec, FexuModel, FieldContract,
+    problem_json, AdminFieldMeta, AdminModelMeta, ColumnKind, ColumnSpec, FexuModel, FieldContract,
     ModelDescriptor, NumericBound, ReferentialAction,
 };
 use fexu_db::PAGE_LIMIT;
 use serde_json::{json, Map, Value};
 
+use crate::swagger_ui;
 use crate::App;
+
+const DOCUMENT_CSP: &str = "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'";
 
 const AUTH_PATHS: &[&str] = &[
     "/auth/login",
@@ -30,21 +38,48 @@ const AUTH_PATHS: &[&str] = &[
     "/auth/password-reset/choose",
 ];
 
+/// Which page, if any, is mounted beside the OpenAPI document.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum OpenApiUi {
+    Swagger,
+    Explorer,
+    None,
+}
+
+/// Who may read the document and the UI. API routes are unchanged.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DocsAccess {
+    /// Any client that can reach the process.
+    Public,
+    /// A valid `fexu_session` is required. An anonymous cookie is not enough.
+    Session,
+}
+
 #[derive(Clone, Debug)]
 pub struct OpenApiOptions {
     pub enabled: bool,
+    /// Serves the OpenAPI document. The UI cannot be mounted without it.
+    pub schema_enabled: bool,
     pub json_path: String,
     pub ui_path: Option<String>,
     pub title: String,
+    pub ui: OpenApiUi,
+    /// When false, Swagger UI and the explorer do not send API requests.
+    pub try_it_out: bool,
+    pub access: DocsAccess,
 }
 
 impl Default for OpenApiOptions {
     fn default() -> Self {
         Self {
             enabled: true,
-            json_path: "/openapi.json".to_owned(),
-            ui_path: Some("/docs".to_owned()),
+            schema_enabled: true,
+            json_path: "/api/openapi.json".to_owned(),
+            ui_path: Some("/api/docs".to_owned()),
             title: "Fexu".to_owned(),
+            ui: OpenApiUi::Swagger,
+            try_it_out: false,
+            access: DocsAccess::Public,
         }
     }
 }
@@ -56,6 +91,59 @@ impl OpenApiOptions {
             ..Self::default()
         }
     }
+
+    /// Applies `[api.docs]`. An omitted section is off in production and on otherwise.
+    /// An omitted access mode is `session` in production and `public` otherwise.
+    pub fn from_project(project: &fexu_migrations::ProjectConfig) -> Self {
+        let resolved = project.api_docs.resolve(project.is_production());
+        Self::from_resolved(&resolved, project.app_name.clone())
+    }
+
+    fn from_resolved(resolved: &fexu_migrations::ResolvedApiDocs, title: String) -> Self {
+        let ui = match resolved.ui.as_str() {
+            "none" => OpenApiUi::None,
+            "explorer" => OpenApiUi::Explorer,
+            _ => OpenApiUi::Swagger,
+        };
+        Self {
+            enabled: resolved.enabled,
+            schema_enabled: resolved.schema_enabled,
+            json_path: resolved.schema_path.clone(),
+            ui_path: if ui == OpenApiUi::None {
+                None
+            } else {
+                Some(resolved.path.clone())
+            },
+            title,
+            ui,
+            try_it_out: resolved.try_it_out,
+            access: if resolved.access == "session" {
+                DocsAccess::Session
+            } else {
+                DocsAccess::Public
+            },
+        }
+    }
+}
+
+/// Options for an app that did not call `openapi` or `without_openapi`.
+///
+/// A loaded project uses `[api.docs]`. Without a project, omitted settings follow
+/// `ApiDocsSettings::resolve`: documentation is off in production and on otherwise.
+/// [`OpenApiOptions::default`] does not read the environment.
+pub(crate) fn implicit_options(project: Option<&fexu_migrations::ProjectConfig>) -> OpenApiOptions {
+    if let Some(project) = project {
+        return OpenApiOptions::from_project(project);
+    }
+    let production = matches!(
+        fexu_core::aliased_env("FEXU_ENV"),
+        Ok(Some(value)) if value.eq_ignore_ascii_case("production")
+    );
+    if !production {
+        return OpenApiOptions::default();
+    }
+    let resolved = fexu_migrations::ApiDocsSettings::default().resolve(true);
+    OpenApiOptions::from_resolved(&resolved, "Fexu".to_owned())
 }
 
 /// One extra operation for a route the application already registered.
@@ -73,6 +161,107 @@ pub struct OpenApiOperation {
     pub session: bool,
     /// Cookie writes also require the CSRF header or form field.
     pub csrf: bool,
+    pub description: String,
+    pub parameters: Vec<Value>,
+    pub error_statuses: Vec<u16>,
+}
+
+impl OpenApiOperation {
+    pub fn new(
+        method: impl Into<String>,
+        path: impl Into<String>,
+        operation_id: impl Into<String>,
+    ) -> Self {
+        Self {
+            method: method.into(),
+            path: path.into(),
+            operation_id: operation_id.into(),
+            summary: String::new(),
+            tag: "custom".to_owned(),
+            request_schema: None,
+            response_status: 200,
+            response_schema: None,
+            session: false,
+            csrf: false,
+            description: String::new(),
+            parameters: Vec::new(),
+            error_statuses: Vec::new(),
+        }
+    }
+
+    pub fn get(path: impl Into<String>, operation_id: impl Into<String>) -> Self {
+        Self::new("GET", path, operation_id)
+    }
+
+    pub fn post(path: impl Into<String>, operation_id: impl Into<String>) -> Self {
+        Self::new("POST", path, operation_id)
+    }
+
+    pub fn summary(mut self, summary: impl Into<String>) -> Self {
+        self.summary = summary.into();
+        self
+    }
+
+    pub fn description(mut self, description: impl Into<String>) -> Self {
+        self.description = description.into();
+        self
+    }
+
+    pub fn tag(mut self, tag: impl Into<String>) -> Self {
+        self.tag = tag.into();
+        self
+    }
+
+    pub fn request_schema(mut self, schema: Value) -> Self {
+        self.request_schema = Some(schema);
+        self
+    }
+
+    pub fn response(mut self, status: u16, schema: Option<Value>) -> Self {
+        self.response_status = status;
+        self.response_schema = schema;
+        self
+    }
+
+    pub fn query(mut self, name: &str, schema: Value) -> Self {
+        self.parameters.push(json!({
+            "name": name,
+            "in": "query",
+            "required": false,
+            "schema": schema
+        }));
+        self
+    }
+
+    pub fn path_parameter(mut self, name: &str, schema: Value) -> Self {
+        self.parameters.push(json!({
+            "name": name,
+            "in": "path",
+            "required": true,
+            "schema": schema
+        }));
+        self
+    }
+
+    pub fn parameter(mut self, parameter: Value) -> Self {
+        self.parameters.push(parameter);
+        self
+    }
+
+    pub fn error_status(mut self, status: u16) -> Self {
+        self.error_statuses.push(status);
+        self
+    }
+
+    pub fn session(mut self) -> Self {
+        self.session = true;
+        self
+    }
+
+    pub fn csrf(mut self) -> Self {
+        self.csrf = true;
+        self
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -111,23 +300,63 @@ pub(crate) fn check(app: &App) -> Result<(), String> {
     if !app.openapi.enabled {
         return Ok(());
     }
-    validate_path(&app.openapi.json_path)?;
-    if let Some(ui) = &app.openapi.ui_path {
-        validate_path(ui)?;
-        if ui == &app.openapi.json_path {
-            return Err("The OpenAPI document and the explorer need different paths.".into());
-        }
-        if app.paths.contains(ui) {
+    let options = &app.openapi;
+    if !options.schema_enabled && matches!(options.ui, OpenApiUi::None) {
+        return Err(
+            "OpenAPI documentation is enabled but neither the schema nor a UI is configured."
+                .into(),
+        );
+    }
+    if options.schema_enabled {
+        validate_path(&options.json_path)?;
+        reject_admin_path(&options.json_path)?;
+        if app.paths.contains(&options.json_path) {
             return Err(format!(
-                "OpenAPI explorer path `{ui}` is already registered."
+                "OpenAPI path `{}` is already registered.",
+                options.json_path
             ));
         }
     }
-    if app.paths.contains(&app.openapi.json_path) {
-        return Err(format!(
-            "OpenAPI path `{}` is already registered.",
-            app.openapi.json_path
-        ));
+    match options.ui {
+        OpenApiUi::None => {
+            if options.ui_path.is_some() {
+                return Err(
+                    "OpenAPI ui_path is set while the UI is none. Clear ui_path or select a UI."
+                        .into(),
+                );
+            }
+        }
+        OpenApiUi::Swagger | OpenApiUi::Explorer => {
+            if !options.schema_enabled {
+                return Err(
+                    "The API UI needs the OpenAPI schema route. Set schema_enabled or turn the UI off."
+                        .into(),
+                );
+            }
+            let Some(ui) = options.ui_path.as_deref() else {
+                return Err("The selected API UI needs ui_path.".into());
+            };
+            validate_path(ui)?;
+            reject_admin_path(ui)?;
+            if ui == options.json_path {
+                return Err("The OpenAPI document and the UI need different paths.".into());
+            }
+            if app.paths.contains(ui) {
+                return Err(format!("OpenAPI UI path `{ui}` is already registered."));
+            }
+            if options.ui == OpenApiUi::Swagger {
+                for suffix in swagger_ui::asset_suffixes() {
+                    let asset = format!("{ui}/{suffix}");
+                    validate_path(&asset)?;
+                    reject_admin_path(&asset)?;
+                    if asset == options.json_path || app.paths.contains(&asset) {
+                        return Err(format!(
+                            "OpenAPI asset path `{asset}` is already registered."
+                        ));
+                    }
+                }
+            }
+        }
     }
     let mut ids = BTreeSet::new();
     for operation in &app.openapi_operations {
@@ -180,27 +409,263 @@ pub(crate) fn specification(app: &App) -> Value {
     })
 }
 
-pub(crate) fn mount(router: Router, specification: Value, options: &OpenApiOptions) -> Router {
-    let body = std::sync::Arc::new(specification);
-    let json_body = body.clone();
-    let mut router = router.route(
-        &options.json_path,
-        get(move || {
-            let body = json_body.clone();
-            async move { Json(body.as_ref().clone()) }
+pub(crate) fn mount(
+    router: Router<AppState>,
+    specification: Value,
+    options: &OpenApiOptions,
+) -> Router<AppState> {
+    let spec = Arc::new(specification);
+    let options = options.clone();
+    let mut router = router;
+    if options.schema_enabled {
+        let spec = spec.clone();
+        let options = options.clone();
+        let path = options.json_path.clone();
+        router = router.route(
+            &path,
+            get(move |State(app): State<AppState>, headers: HeaderMap| {
+                let spec = spec.clone();
+                let options = options.clone();
+                async move { serve_json(app, headers, spec, options).await }
+            }),
+        );
+    }
+    let Some(ui_path) = options.ui_path.clone() else {
+        return router;
+    };
+    match options.ui {
+        OpenApiUi::None => router,
+        OpenApiUi::Explorer => {
+            let page = explorer_page(&options.title, &options.json_path, options.try_it_out);
+            let options = options.clone();
+            router.route(
+                &ui_path,
+                get(move |State(app): State<AppState>, headers: HeaderMap| {
+                    let page = page.clone();
+                    let options = options.clone();
+                    async move { serve_html(app, headers, page, options).await }
+                }),
+            )
+        }
+        OpenApiUi::Swagger => mount_swagger(router, options, &ui_path),
+    }
+}
+
+fn mount_swagger(
+    mut router: Router<AppState>,
+    options: OpenApiOptions,
+    ui_path: &str,
+) -> Router<AppState> {
+    let page = swagger_ui::page(&options.title, ui_path);
+    let script = swagger_ui::initializer(&options.json_path, options.try_it_out);
+    let page_options = options.clone();
+    router = router.route(
+        ui_path,
+        get(move |State(app): State<AppState>, headers: HeaderMap| {
+            let page = page.clone();
+            let options = page_options.clone();
+            async move { serve_html(app, headers, page, options).await }
         }),
     );
-    if let Some(ui_path) = options.ui_path.clone() {
-        let page = explorer_page(&options.title, &options.json_path);
+    let script_options = options.clone();
+    let script_path = format!("{ui_path}/swagger-initializer.js");
+    router = router.route(
+        &script_path,
+        get(move |State(app): State<AppState>, headers: HeaderMap| {
+            let script = script.clone();
+            let options = script_options.clone();
+            async move {
+                serve_text(
+                    app,
+                    headers,
+                    script,
+                    "text/javascript; charset=utf-8",
+                    options,
+                )
+                .await
+            }
+        }),
+    );
+    for suffix in swagger_ui::asset_suffixes() {
+        let Some((body, content_type)) = swagger_ui::asset(suffix) else {
+            continue;
+        };
+        let path = format!("{ui_path}/{suffix}");
+        let options = options.clone();
         router = router.route(
-            &ui_path,
-            get(move || {
-                let page = page.clone();
-                async move { Html(page) }
+            &path,
+            get(move |State(app): State<AppState>, headers: HeaderMap| {
+                let options = options.clone();
+                async move { serve_bytes(app, headers, body, content_type, options).await }
             }),
         );
     }
     router
+}
+
+async fn serve_json(
+    app: AppState,
+    headers: HeaderMap,
+    spec: Arc<Value>,
+    options: OpenApiOptions,
+) -> Response {
+    if let Some(response) = allow_docs(&app, &headers, &options).await {
+        return response;
+    }
+    (
+        [(header::CACHE_CONTROL, cache_control(&options, false))],
+        Json(spec.as_ref().clone()),
+    )
+        .into_response()
+}
+
+async fn serve_html(
+    app: AppState,
+    headers: HeaderMap,
+    page: String,
+    options: OpenApiOptions,
+) -> Response {
+    if let Some(response) = allow_docs(&app, &headers, &options).await {
+        return response;
+    }
+    (
+        [
+            (
+                header::CONTENT_TYPE,
+                HeaderValue::from_static("text/html; charset=utf-8"),
+            ),
+            (header::CACHE_CONTROL, cache_control(&options, false)),
+            (
+                header::X_CONTENT_TYPE_OPTIONS,
+                HeaderValue::from_static("nosniff"),
+            ),
+            (header::X_FRAME_OPTIONS, HeaderValue::from_static("DENY")),
+            (
+                header::REFERRER_POLICY,
+                HeaderValue::from_static("no-referrer"),
+            ),
+            (
+                header::CONTENT_SECURITY_POLICY,
+                HeaderValue::from_static(DOCUMENT_CSP),
+            ),
+        ],
+        Html(page),
+    )
+        .into_response()
+}
+
+async fn serve_text(
+    app: AppState,
+    headers: HeaderMap,
+    body: String,
+    content_type: &'static str,
+    options: OpenApiOptions,
+) -> Response {
+    if let Some(response) = allow_docs(&app, &headers, &options).await {
+        return response;
+    }
+    (
+        [
+            (header::CONTENT_TYPE, HeaderValue::from_static(content_type)),
+            (header::CACHE_CONTROL, cache_control(&options, false)),
+            (
+                header::X_CONTENT_TYPE_OPTIONS,
+                HeaderValue::from_static("nosniff"),
+            ),
+            (
+                header::CONTENT_SECURITY_POLICY,
+                HeaderValue::from_static("default-src 'none'"),
+            ),
+        ],
+        body,
+    )
+        .into_response()
+}
+
+async fn serve_bytes(
+    app: AppState,
+    headers: HeaderMap,
+    body: &'static [u8],
+    content_type: &'static str,
+    options: OpenApiOptions,
+) -> Response {
+    if let Some(response) = allow_docs(&app, &headers, &options).await {
+        return response;
+    }
+    (
+        [
+            (header::CONTENT_TYPE, HeaderValue::from_static(content_type)),
+            (header::CACHE_CONTROL, cache_control(&options, true)),
+            (
+                header::X_CONTENT_TYPE_OPTIONS,
+                HeaderValue::from_static("nosniff"),
+            ),
+            (
+                header::CONTENT_SECURITY_POLICY,
+                HeaderValue::from_static("default-src 'none'"),
+            ),
+        ],
+        body,
+    )
+        .into_response()
+}
+
+async fn allow_docs(
+    app: &AppState,
+    headers: &HeaderMap,
+    options: &OpenApiOptions,
+) -> Option<Response> {
+    if options.access != DocsAccess::Session {
+        return None;
+    }
+    let Some(auth) = app.auth.as_ref() else {
+        return Some(docs_problem(
+            StatusCode::FORBIDDEN,
+            "Forbidden",
+            "authentication is not configured",
+        ));
+    };
+    match auth.authenticate(headers, &axum::http::Method::GET).await {
+        Ok(_) => None,
+        Err(AuthError::Forbidden) => Some(docs_problem(
+            StatusCode::FORBIDDEN,
+            "Forbidden",
+            "Access denied",
+        )),
+        Err(AuthError::OriginRejected) => Some(docs_problem(
+            StatusCode::FORBIDDEN,
+            "Forbidden",
+            "origin is not allowed",
+        )),
+        Err(_) => Some(docs_problem(
+            StatusCode::UNAUTHORIZED,
+            "Unauthorized",
+            "Authentication required",
+        )),
+    }
+}
+
+fn cache_control(options: &OpenApiOptions, static_asset: bool) -> HeaderValue {
+    let value = if options.access == DocsAccess::Session {
+        "private, no-store"
+    } else if static_asset {
+        "public, max-age=86400"
+    } else {
+        "no-store"
+    };
+    HeaderValue::from_static(value)
+}
+
+fn docs_problem(status: StatusCode, title: &str, detail: &str) -> Response {
+    (
+        status,
+        [(
+            header::CACHE_CONTROL,
+            HeaderValue::from_static("private, no-store"),
+        )],
+        Json(problem_json(status.as_u16(), title, detail)),
+    )
+        .into_response()
 }
 
 fn add_model(
@@ -901,19 +1366,38 @@ fn auth_html(id: &str, summary: &str) -> Value {
 }
 
 fn custom_operation(operation: &OpenApiOperation) -> Value {
+    let mut responses = Map::new();
+    responses.insert(
+        operation.response_status.to_string(),
+        success_response(operation.response_status, None),
+    );
+    if let Some(schema) = &operation.response_schema {
+        responses.insert(
+            operation.response_status.to_string(),
+            json!({
+                "description": "Documented response.",
+                "content": { "application/json": { "schema": schema } }
+            }),
+        );
+    }
+    for status in &operation.error_statuses {
+        responses.insert(status.to_string(), problem_response());
+    }
     let mut body = json!({
         "operationId": operation.operation_id,
         "tags": [operation.tag],
         "summary": operation.summary,
-        "responses": {
-            operation.response_status.to_string(): success_response(operation.response_status, None)
-        }
+        "responses": Value::Object(responses)
     });
-    if let Some(schema) = &operation.response_schema {
-        body["responses"][operation.response_status.to_string()] = json!({
-            "description": "Documented response.",
-            "content": { "application/json": { "schema": schema } }
-        });
+    if !operation.description.is_empty() {
+        body["description"] = json!(operation.description);
+    } else if operation.session || operation.csrf {
+        body["description"] = json!(
+            "A request that sends fexu_session must also send x-csrf-token when this operation requires that proof. Bearer authorization is not a session."
+        );
+    }
+    if !operation.parameters.is_empty() {
+        body["parameters"] = Value::Array(operation.parameters.clone());
     }
     if let Some(schema) = &operation.request_schema {
         body["requestBody"] = json!({
@@ -1004,8 +1488,21 @@ fn insert_path(
     method: &str,
     operation: Value,
 ) {
+    if path == "/admin" || path.starts_with("/admin/") {
+        return;
+    }
     let entry = paths.entry(path.to_owned()).or_default();
     entry.insert(method.to_owned(), operation);
+}
+
+fn reject_admin_path(path: &str) -> Result<(), String> {
+    if path == "/admin" || path.starts_with("/admin/") {
+        Err(format!(
+            "OpenAPI path `{path}` must not publish an admin route."
+        ))
+    } else {
+        Ok(())
+    }
 }
 
 fn path_value(paths: BTreeMap<String, Map<String, Value>>) -> Value {
@@ -1070,6 +1567,30 @@ fn validate_operation(
     if !(100..600).contains(&operation.response_status) {
         return Err("OpenAPI response status is outside 100..599.".into());
     }
+    for status in &operation.error_statuses {
+        if !(100..600).contains(status) {
+            return Err("OpenAPI error status is outside 100..599.".into());
+        }
+        if *status == operation.response_status {
+            return Err(format!(
+                "OpenAPI operation `{}` repeats status {status}.",
+                operation.operation_id
+            ));
+        }
+    }
+    for parameter in &operation.parameters {
+        let name = parameter.get("name").and_then(Value::as_str).unwrap_or("");
+        let location = parameter.get("in").and_then(Value::as_str).unwrap_or("");
+        if name.is_empty() || !matches!(location, "query" | "path" | "header" | "cookie") {
+            return Err(
+                "OpenAPI parameter needs a name and a location of query, path, header or cookie."
+                    .into(),
+            );
+        }
+        if parameter.get("schema").is_none() && parameter.get("content").is_none() {
+            return Err(format!("OpenAPI parameter `{name}` needs a schema."));
+        }
+    }
     Ok(())
 }
 
@@ -1100,14 +1621,205 @@ fn validate_path(path: &str) -> Result<(), String> {
     Ok(())
 }
 
-fn explorer_page(title: &str, json_path: &str) -> String {
+fn explorer_page(title: &str, json_path: &str, try_it_out: bool) -> String {
     let visible = escape_html(json_path);
     let title = escape_html(title);
     let script_path = serde_json::to_string(json_path).expect("a path string encodes as JSON");
+    let form = if try_it_out {
+        r##"<h2>Try a request</h2>
+<form id="try">
+<label>Method <select id="method"><option>GET</option><option>POST</option><option>PUT</option><option>PATCH</option><option>DELETE</option></select></label>
+<label>Path <input id="path" size="48" required></label>
+<label>JSON body <textarea id="body" rows="4" cols="60"></textarea></label>
+<button type="submit">Send</button>
+</form>
+<pre id="result"></pre>"##
+    } else {
+        "<p>Try it out is disabled. This page does not send API requests.</p>"
+    };
+    let script = if try_it_out {
+        r##"document.querySelector("#try").addEventListener("submit", async event => {
+  event.preventDefault();
+  const method = document.querySelector("#method").value;
+  const target = pathInput.value;
+  const raw = document.querySelector("#body").value.trim();
+  const init = { method: method, headers: {}, credentials: "same-origin" };
+  if (raw) {
+    init.headers["content-type"] = "application/json";
+    init.body = raw;
+  }
+  const response = await fetch(target, init);
+  document.querySelector("#result").textContent = response.status + "\n" + await response.text();
+});"##
+    } else {
+        ""
+    };
     include_str!("explorer.html")
         .replace("/*TITLE*/", &title)
         .replace("/*SPEC*/", &visible)
         .replace("/*SPEC_JS*/", &script_path)
+        .replace("/*TRY_FORM*/", form)
+        .replace("/*TRY_JS*/", script)
+}
+
+/// Checks the generated document against the OpenAPI 3.1 contract this crate emits.
+///
+/// The check resolves local schema references, requires operation ids and responses,
+/// and rejects a security requirement that names a scheme the document does not define.
+pub fn validate_document(document: &Value) -> Result<(), String> {
+    let object = document
+        .as_object()
+        .ok_or("OpenAPI document must be a JSON object")?;
+    if object.get("openapi").and_then(Value::as_str) != Some("3.1.0") {
+        return Err("openapi must be 3.1.0".into());
+    }
+    let info = object
+        .get("info")
+        .and_then(Value::as_object)
+        .ok_or("info must be an object")?;
+    for key in ["title", "version"] {
+        if info
+            .get(key)
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .is_empty()
+        {
+            return Err(format!("info.{key} must be a non-empty string"));
+        }
+    }
+    let paths = object
+        .get("paths")
+        .and_then(Value::as_object)
+        .ok_or("paths must be an object")?;
+    let schemas = document
+        .pointer("/components/schemas")
+        .and_then(Value::as_object);
+    let schemes = document
+        .pointer("/components/securitySchemes")
+        .and_then(Value::as_object);
+    for (path, item) in paths {
+        if path == "/admin" || path.starts_with("/admin/") {
+            return Err(format!("admin path `{path}` is in the public document"));
+        }
+        if !path.starts_with('/') {
+            return Err(format!("path `{path}` is not absolute"));
+        }
+        let methods = item
+            .as_object()
+            .ok_or_else(|| format!("path `{path}` must be an object"))?;
+        for (method, operation_json) in methods {
+            if !matches!(
+                method.as_str(),
+                "get" | "post" | "put" | "patch" | "delete" | "head" | "options" | "trace"
+            ) {
+                return Err(format!("`{method}` is not an OpenAPI method on `{path}`"));
+            }
+            let operation = operation_json
+                .as_object()
+                .ok_or_else(|| format!("`{method} {path}` must be an object"))?;
+            if operation
+                .get("operationId")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .is_empty()
+            {
+                return Err(format!("`{method} {path}` needs an operationId"));
+            }
+            let responses = operation
+                .get("responses")
+                .and_then(Value::as_object)
+                .ok_or_else(|| format!("`{method} {path}` needs responses"))?;
+            if responses.is_empty() {
+                return Err(format!("`{method} {path}` has no responses"));
+            }
+            for status in responses.keys() {
+                if status != "default"
+                    && !status
+                        .parse::<u16>()
+                        .ok()
+                        .is_some_and(|code| (100..600).contains(&code))
+                {
+                    return Err(format!("`{method} {path}` has status `{status}`"));
+                }
+            }
+            if let Some(parameters) = operation.get("parameters") {
+                let list = parameters
+                    .as_array()
+                    .ok_or_else(|| format!("`{method} {path}` parameters must be an array"))?;
+                for parameter in list {
+                    let name = parameter.get("name").and_then(Value::as_str).unwrap_or("");
+                    let location = parameter.get("in").and_then(Value::as_str).unwrap_or("");
+                    if name.is_empty()
+                        || !matches!(location, "query" | "path" | "header" | "cookie")
+                    {
+                        return Err(format!(
+                            "`{method} {path}` has a parameter without a name or location"
+                        ));
+                    }
+                }
+            }
+            if let Some(security) = operation.get("security").and_then(Value::as_array) {
+                for requirement in security {
+                    let requirement = requirement.as_object().ok_or_else(|| {
+                        format!("`{method} {path}` security entry must be an object")
+                    })?;
+                    for name in requirement.keys() {
+                        if schemes.is_none_or(|defined| !defined.contains_key(name)) {
+                            return Err(format!(
+                                "security scheme `{name}` is not defined on `{method} {path}`"
+                            ));
+                        }
+                    }
+                }
+            }
+            check_refs(operation_json, schemas, &format!("{method} {path}"))?;
+        }
+    }
+    if let Some(schemas) = schemas {
+        for (name, schema) in schemas {
+            if !schema.is_object() {
+                return Err(format!("schema `{name}` must be an object"));
+            }
+            check_refs(schema, Some(schemas), name)?;
+        }
+    }
+    Ok(())
+}
+
+fn check_refs(
+    value: &Value,
+    schemas: Option<&Map<String, Value>>,
+    context: &str,
+) -> Result<(), String> {
+    match value {
+        Value::Array(items) => {
+            for item in items {
+                check_refs(item, schemas, context)?;
+            }
+        }
+        Value::Object(object) => {
+            if let Some(reference) = object.get("$ref").and_then(Value::as_str) {
+                let name = reference
+                    .strip_prefix("#/components/schemas/")
+                    .filter(|name| !name.is_empty() && !name.contains('/'))
+                    .ok_or_else(|| {
+                        format!("`{reference}` in {context} is not a local schema reference")
+                    })?;
+                if schemas.is_none_or(|defined| !defined.contains_key(name)) {
+                    return Err(format!(
+                        "schema `{name}` referenced from {context} is missing"
+                    ));
+                }
+            }
+            for (key, child) in object {
+                if key != "$ref" {
+                    check_refs(child, schemas, context)?;
+                }
+            }
+        }
+        _ => {}
+    }
+    Ok(())
 }
 
 fn escape_html(value: &str) -> String {
