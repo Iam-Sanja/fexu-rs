@@ -334,7 +334,11 @@ fn map_sqlx(error: sqlx_core::Error, execute: bool) -> DbErr {
 
 fn runtime_from(error: sqlx_core::Error) -> RuntimeErr {
     let constraint = constraint_of(&error);
-    RuntimeErr::with_constraint(error.to_string(), constraint)
+    let sql_state = match &error {
+        sqlx_core::Error::Database(database) => database.code().map(|code| code.into_owned()),
+        _ => None,
+    };
+    RuntimeErr::with_sql_state(error.to_string(), constraint, sql_state)
 }
 
 fn constraint_of(error: &sqlx_core::Error) -> Option<ConstraintKind> {
