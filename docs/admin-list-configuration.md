@@ -2,7 +2,7 @@
 
 [Overview](admin.md) · Comparison: [admin-django-parity.md](admin-django-parity.md)
 
-**Milestone:** v0.17. The Cargo version remains `0.1.0`.
+**Milestone:** v0.17. The Cargo version is `0.1.2`.
 
 The list reads the same `AdminFieldMeta` and `AdminModelMeta` values as the form and JSON API. There is no second configuration.
 

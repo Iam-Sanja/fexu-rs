@@ -25,13 +25,9 @@ crates.io credential through GitHub OIDC.
 
 ## Version policy
 
-For the first synchronized workspace release, propose `0.1.2`.
-Currently most workspace crates inherit `0.1.0` while `fexu-cli` has `0.1.1`.
-`0.1.2` is therefore a proposed **common next version**, not a version
-automatically derived by Cargo. Each publishable package must have version
-`0.1.2` and each internal path dependency must require `0.1.2`.
-This version bump and the lockfile update belong in a separately reviewed
-release preparation PR. Existing released versions must never be overwritten.
+This branch sets every publishable crate and every internal path dependency
+to `0.1.2`. `0.1.0` and `fexu-cli` `0.1.1` stay on crates.io and are not
+overwritten. `0.1.2` is the common next version, not a version Cargo derives.
 
 Inspect the publishing graph before making a release:
 
@@ -59,11 +55,15 @@ unpublishable, or the local dependency graph has a cycle.
 6. Only then consider enforcing *Trusted Publishing Only* on each crate.
 
 The publisher uses `cargo metadata` to topologically order workspace crates.
-It publishes all publishable workspace packages with `cargo publish --locked`
-and waits between packages for registry indexing. Publishing is not atomic:
-if a later crate fails, earlier crates may already be live and immutable.
-Never rerun the same release blindly; diagnose partial publication first.
-The OIDC token is short-lived; a slow multi-crate release may require renewal
-or a split publishing workflow before production use.
+It publishes with `cargo publish --locked`. After each new upload it polls
+the sparse index for that exact version, for up to 90 seconds, before the
+next crate. A version already present in the index is skipped, so a rerun
+continues after a partial release instead of failing on the first live crate.
+Publishing is not atomic: earlier crates may already be live and immutable.
+Trusted-publishing tokens expire after 30 minutes and the workflow requests
+the token only after formatting, Clippy and tests. If a run stops because the
+token expired, rerun the same release job after the index shows the crates
+that already uploaded. Do not publish a second version number to finish the
+same release.
 
 No production database is involved in the publish workflow.

@@ -2,7 +2,7 @@
 
 [Overview](index.md) · Password: [password-reset.md](password-reset.md) · SMTP: [mail-smtp.md](mail-smtp.md)
 
-**Milestone:** v0.23. The Cargo version remains `0.1.0`.
+**Milestone:** v0.23. The Cargo version is `0.1.2`.
 
 ## What is stored
 

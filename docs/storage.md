@@ -1,6 +1,6 @@
 # Storage
 
-**Milestone:** v0.12, implemented for local storage. Remote object storage is a checked configuration, not a client. The Cargo version remains `0.1.0`. See [storage-remote.md](storage-remote.md).
+**Milestone:** v0.12, implemented for local storage. Remote object storage is a checked configuration, not a client. The Cargo version is `0.1.2`. See [storage-remote.md](storage-remote.md).
 
 ## Responsibility
 

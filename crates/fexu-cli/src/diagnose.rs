@@ -693,7 +693,10 @@ fn project_lines(project: &ProjectConfig) -> ProjectCounts {
         fexu_migrations::DependencyKind::Git => report("OK", "project.dependency.git"),
         fexu_migrations::DependencyKind::Registry => report(
             "OK",
-            "project.dependency.registry Cargo version 0.1.0 is not the internal template version.",
+            &format!(
+                "project.dependency.registry Cargo version {} is not the internal template version.",
+                crate::scaffold::PUBLISHED_FEXU_VERSION
+            ),
         ),
         fexu_migrations::DependencyKind::Missing => {
             report(

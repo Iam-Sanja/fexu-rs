@@ -2,7 +2,7 @@
 
 [Overview](index.md) · Database: [database.md](database.md) Directory: [admin-directory-audit.md](admin-directory-audit.md) Parent-child forms: [admin-transactional-inlines.md](admin-transactional-inlines.md)
 
-**Milestone:** v0.20. The Cargo version remains `0.1.0`.
+**Milestone:** v0.20. The Cargo version is `0.1.2`.
 
 A write operation that changes several rows uses a `DatabaseTransaction`. `fexu_db::conclude` commits only on `Ok` and rolls back on `Err`. There is no separate transaction engine.
 

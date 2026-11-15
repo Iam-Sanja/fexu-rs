@@ -2,7 +2,7 @@
 
 [Overview](index.md) · Worker: [workers.md](workers.md) · Retries: [job-retries.md](job-retries.md) · Mail: [job-mail-integration.md](job-mail-integration.md)
 
-**Implemented.** Milestone v0.27.1. Cargo version `0.1.0`. The queue is in `crates/fexu-jobs`. There is no redis and no second database engine.
+**Implemented.** Milestone v0.27.1. Cargo version `0.1.2`. The queue is in `crates/fexu-jobs`. There is no redis and no second database engine.
 
 ## Delivery
 

@@ -2,7 +2,7 @@
 
 [Overview](admin-inlines.md) · Transactions: [transactions.md](transactions.md) · Drafts: [admin-form-drafts.md](admin-form-drafts.md)
 
-**Milestone:** v0.20. The Cargo version remains `0.1.0`.
+**Milestone:** v0.20. The Cargo version is `0.1.2`.
 
 Without further options, `admin_inline` keeps the detail-page list and separate child creation form. A shared parent-child form is opt-in.
 

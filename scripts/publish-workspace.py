@@ -13,9 +13,14 @@ import os
 import subprocess
 import sys
 import time
+import urllib.error
+import urllib.request
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+USER_AGENT = "fexu-release (https://github.com/Iam-Sanja/fexu-rs)"
+INDEX_WAIT_SECONDS = 90
+INDEX_POLL_SECONDS = 5
 
 
 def metadata():
@@ -90,6 +95,70 @@ def release_order(version):
     return result
 
 
+def index_url(crate):
+    name = crate.lower()
+    length = len(name)
+    if length <= 1:
+        prefix = f"1/{name}"
+    elif length == 2:
+        prefix = f"2/{name}"
+    elif length == 3:
+        prefix = f"3/{name[0]}/{name}"
+    else:
+        prefix = f"{name[:2]}/{name[2:4]}/{name}"
+    return f"https://index.crates.io/{prefix}"
+
+
+def index_lists_version(crate, version):
+    request = urllib.request.Request(
+        index_url(crate),
+        headers={"User-Agent": USER_AGENT, "Accept": "text/plain"},
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=30) as response:
+            body = response.read().decode("utf-8", "replace")
+    except urllib.error.HTTPError as exc:
+        if exc.code == 404:
+            return False
+        raise RuntimeError(f"{crate}: crates.io index returned HTTP {exc.code}") from exc
+    return f'"vers":"{version}"' in body
+
+
+def wait_until_indexed(crate, version):
+    deadline = time.monotonic() + INDEX_WAIT_SECONDS
+    while time.monotonic() < deadline:
+        if index_lists_version(crate, version):
+            print(f"{crate} {version} is visible in the crates.io index", flush=True)
+            return
+        time.sleep(INDEX_POLL_SECONDS)
+    raise RuntimeError(
+        f"{crate} {version} was not visible in the crates.io index within "
+        f"{INDEX_WAIT_SECONDS} seconds. Do not publish dependents yet. "
+        "A later run skips versions that are already indexed."
+    )
+
+
+def publish_crate(crate, version):
+    if index_lists_version(crate, version):
+        print(f"{crate} {version} is already indexed; skipping", flush=True)
+        return
+    print(f"Publishing {crate} {version}", flush=True)
+    completed = subprocess.run(
+        ["cargo", "publish", "--locked", "--package", crate],
+        cwd=ROOT,
+        text=True,
+    )
+    if completed.returncode != 0:
+        if index_lists_version(crate, version):
+            print(
+                f"{crate} {version} is indexed after a publish error; continuing",
+                flush=True,
+            )
+            return
+        raise subprocess.CalledProcessError(completed.returncode, completed.args)
+    wait_until_indexed(crate, version)
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--version", required=True)
@@ -112,14 +181,10 @@ def main():
     if not os.getenv("CARGO_REGISTRY_TOKEN"):
         raise RuntimeError("Missing trusted-publishing CARGO_REGISTRY_TOKEN")
 
-    for index, crate in enumerate(order):
-        print(f"Publishing {crate} {args.version}", flush=True)
-        subprocess.run(
-            ["cargo", "publish", "--locked", "--package", crate], cwd=ROOT, check=True
-        )
-        if index != len(order) - 1:
-            # Give crates.io and the registry index time to expose new dependencies.
-            time.sleep(30)
+    # crates.io trusted-publishing tokens expire after 30 minutes.
+    # Indexed crates are skipped so a rerun can finish a partial release.
+    for crate in order:
+        publish_crate(crate, args.version)
 
 
 if __name__ == "__main__":

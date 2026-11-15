@@ -2,7 +2,7 @@
 
 [Overview](index.md) · Auth: [auth.md](auth.md) · Email: [mail.md](mail.md) · Security: [mail-security.md](mail-security.md)
 
-**Milestone:** v0.23. The Cargo version remains `0.1.0`. The migration is `crates/fexu-auth/migrations/0004_password_reset.json`. `0001`, `0002` and `0003` remain unchanged.
+**Milestone:** v0.23. The Cargo version is `0.1.2`. The migration is `crates/fexu-auth/migrations/0004_password_reset.json`. `0001`, `0002` and `0003` remain unchanged.
 
 ## Routes
 

@@ -15,7 +15,7 @@ A Django-inspired, experimental web framework built with **Axum**, **Tera**, **S
 [**Quick start**](#quick-start) · [**Features**](#why-fexu) · [**Docs**](docs/index.md) · [**Contribute**](#help-build-fexu) · [**Roadmap**](docs/roadmap.md)
 
 > [!IMPORTANT]
-> **Fexu 0.1.0 is experimental, not production-ready.** APIs, configuration and migrations may change. The initial 16-crate crates.io publication is being completed in dependency order; some component crates (including [`fexu-core`](https://crates.io/crates/fexu-core)) are published, but the main `fexu` and `fexu-cli` packages must be checked on crates.io before using registry install commands. Until then, install the CLI from a source checkout. Do not expose a demo application directly to the public internet.
+> **Fexu 0.1.2 is experimental, not production-ready.** APIs, configuration and migrations may change. The version badges show what crates.io currently lists. This checkout prepares `0.1.2` for all 16 crates; `0.1.0` and `fexu-cli` `0.1.1` remain the versions already on crates.io until that release is published. Do not expose a demo application directly to the public internet.
 
 ## Why Fexu?
 
@@ -81,7 +81,7 @@ SQLite defaults to `sqlite://db.sqlite3?mode=rwc` in the current working directo
 
 ### Create your own application
 
-Install the published CLI and create a project outside this repository. `fexu-cli` 0.1.1 writes a crates.io dependency on `fexu` 0.1.0. The published CLI 0.1.0 does not.
+Install a published CLI only after its crates.io page lists that version. This checkout's `fexu-cli` 0.1.2 writes a crates.io dependency on `fexu` 0.1.2. The already published `fexu-cli` 0.1.1 still writes `fexu` 0.1.0. `fexu-cli` 0.1.0 expects a source checkout.
 
 ```powershell
 cargo install fexu-cli --version 0.1.1 --locked
@@ -92,7 +92,7 @@ fexu admin create-user --email admin@example.com --staff --superuser
 fexu dev
 ```
 
-`fexu new demo` is the same command. The default fullstack template writes `fexu = { version = "=0.1.0", features = ["admin-ui"] }`. `--template api` writes `fexu = "=0.1.0"`.
+`fexu new demo` is the same command. In this checkout the fullstack template writes `fexu = { version = "=0.1.2", features = ["admin-ui"] }`. `--template api` writes `fexu = "=0.1.2"`. Those pins resolve only after `fexu` 0.1.2 is on crates.io. Until then, pass `--fexu-path`.
 
 To compile against a local Fexu checkout, pass the workspace root or `crates/fexu`:
 
