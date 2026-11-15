@@ -2,16 +2,19 @@
 
 This repository intentionally does **not** publish on pushes to `main` or on pull requests.
 Publishing requires a stable GitHub Release (`vX.Y.Z`), a tag pointing to the
-current `main` HEAD, approval of the GitHub `release` environment, and a
-version-consistent publishable workspace. The action obtains a short-lived
-crates.io credential through GitHub OIDC.
+current `main` HEAD, an eligible deployment tag in the GitHub `release`
+environment, and a version-consistent publishable workspace. The action obtains
+a short-lived crates.io credential through GitHub OIDC. The environment currently
+has no required reviewers, so **publishing the GitHub Release starts publishing
+automatically without a separate environment approval**.
 
 ## One-time setup (repository administrator)
 
-1. In GitHub open **Settings → Environments → New environment** and name it
-   **`release`**. Configure required reviewers (when supported) and restrict
-   deployment to release tags matching `v*`. Do not create a crates.io token
-   secret.
+1. In GitHub open **Settings → Environments** and configure the **`release`**
+   environment. Restrict deployments to release tags matching `v*`. Required
+   reviewers are currently disabled; only enable them when an eligible approver
+   is configured, otherwise deployment will be blocked. Do not create a crates.io
+   token secret.
 2. On each existing crates.io crate, configure the GitHub Trusted Publisher:
    owner `Iam-Sanja`, repository `fexu-rs`, workflow filename `publish.yml`,
    environment `release`. The strings must match exactly.
@@ -19,9 +22,11 @@ crates.io credential through GitHub OIDC.
    publication succeeds. Ensure all intended crate names are already owned
    and the first publication, if any, has been performed through the initial
    manual onboarding process.
-4. Merge this workflow only after the current feature PRs are integrated and
-   full regression tests have passed. Review the GitHub Actions permissions
-   and protect the release environment from unreviewed workflows.
+4. Merge this workflow only after the feature integration and full regression
+   tests have passed. Review the GitHub Actions permissions, restrict who may
+   publish GitHub Releases, and explicitly approve creation/publication of each
+   GitHub Release before using this workflow. The environment tag restriction
+   does not itself provide a human approval gate.
 
 ## Version policy
 
@@ -49,7 +54,9 @@ unpublishable, or the local dependency graph has a cycle.
    publisher configurations; confirm the `release` environment exists.
 3. Create a tag `v0.1.2` at the **current main HEAD** and publish the GitHub
    Release for that tag. The publishing workflow starts automatically.
-4. Review and approve the `release` environment deployment.
+4. Monitor the `release` environment deployment and the publishing workflow.
+   With no required reviewers configured, the job runs automatically after the
+   GitHub Release is published and cannot wait for a second manual approval.
 5. Confirm every intended version appears on crates.io, inspect the workflow
    log, and check downstream example installation.
 6. Only then consider enforcing *Trusted Publishing Only* on each crate.
