@@ -1,6 +1,6 @@
 # Security policy
 
-Fexu is a pre-release framework. The Cargo version is `0.1.0`. There is no stable release and no commitment to provide security patches for older revisions.
+Fexu is a pre-release framework. The Cargo version is `0.1.2`. There is no stable release and no commitment to provide security patches for older revisions.
 
 ## Reporting a vulnerability
 

@@ -9,12 +9,13 @@ A Django-inspired, experimental web framework built with **Axum**, **Tera**, **S
 ![Rust](https://img.shields.io/badge/language-Rust-CE422B?logo=rust&logoColor=white)
 ![License: MIT](https://img.shields.io/badge/license-MIT-blue)
 ![Status: experimental](https://img.shields.io/badge/status-experimental-orange)
-[![fexu-core on crates.io](https://img.shields.io/crates/v/fexu-core.svg?label=fexu-core)](https://crates.io/crates/fexu-core)
+![MSRV: 1.89](https://img.shields.io/badge/MSRV-1.89-informational)
+![Workspace: 16 crates](https://img.shields.io/badge/workspace-16%20crates-informational)
 
 [**Quick start**](#quick-start) · [**Features**](#why-fexu) · [**Docs**](docs/index.md) · [**Contribute**](#help-build-fexu) · [**Roadmap**](docs/roadmap.md)
 
 > [!IMPORTANT]
-> **Fexu 0.1.0 is experimental, not production-ready.** APIs, configuration and migrations may change. The initial 16-crate crates.io publication is being completed in dependency order; some component crates (including [`fexu-core`](https://crates.io/crates/fexu-core)) are published, but the main `fexu` and `fexu-cli` packages must be checked on crates.io before using registry install commands. Until then, install the CLI from a source checkout. Do not expose a demo application directly to the public internet.
+> **Fexu 0.1.2 is experimental, not production-ready.** APIs, configuration and migrations may change. The version badges show what crates.io currently lists. This checkout prepares `0.1.2` for all 16 crates; `0.1.0` and `fexu-cli` `0.1.1` remain the versions already on crates.io until that release is published. Do not expose a demo application directly to the public internet.
 
 ## Why Fexu?
 
@@ -30,6 +31,31 @@ Rust brings strong typing, performance and explicit control. Fexu aims to bring 
 | 🧩 | **App building blocks** | Forms, templates, named routes, fixtures, custom commands, mail and persistent jobs |
 
 These features have **documented limitations**. In particular, public model routes must be configured deliberately, and CSRF protection depends on the request and route policy. See [security](docs/security.md), [capability matrix](docs/django-capability-matrix.md), and [current limitations](#current-status).
+
+## Workspace crates
+
+Fexu is developed as a **16-crate Rust workspace**. Each version badge below reflects the latest version reported by crates.io; a missing version badge does **not** mean that the crate has already been published. Workspace crate versions and registry releases may differ while the initial publication is in progress.
+
+| Crate | Purpose | Latest on crates.io |
+|---|---|---|
+| [`fexu`](crates/fexu/) | Framework entry point and application builder | [![fexu version](https://img.shields.io/crates/v/fexu.svg?label=version)](https://crates.io/crates/fexu) |
+| [`fexu-cli`](crates/fexu-cli/) | Command-line tools and project scaffolding | [![fexu-cli version](https://img.shields.io/crates/v/fexu-cli.svg?label=version)](https://crates.io/crates/fexu-cli) |
+| [`fexu-core`](crates/fexu-core/) | Core model types and framework primitives | [![fexu-core version](https://img.shields.io/crates/v/fexu-core.svg?label=version)](https://crates.io/crates/fexu-core) |
+| [`fexu-macros`](crates/fexu-macros/) | Model derive and procedural macros | [![fexu-macros version](https://img.shields.io/crates/v/fexu-macros.svg?label=version)](https://crates.io/crates/fexu-macros) |
+| [`fexu-db`](crates/fexu-db/) | SQLite and PostgreSQL database access | [![fexu-db version](https://img.shields.io/crates/v/fexu-db.svg?label=version)](https://crates.io/crates/fexu-db) |
+| [`fexu-migrations`](crates/fexu-migrations/) | Versioned database migrations | [![fexu-migrations version](https://img.shields.io/crates/v/fexu-migrations.svg?label=version)](https://crates.io/crates/fexu-migrations) |
+| [`fexu-auth`](crates/fexu-auth/) | Authentication, sessions and CSRF protection | [![fexu-auth version](https://img.shields.io/crates/v/fexu-auth.svg?label=version)](https://crates.io/crates/fexu-auth) |
+| [`fexu-api`](crates/fexu-api/) | HTTP API, routing and OpenAPI | [![fexu-api version](https://img.shields.io/crates/v/fexu-api.svg?label=version)](https://crates.io/crates/fexu-api) |
+| [`fexu-admin`](crates/fexu-admin/) | Server-rendered administration | [![fexu-admin version](https://img.shields.io/crates/v/fexu-admin.svg?label=version)](https://crates.io/crates/fexu-admin) |
+| [`fexu-cache`](crates/fexu-cache/) | Opt-in typed caching | [![fexu-cache version](https://img.shields.io/crates/v/fexu-cache.svg?label=version)](https://crates.io/crates/fexu-cache) |
+| [`fexu-forms`](crates/fexu-forms/) | Form handling and validation | [![fexu-forms version](https://img.shields.io/crates/v/fexu-forms.svg?label=version)](https://crates.io/crates/fexu-forms) |
+| [`fexu-static`](crates/fexu-static/) | Static assets and ETags | [![fexu-static version](https://img.shields.io/crates/v/fexu-static.svg?label=version)](https://crates.io/crates/fexu-static) |
+| [`fexu-storage`](crates/fexu-storage/) | File storage and signed downloads | [![fexu-storage version](https://img.shields.io/crates/v/fexu-storage.svg?label=version)](https://crates.io/crates/fexu-storage) |
+| [`fexu-middleware`](crates/fexu-middleware/) | Common HTTP middleware | [![fexu-middleware version](https://img.shields.io/crates/v/fexu-middleware.svg?label=version)](https://crates.io/crates/fexu-middleware) |
+| [`fexu-mail`](crates/fexu-mail/) | Email utilities | [![fexu-mail version](https://img.shields.io/crates/v/fexu-mail.svg?label=version)](https://crates.io/crates/fexu-mail) |
+| [`fexu-jobs`](crates/fexu-jobs/) | Persistent background jobs | [![fexu-jobs version](https://img.shields.io/crates/v/fexu-jobs.svg?label=version)](https://crates.io/crates/fexu-jobs) |
+
+All 16 packages are maintained together; **not every package is necessarily available on crates.io yet**. Before installing, verify that its package page lists the required release. The CLI and umbrella framework may have different released versions until the synchronized release is published.
 
 ## Quick start
 
@@ -55,7 +81,7 @@ SQLite defaults to `sqlite://db.sqlite3?mode=rwc` in the current working directo
 
 ### Create your own application
 
-Install the published CLI and create a project outside this repository. `fexu-cli` 0.1.1 writes a crates.io dependency on `fexu` 0.1.0. The published CLI 0.1.0 does not.
+Install a published CLI only after its crates.io page lists that version. This checkout's `fexu-cli` 0.1.2 writes a crates.io dependency on `fexu` 0.1.2. The already published `fexu-cli` 0.1.1 still writes `fexu` 0.1.0. `fexu-cli` 0.1.0 expects a source checkout.
 
 ```powershell
 cargo install fexu-cli --version 0.1.1 --locked
@@ -66,7 +92,7 @@ fexu admin create-user --email admin@example.com --staff --superuser
 fexu dev
 ```
 
-`fexu new demo` is the same command. The default fullstack template writes `fexu = { version = "=0.1.0", features = ["admin-ui"] }`. `--template api` writes `fexu = "=0.1.0"`.
+`fexu new demo` is the same command. In this checkout the fullstack template writes `fexu = { version = "=0.1.2", features = ["admin-ui"] }`. `--template api` writes `fexu = "=0.1.2"`. Those pins resolve only after `fexu` 0.1.2 is on crates.io. Until then, pass `--fexu-path`.
 
 To compile against a local Fexu checkout, pass the workspace root or `crates/fexu`:
 

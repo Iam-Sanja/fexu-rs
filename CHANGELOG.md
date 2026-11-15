@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.2 — synchronized workspace version
+
+- All 16 publishable crates and their internal path dependencies are `0.1.2`. Examples stay unpublished. `0.1.0` and `fexu-cli` `0.1.1` remain the versions already on crates.io.
+- `fexu new` writes `fexu = "=0.1.2"` unless `--fexu-path` is set. The fullstack template keeps `features = ["admin-ui"]` on that registry dependency.
+- The publish planner skips a version that is already in the crates.io index and waits until a new upload is visible before the next crate. Trusted-publishing tokens still expire after 30 minutes. This entry is not a crates.io publication.
+
 ## Unreleased — development CSRF keys
 
 - `AuthConfig::development` draws a new 32-byte CSRF key on every call. `try_from_env` still loads `FEXU_CSRF_SECRET` or `.fexu/csrf.key`. Token and HMAC formats are unchanged. Debug output keeps both secrets redacted.

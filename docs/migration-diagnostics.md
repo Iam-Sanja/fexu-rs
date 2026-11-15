@@ -2,7 +2,7 @@
 
 [Overview](index.md) · Migrations: [migrations.md](migrations.md) · CLI: [cli.md](cli.md)
 
-**Implemented:** `crates/fexu-migrations/src/inspect.rs`. The Cargo version remains `0.1.0`.
+**Implemented:** `crates/fexu-migrations/src/inspect.rs`. The Cargo version is `0.1.2`.
 
 ## Purpose
 

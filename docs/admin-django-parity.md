@@ -2,7 +2,7 @@
 
 [Overview](index.md) · Roadmap: [roadmap.md](roadmap.md) · UX: [admin-ux-backlog.md](admin-ux-backlog.md)
 
-**Milestone:** v0.22. The Cargo version remains `0.1.0`. The table below evaluates the native admin. Functional equality is the goal. Python-`ModelAdmin`, Django templates and Django URLs are not replicated. The date, time and UTC time are model types. The date hierarchy filters according to the UTC calendar. Directory changes and opt-in parent-child forms are each a transaction.
+**Milestone:** v0.22. The Cargo version is `0.1.2`. The table below evaluates the native admin. Functional equality is the goal. Python-`ModelAdmin`, Django templates and Django URLs are not replicated. The date, time and UTC time are model types. The date hierarchy filters according to the UTC calendar. Directory changes and opt-in parent-child forms are each a transaction.
 
 Status values:
 

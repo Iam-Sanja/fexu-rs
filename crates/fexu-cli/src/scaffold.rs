@@ -239,7 +239,7 @@ pub fn validate_project_name(name: &str) -> Result<(), String> {
 
 /// crates.io version of the `fexu` library written into generated projects.
 /// This is not `fexu-cli`'s own package version.
-pub(crate) const PUBLISHED_FEXU_VERSION: &str = "0.1.0";
+pub(crate) const PUBLISHED_FEXU_VERSION: &str = "0.1.2";
 
 #[derive(Debug)]
 enum FexuSource {

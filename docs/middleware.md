@@ -1,6 +1,6 @@
 # Middleware
 
-**Milestone:** v0.12, Implemented. The Cargo version remains `0.1.0`.
+**Milestone:** v0.12, Implemented. The Cargo version is `0.1.2`.
 
 ## Responsibility
 

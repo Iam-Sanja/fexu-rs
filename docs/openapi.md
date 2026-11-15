@@ -86,7 +86,7 @@ app.document(
 
 ## Contract version
 
-`info.version` is the HTTP contract `1`. The crate version stays experimental `0.1.0` until a separate release. Each model declares its own path; new projects use `/api/v1`. POST is not idempotent. PATCH is last-write-wins and does not return 409. Removing an operation removes it from this document. `Deprecation` and `Sunset` headers are not sent. Clients should treat a missing path as removed, not as temporarily hidden.
+`info.version` is the HTTP contract `1`. The crate version is experimental `0.1.2`. Each model declares its own path; new projects use `/api/v1`. POST is not idempotent. PATCH is last-write-wins and does not return 409. Removing an operation removes it from this document. `Deprecation` and `Sunset` headers are not sent. Clients should treat a missing path as removed, not as temporarily hidden.
 
 `fexu::openapi::validate_document` checks the emitted document: OpenAPI 3.1.0, info, operation ids, responses, parameter locations, local `#/components/schemas/` references, and security requirements that name a defined scheme. `crates/fexu/tests/openapi_client.rs` and `crates/fexu/tests/api_contract.rs` run it against the live document and against SQLite. The PostgreSQL test `postgres_cursor_filters_and_openapi_describe_the_same_list` runs the same exercise.
 

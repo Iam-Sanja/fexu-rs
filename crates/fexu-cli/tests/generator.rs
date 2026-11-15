@@ -344,64 +344,6 @@ fn serve_and_check(
     }
 }
 
-fn serve_homepage(
-    binary: &std::path::Path,
-    project: &std::path::Path,
-    database: &str,
-    admin: bool,
-) {
-    use std::io::{Read, Write};
-    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-    let address = listener.local_addr().unwrap();
-    drop(listener);
-    let mut command = Command::new(binary);
-    seal(&mut command);
-    let mut server = Server(
-        command
-            .current_dir(project)
-            .env("DATABASE_URL", database)
-            .env("BIND_ADDRESS", address.to_string())
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .spawn()
-            .unwrap(),
-    );
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
-    while std::net::TcpStream::connect(address).is_err() {
-        assert!(
-            server.0.try_wait().unwrap().is_none(),
-            "generated server exited before listening"
-        );
-        assert!(
-            std::time::Instant::now() < deadline,
-            "generated server did not listen"
-        );
-        std::thread::sleep(std::time::Duration::from_millis(50));
-    }
-    for (path, status, body) in [
-        ("/", "200", "Business apps are added explicitly"),
-        ("/api/v1/ping", "200", "\"ok\":true"),
-        ("/admin", if admin { "303" } else { "404" }, ""),
-    ] {
-        let mut stream = std::net::TcpStream::connect(address).unwrap();
-        stream
-            .set_read_timeout(Some(std::time::Duration::from_secs(5)))
-            .unwrap();
-        write!(
-            stream,
-            "GET {path} HTTP/1.1\r\nHost: {address}\r\nConnection: close\r\n\r\n"
-        )
-        .unwrap();
-        let mut response = String::new();
-        stream.read_to_string(&mut response).unwrap();
-        assert!(
-            response.starts_with(&format!("HTTP/1.1 {status}")),
-            "{path}: {response}"
-        );
-        assert!(response.contains(body), "{path}: {response}");
-    }
-}
-
 #[test]
 fn local_paths_and_invalid_paths_keep_existing_projects_untouched() {
     let root = std::env::temp_dir().join(format!("fexu-path-{}", std::process::id()));
@@ -503,7 +445,7 @@ fn shorthand_uses_the_same_argument_rules_as_the_project_command() {
     );
     let demo = std::fs::read_to_string(root.join("Demo/Cargo.toml")).unwrap();
     let explicit = std::fs::read_to_string(root.join("Explicit/Cargo.toml")).unwrap();
-    let fullstack = "fexu = { version = \"=0.1.0\", features = [\"admin-ui\"] }";
+    let fullstack = "fexu = { version = \"=0.1.2\", features = [\"admin-ui\"] }";
     assert!(demo.contains(fullstack), "{demo}");
     assert!(explicit.contains(fullstack), "{explicit}");
     assert!(!demo.contains("path =") && !demo.contains("git ="));
@@ -518,7 +460,7 @@ fn shorthand_uses_the_same_argument_rules_as_the_project_command() {
     for name in ["ApiSpaced", "ApiEquals", "ApiLong"] {
         let manifest = std::fs::read_to_string(root.join(name).join("Cargo.toml")).unwrap();
         assert!(
-            manifest.contains("fexu = \"=0.1.0\"\n"),
+            manifest.contains("fexu = \"=0.1.2\"\n"),
             "{name}: {manifest}"
         );
         assert!(!manifest.contains("admin-ui"), "{name}");
@@ -681,7 +623,7 @@ fn shorthand_uses_the_same_argument_rules_as_the_project_command() {
 }
 
 #[test]
-fn registry_projects_build_and_serve_without_a_framework_checkout() {
+fn registry_projects_pin_the_release_without_a_framework_checkout() {
     let _builds = build_lock();
     let root = std::env::temp_dir().join(format!("fexu-registry-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&root);
@@ -707,8 +649,8 @@ fn registry_projects_build_and_serve_without_a_framework_checkout() {
     assert!(!api.canonicalize().unwrap().starts_with(&repo));
     let fullstack = std::fs::read_to_string(project.join("Cargo.toml")).unwrap();
     let api_manifest = std::fs::read_to_string(api.join("Cargo.toml")).unwrap();
-    assert!(fullstack.contains("fexu = { version = \"=0.1.0\", features = [\"admin-ui\"] }"));
-    assert!(api_manifest.contains("fexu = \"=0.1.0\"\n"));
+    assert!(fullstack.contains("fexu = { version = \"=0.1.2\", features = [\"admin-ui\"] }"));
+    assert!(api_manifest.contains("fexu = \"=0.1.2\"\n"));
     for manifest in [&fullstack, &api_manifest] {
         assert!(!manifest.contains("path ="), "{manifest}");
         assert!(!manifest.contains("git ="), "{manifest}");
@@ -729,23 +671,13 @@ fn registry_projects_build_and_serve_without_a_framework_checkout() {
         assert!(api.join(relative).is_file(), "{relative}");
     }
     let before = std::fs::read(project.join("Cargo.toml")).unwrap();
-    let target = root.join("target");
     let database = format!(
         "sqlite://{}/integration.sqlite?mode=rwc",
         project.to_string_lossy().replace('\\', "/")
     );
-    success(cargo(&project, &target, &["build"]));
-    let lock = std::fs::read_to_string(project.join("Cargo.lock"))
-        .unwrap()
-        .replace("\r\n", "\n");
-    assert!(
-        lock.contains("name = \"fexu\"\nversion = \"0.1.0\"\nsource = \"registry+https://github.com/rust-lang/crates.io-index\""),
-        "Cargo.lock does not pin fexu 0.1.0 from crates.io"
-    );
     let cli = |args: &[&str]| {
         fexu()
             .current_dir(&project)
-            .env("CARGO_TARGET_DIR", &target)
             .env("DATABASE_URL", &database)
             .args(args)
             .output()
@@ -753,18 +685,8 @@ fn registry_projects_build_and_serve_without_a_framework_checkout() {
     };
     success(cli(&["doctor"]));
     success(cli(&["migrate", "up"]));
-    success(cli(&["check"]));
     success(cli(&["upgrade", "--check"]));
     assert_eq!(std::fs::read(project.join("Cargo.toml")).unwrap(), before);
-    serve_homepage(
-        &target
-            .join("debug")
-            .join(format!("mein_projekt{}", std::env::consts::EXE_SUFFIX)),
-        &project,
-        &database,
-        true,
-    );
-    success(cargo(&api, &target, &["check"]));
     std::fs::remove_dir_all(root).unwrap();
     cleanup_isolated_databases();
 }

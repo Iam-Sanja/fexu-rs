@@ -2,7 +2,7 @@
 
 [Overview](index.md) · Manifest: [project-manifest.md](project-manifest.md) · Diagnostics: [migration-diagnostics.md](migration-diagnostics.md)
 
-**Implemented:** `crates/fexu-migrations/src/upgrade.rs` and `fexu upgrade`. The Cargo version remains `0.1.0`. v0.21.1 does not change the writing rules: `--yes` continues to create only a missing legacy manifest.
+**Implemented:** `crates/fexu-migrations/src/upgrade.rs` and `fexu upgrade`. The Cargo version is `0.1.2`. v0.21.1 does not change the writing rules: `--yes` continues to create only a missing legacy manifest.
 
 ## What the command does
 
@@ -17,7 +17,7 @@ The following operations are outside the command’s scope:
 - Executing git commands
 - Change an existing dependency path
 
-`admin-ui` remains a valid compatibility feature. The code `project.dependency.admin_ui` is information, not a request for removal. The internal template version is not derived from the Cargo version `0.1.0`.
+`admin-ui` remains a valid compatibility feature. The code `project.dependency.admin_ui` is information, not a request for removal. The internal template version is not derived from the Cargo version `0.1.2`.
 
 ## Usage
 

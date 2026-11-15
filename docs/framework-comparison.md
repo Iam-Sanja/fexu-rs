@@ -6,7 +6,7 @@ Checked on 2026-11-12. This is a documentation matrix. It is not a timed impleme
 
 | Framework | Version used for this note | Source checked |
 |---|---|---|
-| Fexu | Cargo `0.1.0`; initial component crates published 2026-11-14 | This repository, `main` at `a39c952`; [release readiness](release-readiness.md) |
+| Fexu | Cargo `0.1.2` prepared; crates.io still lists `0.1.0` / `fexu-cli` `0.1.1` | This repository; [release readiness](release-readiness.md) |
 | Runique | crates.io lists `3.0.3` updated 2026-10-10. The project site and docs.rs describe `4.0.0`. | [crates.io/crates/runique](https://crates.io/crates/runique), [runique.io installation](https://runique.io/installation), [docs.rs/crate/runique/latest](https://docs.rs/crate/runique/latest/builds) |
 | Cot | `0.8.0`, published 2026-11-09 | [crates.io/crates/cot](https://crates.io/crates/cot), [github.com/cot-rs/cot](https://github.com/cot-rs/cot) |
 | Loco | `loco-rs` `1.3.1` and generator `loco` `1.3.1`, published 2026-11-06 | [crates.io/crates/loco-rs](https://crates.io/crates/loco-rs), [github.com/loco-rs/loco/releases](https://github.com/loco-rs/loco/releases) |
@@ -19,7 +19,7 @@ A four-framework application with the same models, files and admin was not built
 
 ## Matrix
 
-| Topic | Fexu 0.1.0 | Runique 4.0.0 (site) / 3.0.3 (crates.io) | Cot 0.8.0 | Loco 1.3.1 |
+| Topic | Fexu 0.1.2 | Runique 4.0.0 (site) / 3.0.3 (crates.io) | Cot 0.8.0 | Loco 1.3.1 |
 |---|---|---|---|---|
 | Developer effort | Model derive, explicit `register`, CLI project generator. Still experimental and path-installed. | `runique new`, one model declaration for table, migration, form and admin. Admin described as beta or preview depending on the page. | Django-like batteries on Axum. `cargo add` from crates.io. MSRV listed as 1.94. | `cargo install loco` and a Rails-like generator. MSRV listed as 1.94. First stable line is 1.0.0. |
 | ORM | SeaQuery + rusqlite SQLite + direct SQLx PostgreSQL; typed `Select`, keyset pages, scopes. | SeaORM. Site pins SeaORM `=2.0.4` for 4.0.0. One database feature per build. | SeaQuery and SQLx. SQLite, PostgreSQL and MySQL features. | SeaORM. SQLite and PostgreSQL features. 1.0 moved to SeaORM 2. |

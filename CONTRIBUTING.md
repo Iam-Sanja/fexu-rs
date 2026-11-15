@@ -1,6 +1,6 @@
 # Contributing to Fexu
 
-Fexu is a pre-release Rust full-stack web framework. The current name is Fexu. Workspace crates keep names such as `fexu`, `fexu-api`, and `fexu-cli`. The Cargo version is `0.1.0`. Milestone labels such as v0.27.1 describe internal progress. They are not Cargo releases and they are not an installable crate named `fexu`.
+Fexu is a pre-release Rust full-stack web framework. The current name is Fexu. Workspace crates keep names such as `fexu`, `fexu-api`, and `fexu-cli`. The Cargo version is `0.1.2`. Milestone labels such as v0.27.1 describe internal progress. They are not Cargo releases and they are not an installable crate named `fexu`.
 
 Product documentation in `docs/` is currently written in German. New repository policy, GitHub templates, and contributor instructions are written in English.
 
