@@ -1,24 +1,4 @@
 {% extends "base.html" %}
 {% block content %}
-<p>{{ i18n.welcome }}{% if user_email %}, {{ user_email }}{% endif %}.</p>
-<p class="hint">{{ i18n.dashboard_hint }}</p>
-{% if model_groups | length == 0 %}
-<div class="empty-state">
-<p class="empty">{{ i18n.no_models }}</p>
-</div>
-{% else %}
-{% for group in model_groups %}
-<section class="section" aria-labelledby="models-{{ loop.index }}">
-<h2 id="models-{{ loop.index }}">{{ group.label }}</h2>
-<ul class="cards">
-{% for model in group.models %}
-<li class="card model-card">
-<h3>{{ model.label }}</h3>
-<a class="button" href="/admin/models/{{ model.key }}">{{ i18n.open_list }}</a>
-</li>
-{% endfor %}
-</ul>
-</section>
-{% endfor %}
-{% endif %}
+<p class="hint">{{ i18n.dashboard_widgets_empty }}</p>
 {% endblock %}

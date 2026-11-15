@@ -8,10 +8,15 @@
 {% if not creating %}
 <dl>
 <dt>{{ i18n.record }} <span class="hint">{{ i18n.readonly }}</span></dt><dd class="uuid">{{ id }}</dd>
-<dt>{{ i18n.superuser }} <span class="hint">{{ i18n.readonly }}</span></dt><dd>{{ i18n.no_superuser }}</dd>
+<dt>{{ i18n.superuser }} <span class="hint">{{ i18n.readonly }}</span></dt><dd>{% if is_superuser %}{{ i18n.superuser }}{% else %}{{ i18n.no_superuser }}{% endif %}</dd>
 <dt>{{ i18n.permissions }} <span class="hint">{{ i18n.readonly }}</span></dt><dd>{% if permissions | length == 0 %}{{ i18n.no_permissions }}{% else %}{{ permissions | join(sep=", ") }}{% endif %}</dd>
 </dl>
 {% endif %}
+<div class="field">
+<label for="user-name">{{ i18n.name }}</label>
+<p class="hint" id="user-name-hint">{{ i18n.hint_name }}</p>
+<input id="user-name" name="name" maxlength="80" autocomplete="name" value="{{ name }}" aria-describedby="user-name-hint">
+</div>
 <div class="field">
 <label for="user-email">{{ i18n.email }} <span aria-hidden="true">*</span> <span class="hint">{{ i18n.required }}</span></label>
 <input id="user-email" name="email" type="email" required autocomplete="off" value="{{ email }}" {% if email_error %}aria-invalid="true" aria-describedby="user-email-error"{% endif %}>
@@ -124,6 +129,5 @@
 </section>
 {% endif %}
 </div>
-{% include "history_aside.html" %}
 </div>
 {% endblock %}

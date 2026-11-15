@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block content %}
+<nav class="crumbs" aria-label="{{ i18n.breadcrumb }}"><a href="/admin">{{ i18n.dashboard }}</a> / <span>{{ i18n.search_title }}</span></nav>
+{% if query == "" %}
+<p class="empty">{{ i18n.search_prompt }}</p>
+{% elif groups | length == 0 %}
+<p class="empty">{{ i18n.empty }}</p>
+{% else %}
+{% for group in groups %}
+<section class="card search-group">
+<h2>{% if group.href %}<a href="{{ group.href }}">{{ group.label }}</a>{% else %}{{ group.label }}{% endif %}</h2>
+{% if group.hits | length > 0 %}
+<ul class="search-hits">
+{% for hit in group.hits %}
+<li><a href="{{ hit.href }}">{{ hit.text }}</a></li>
+{% endfor %}
+</ul>
+{% endif %}
+{% if group.more %}<p><a href="{{ group.href }}">{{ i18n.board_open }}</a></p>{% endif %}
+</section>
+{% endfor %}
+{% endif %}
+{% endblock %}

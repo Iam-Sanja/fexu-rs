@@ -367,13 +367,17 @@ fn parse_parts(
             return Err(MultipartError::DuplicateField(name));
         }
         let filename = header_value(&header, "filename");
-        if check_filenames {
-            if let Some(filename) = &filename {
-                if invalid_filename(filename) {
-                    return Err(MultipartError::InvalidFilename(filename.clone()));
+        let filename = if check_filenames {
+            match filename {
+                Some(filename) if filename.is_empty() && part_body.is_empty() => None,
+                Some(filename) if invalid_filename(&filename) => {
+                    return Err(MultipartError::InvalidFilename(filename));
                 }
+                other => other,
             }
-        }
+        } else {
+            filename
+        };
         parts.push(FormPart {
             name,
             filename,
@@ -587,6 +591,21 @@ JPEG\r\n\
                 &vec![b'x'; 1_048_577]
             ),
             Err(super::MultipartError::TooLarge)
+        ));
+        let untouched = b"\
+--bound\r\nContent-Disposition: form-data; name=\"favicon\"; filename=\"\"\r\n\r\n\r\n\
+--bound--\r\n";
+        let parts =
+            super::read_multipart("multipart/form-data; boundary=bound", untouched).unwrap();
+        assert_eq!(parts.len(), 1);
+        assert!(parts[0].filename.is_none());
+        assert!(parts[0].bytes.is_empty());
+        let named_empty = b"\
+--bound\r\nContent-Disposition: form-data; name=\"file\"; filename=\"\"\r\n\r\nPNG\r\n\
+--bound--\r\n";
+        assert!(matches!(
+            super::read_multipart("multipart/form-data; boundary=bound", named_empty),
+            Err(super::MultipartError::InvalidFilename(_))
         ));
     }
 }

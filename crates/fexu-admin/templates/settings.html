@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+{% block content %}
+<nav class="crumbs" aria-label="{{ i18n.breadcrumb }}"><a href="/admin">{{ i18n.dashboard }}</a> / <span>{{ i18n.settings }}</span></nav>
+<form class="settings" method="post" action="/admin/settings" enctype="multipart/form-data">
+<input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+<section class="card" aria-labelledby="appearance-heading">
+<h2 id="appearance-heading">{{ i18n.appearance }}</h2>
+<div class="settings-row">
+<label for="pref-locale">{{ i18n.language }}
+<select id="pref-locale" name="locale">
+<option value="de" {% if locale == "de" %}selected{% endif %}>Deutsch</option>
+<option value="en" {% if locale == "en" %}selected{% endif %}>English</option>
+</select>
+</label>
+<label for="pref-theme">{{ i18n.theme }}
+<select id="pref-theme" name="theme">
+<option value="system" {% if theme == "system" %}selected{% endif %}>{{ i18n.system }}</option>
+<option value="light" {% if theme == "light" %}selected{% endif %}>{{ i18n.light }}</option>
+<option value="dark" {% if theme == "dark" %}selected{% endif %}>{{ i18n.dark }}</option>
+</select>
+</label>
+</div>
+</section>
+<section class="card" aria-labelledby="project-heading">
+<h2 id="project-heading">{{ i18n.project }}</h2>
+<p class="hint">{{ i18n.project_hint }}</p>
+{% if project_error %}<p class="field-error" role="alert">{{ project_error }}</p>{% endif %}
+{% if project_editor %}
+<div class="field">
+<label for="project-title">{{ i18n.site_title_label }}</label>
+<p class="hint" id="project-title-hint">{{ i18n.hint_site_title }}</p>
+<input id="project-title" name="site_title" maxlength="80" required value="{{ site_title }}" aria-describedby="project-title-hint">
+</div>
+<div class="field">
+<label for="project-header">{{ i18n.site_header_label }}</label>
+<p class="hint" id="project-header-hint">{{ i18n.hint_site_header }}</p>
+<input id="project-header" name="site_header" maxlength="80" required value="{{ site_header }}" aria-describedby="project-header-hint">
+</div>
+<div class="field">
+<label for="project-app">{{ i18n.app_name_label }}</label>
+<p class="hint" id="project-app-hint">{{ i18n.hint_app_name }}</p>
+<input id="project-app" name="app_name" maxlength="80" required value="{{ app_name }}" aria-describedby="project-app-hint">
+</div>
+<div class="field">
+<label for="project-color">{{ i18n.primary_color_label }}</label>
+<input id="project-color" name="primary_color" type="color" value="{{ project_color }}">
+</div>
+<p class="hint" id="project-icon-hint">{{ i18n.hint_icon }}</p>
+<div class="field">
+<label for="project-favicon">{{ i18n.favicon_label }}</label>
+{% if favicon %}<img class="brand-icon" src="{{ favicon }}" alt="">{% endif %}
+<input id="project-favicon" name="favicon" type="file" accept="image/png,image/jpeg,image/gif,image/webp,.ico" aria-describedby="project-icon-hint">
+{% if favicon %}<label class="check"><input type="checkbox" name="favicon_clear" value="1"> {{ i18n.icon_clear }}</label>{% endif %}
+</div>
+<div class="field">
+<label for="project-apple">{{ i18n.apple_touch_label }}</label>
+{% if apple_touch_icon %}<img class="brand-icon" src="{{ apple_touch_icon }}" alt="">{% endif %}
+<input id="project-apple" name="apple_touch_icon" type="file" accept="image/png,image/jpeg,image/gif,image/webp,.ico" aria-describedby="project-icon-hint">
+{% if apple_touch_icon %}<label class="check"><input type="checkbox" name="apple_clear" value="1"> {{ i18n.icon_clear }}</label>{% endif %}
+</div>
+<div class="settings-row">
+<label for="project-currency">{{ i18n.currency_label }}
+<input id="project-currency" name="currency" maxlength="3" required value="{{ project_currency }}" autocapitalize="characters" spellcheck="false" aria-describedby="project-currency-hint">
+</label>
+<label for="project-locale">{{ i18n.project_locale_label }}
+<select id="project-locale" name="default_locale">
+<option value="de" {% if project_locale == "de" %}selected{% endif %}>Deutsch</option>
+<option value="en" {% if project_locale == "en" %}selected{% endif %}>English</option>
+</select>
+</label>
+<label for="project-fallback">{{ i18n.project_fallback_label }}
+<select id="project-fallback" name="fallback_locale">
+<option value="de" {% if project_fallback == "de" %}selected{% endif %}>Deutsch</option>
+<option value="en" {% if project_fallback == "en" %}selected{% endif %}>English</option>
+</select>
+</label>
+</div>
+<p class="hint" id="project-currency-hint">{{ i18n.hint_currency }}</p>
+{% else %}
+<dl>
+<dt>{{ i18n.site_title_label }}</dt><dd>{{ site_title }}</dd>
+<dt>{{ i18n.site_header_label }}</dt><dd>{{ site_header }}</dd>
+<dt>{{ i18n.app_name_label }}</dt><dd>{{ app_name }}</dd>
+<dt>{{ i18n.primary_color_label }}</dt><dd>{{ project_color }}</dd>
+<dt>{{ i18n.favicon_label }}</dt><dd>{% if favicon %}<img class="brand-icon" src="{{ favicon }}" alt="">{% endif %}</dd>
+<dt>{{ i18n.apple_touch_label }}</dt><dd>{% if apple_touch_icon %}<img class="brand-icon" src="{{ apple_touch_icon }}" alt="">{% endif %}</dd>
+<dt>{{ i18n.currency_label }}</dt><dd>{{ project_currency }}</dd>
+<dt>{{ i18n.project_locale_label }}</dt><dd>{{ project_locale }}</dd>
+<dt>{{ i18n.project_fallback_label }}</dt><dd>{{ project_fallback }}</dd>
+</dl>
+{% endif %}
+</section>
+<div class="actions">
+<button type="submit">{{ i18n.save }}</button>
+</div>
+</form>
+{% endblock %}

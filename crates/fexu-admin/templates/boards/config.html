@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block content %}
+<nav class="crumbs" aria-label="{{ i18n.breadcrumb }}"><a href="/admin">{{ i18n.dashboard }}</a> / <span>{{ i18n.board_config }}</span></nav>
+<p class="hint">{{ i18n.board_hint }}</p>
+{% if boards | length == 0 %}
+<p class="empty">{{ i18n.board_none }}</p>
+{% else %}
+<ul class="board-list">
+{% for board in boards %}
+<li class="card menu-row">
+<span class="menu-order">{{ board.position }}</span>
+<div>
+<strong>{{ board.name }}</strong>
+<form method="post" action="/admin/boards/{{ board.id }}/home" data-autosubmit>
+<input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+<input type="hidden" name="next" value="config">
+<label class="home-switch"><input type="checkbox" name="home" value="1" {% if board.home %}checked{% endif %}> {{ i18n.board_start }}</label>
+<button type="submit" class="ghost" data-autosubmit-fallback>{{ i18n.board_apply }}</button>
+</form>
+</div>
+<div class="widget-actions">
+<form method="post" action="/admin/boards/{{ board.id }}/move">
+<input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+<input type="hidden" name="direction" value="up">
+<button type="submit" class="ghost" {% if board.first %}disabled{% endif %}>{{ i18n.board_move_up }}</button>
+</form>
+<form method="post" action="/admin/boards/{{ board.id }}/move">
+<input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+<input type="hidden" name="direction" value="down">
+<button type="submit" class="ghost" {% if board.last %}disabled{% endif %}>{{ i18n.board_move_down }}</button>
+</form>
+<a class="button ghost" href="/admin/boards/{{ board.id }}">{{ i18n.board_open }}</a>
+<a class="button ghost" href="/admin/boards/{{ board.id }}/edit">{{ i18n.board_edit }}</a>
+</div>
+</li>
+{% endfor %}
+</ul>
+{% endif %}
+<form class="card account-page" method="post" action="/admin/boards">
+<h2>{{ i18n.board_new }}</h2>
+<input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+<label for="board-name">{{ i18n.board_name }}
+<input id="board-name" name="name" required maxlength="48">
+</label>
+<button type="submit">{{ i18n.board_create }}</button>
+</form>
+{% endblock %}

@@ -149,9 +149,6 @@ impl AuthService {
         let user = store::find_user_by_id(&self.db, id)
             .await?
             .ok_or_else(|| AuthError::Validation("user was not found".into()))?;
-        if user.is_superuser {
-            return Err(AuthError::Forbidden);
-        }
         let email = normalize_email(email)?;
         if let Some(existing) = store::find_user_by_email(&self.db, &email).await? {
             if existing.id != user.id {
@@ -168,7 +165,7 @@ impl AuthService {
             email,
             is_active,
             is_staff,
-            is_superuser: false,
+            is_superuser: user.is_superuser,
         })
     }
 
@@ -380,7 +377,7 @@ impl AuthService {
     }
 
     pub async fn ensure_role(&self, name: &str) -> Result<Uuid, AuthError> {
-        let name = require_ident(name, "role")?;
+        let name = role_label(name)?;
         store::ensure_named_row(&self.db, ROLES, "name", &name).await
     }
 
@@ -404,7 +401,7 @@ impl AuthService {
     }
 
     pub async fn revoke_permission(&self, role: &str, code: &str) -> Result<(), AuthError> {
-        let role_name = require_ident(role, "role")?;
+        let role_name = role_label(role)?;
         validate_permission_code(code)?;
         let Some(role_id) = store::find_named_row(&self.db, ROLES, "name", &role_name).await?
         else {
@@ -440,7 +437,7 @@ impl AuthService {
         let user = store::find_user_by_email(&self.db, &email)
             .await?
             .ok_or_else(|| AuthError::Validation("user was not found".into()))?;
-        let role_name = require_ident(role, "role")?;
+        let role_name = role_label(role)?;
         let Some(role_id) = store::find_named_row(&self.db, ROLES, "name", &role_name).await?
         else {
             return Ok(());
@@ -501,6 +498,67 @@ impl AuthService {
         } else {
             Err(AuthError::Forbidden)
         }
+    }
+
+    /// Superuser oder die Berechtigung `roles.update`.
+    pub async fn require_role_manager(
+        &self,
+        db: &impl ConnectionTrait,
+        id: Uuid,
+    ) -> Result<(), AuthError> {
+        let user = store::find_user_by_id(db, id)
+            .await?
+            .ok_or(AuthError::Forbidden)?;
+        if !user.is_active || !user.is_staff {
+            return Err(AuthError::Forbidden);
+        }
+        if user.is_superuser || store::user_has_code(db, id, "roles.update").await? {
+            Ok(())
+        } else {
+            Err(AuthError::Forbidden)
+        }
+    }
+
+    pub async fn display_name(&self, id: Uuid) -> Result<String, AuthError> {
+        store::profile_name(&self.db, id).await
+    }
+
+    pub async fn display_names(&self) -> Result<Vec<(Uuid, String)>, AuthError> {
+        store::profile_names(&self.db).await
+    }
+
+    pub async fn set_display_name(&self, id: Uuid, name: &str) -> Result<(), AuthError> {
+        let name = clean_display_name(name)?;
+        store::find_user_by_id(&self.db, id)
+            .await?
+            .ok_or_else(|| AuthError::Validation("user was not found".into()))?;
+        store::set_profile_name(&self.db, id, &name).await
+    }
+
+    /// Ändert nur die E-Mail, auch beim eigenen Superuser. Flags bleiben unverändert.
+    pub async fn update_own_email(&self, id: Uuid, email: &str) -> Result<(), AuthError> {
+        let user = store::find_user_by_id(&self.db, id)
+            .await?
+            .ok_or_else(|| AuthError::Validation("user was not found".into()))?;
+        let email = normalize_email(email)?;
+        if let Some(existing) = store::find_user_by_email(&self.db, &email).await? {
+            if existing.id != user.id {
+                return Err(AuthError::Validation("email is already registered".into()));
+            }
+        }
+        if email == user.email {
+            return Ok(());
+        }
+        let now = unix_now()?;
+        store::update_profile(
+            &self.db,
+            user.id,
+            &email,
+            user.is_active,
+            user.is_staff,
+            now,
+        )
+        .await
     }
 
     pub async fn authorize_on(
@@ -567,7 +625,7 @@ impl AuthService {
     pub async fn update_profile_on(
         &self,
         db: &impl ConnectionTrait,
-        actor: Uuid,
+        _actor: Uuid,
         id: Uuid,
         email: &str,
         is_active: bool,
@@ -576,9 +634,6 @@ impl AuthService {
         let user = store::find_user_by_id(db, id)
             .await?
             .ok_or_else(|| AuthError::Validation("user was not found".into()))?;
-        if user.is_superuser || (actor == id && (!is_active || !is_staff)) {
-            return Err(AuthError::Forbidden);
-        }
         let email = normalize_email(email)?;
         if let Some(existing) = store::find_user_by_email(db, &email).await? {
             if existing.id != user.id {
@@ -595,7 +650,7 @@ impl AuthService {
             email,
             is_active,
             is_staff,
-            is_superuser: false,
+            is_superuser: user.is_superuser,
         })
     }
 
@@ -608,9 +663,6 @@ impl AuthService {
         let user = store::find_user_by_id(db, id)
             .await?
             .ok_or_else(|| AuthError::Validation("user was not found".into()))?;
-        if user.is_superuser {
-            return Err(AuthError::Forbidden);
-        }
         let now = unix_now()?;
         store::update_password(db, user.id, password_hash, now).await?;
         store::revoke_user_sessions(db, user.id, now).await?;
@@ -626,9 +678,6 @@ impl AuthService {
         let user = store::find_user_by_id(db, id)
             .await?
             .ok_or_else(|| AuthError::Validation("user was not found".into()))?;
-        if user.is_superuser {
-            return Err(AuthError::Forbidden);
-        }
         let now = unix_now()?;
         store::set_active(db, user.id, active, now).await?;
         if !active {
@@ -640,16 +689,13 @@ impl AuthService {
     pub async fn set_staff_on(
         &self,
         db: &impl ConnectionTrait,
-        actor: Uuid,
+        _actor: Uuid,
         id: Uuid,
         staff: bool,
     ) -> Result<(), AuthError> {
-        let user = store::find_user_by_id(db, id)
+        store::find_user_by_id(db, id)
             .await?
             .ok_or_else(|| AuthError::Validation("user was not found".into()))?;
-        if user.is_superuser || (actor == id && !staff) {
-            return Err(AuthError::Forbidden);
-        }
         let now = unix_now()?;
         store::set_staff(db, id, staff, now).await
     }
@@ -664,7 +710,7 @@ impl AuthService {
         let user = store::find_user_by_email(db, &email)
             .await?
             .ok_or_else(|| AuthError::Validation("user was not found".into()))?;
-        let role_name = require_ident(role, "role")?;
+        let role_name = role_label(role)?;
         let role_id = store::ensure_named_row(db, ROLES, "name", &role_name).await?;
         store::link_rows(db, USER_ROLES, "user_id", user.id, "role_id", role_id).await?;
         Ok(user.id)
@@ -680,7 +726,7 @@ impl AuthService {
         let user = store::find_user_by_email(db, &email)
             .await?
             .ok_or_else(|| AuthError::Validation("user was not found".into()))?;
-        let role_name = require_ident(role, "role")?;
+        let role_name = role_label(role)?;
         let Some(role_id) = store::find_named_row(db, ROLES, "name", &role_name).await? else {
             return Ok(user.id);
         };
@@ -694,7 +740,7 @@ impl AuthService {
         role: &str,
         code: &str,
     ) -> Result<(), AuthError> {
-        let role_name = require_ident(role, "role")?;
+        let role_name = role_label(role)?;
         validate_permission_code(code)?;
         let role_id = store::ensure_named_row(db, ROLES, "name", &role_name).await?;
         let permission_id = store::ensure_named_row(db, PERMISSIONS, "code", code).await?;
@@ -715,7 +761,7 @@ impl AuthService {
         role: &str,
         code: &str,
     ) -> Result<(), AuthError> {
-        let role_name = require_ident(role, "role")?;
+        let role_name = role_label(role)?;
         validate_permission_code(code)?;
         let Some(role_id) = store::find_named_row(db, ROLES, "name", &role_name).await? else {
             return Ok(());
@@ -740,7 +786,7 @@ impl AuthService {
     }
 
     pub async fn list_role_permissions(&self, role: &str) -> Result<Vec<String>, AuthError> {
-        let role_name = require_ident(role, "role")?;
+        let role_name = role_label(role)?;
         let Some(role_id) = store::find_named_row(&self.db, ROLES, "name", &role_name).await?
         else {
             return Err(AuthError::Validation("role was not found".into()));
@@ -941,6 +987,29 @@ pub fn normalize_email(input: &str) -> Result<String, AuthError> {
         return Err(AuthError::Validation("email is invalid".into()));
     }
     Ok(email)
+}
+
+pub fn clean_display_name(value: &str) -> Result<String, AuthError> {
+    let value = value.trim();
+    if value.is_empty() {
+        return Ok(String::new());
+    }
+    if value.chars().count() > 80 || value.chars().any(|character| character.is_control()) {
+        return Err(AuthError::Validation("name is invalid".into()));
+    }
+    Ok(value.to_owned())
+}
+
+fn role_label(value: &str) -> Result<String, AuthError> {
+    let value = value.trim();
+    let valid = (1..=80).contains(&value.chars().count())
+        && value.chars().all(|character| {
+            character.is_alphanumeric() || matches!(character, ' ' | '_' | '.' | '-')
+        });
+    if !valid {
+        return Err(AuthError::Validation("role is invalid".into()));
+    }
+    Ok(value.to_owned())
 }
 
 fn require_ident(value: &str, label: &str) -> Result<String, AuthError> {

@@ -584,7 +584,7 @@ async fn load_children_tx(
             search: None,
             sort_column: sort,
             descending: false,
-            equal_filters: &[(spec.column, DbValue::from(parent_id.to_string()))],
+            equal_filters: &[(spec.column, DbValue::from(parent_id))],
             bounds: &[],
             offset: 0,
             limit: u64::from(spec.max_count.clamp(1, 50)),

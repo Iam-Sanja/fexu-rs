@@ -159,7 +159,7 @@ Gefahr ist **Karmesin** (`crimson`) im Hellen und **Nachtgefahr** (`night-danger
 
 Die Seite ist ein Raster aus Tür und Tisch: Seitenleiste 16rem, Inhalt nimmt den Rest, Mindesthöhe der Ansicht. Ohne Seitenleiste, also Anmeldung und die Staff-Sperre, wird die Spalte eine und der Inhalt höchstens 36rem, zentriert.
 
-Der Tisch hat 1.25rem Abstand oben und seitlich 1.5rem, unten 3rem. Eine Werkzeugleiste sitzt 1.25rem über der Tabelle. Suche und Filter bleiben beisammen, der Neueintrag steht am anderen Ende. Unabhängige Abschnitte beginnen 1.75rem unter dem Vorherigen. Formulare in einer Karte sind höchstens 40rem breit und stapeln Felder mit 0.8rem Abstand.
+Der Tisch hat 1.25rem Abstand oben und seitlich 1.5rem, unten 3rem. Suche und Filter bleiben beisammen, der Neueintrag steht am anderen Ende. Benachbarte Blöcke auf dem Tisch beginnen 1.75rem unter dem Vorherigen. Ein kurzer Vorspann, also Pfad und der Hinweis direkt darunter, darf auf 0.75rem zusammenrücken. Formulare in einer Karte sind höchstens 40rem breit und stapeln Felder mit 0.8rem Abstand.
 
 Unter 800px wird das Raster eine Spalte. Die Seitenleiste bleibt offen und wird eine senkrechte Liste. Sie braucht kein Script. Werkzeugleiste und ihre Kontrollen nehmen die volle Breite. Definitionslisten und die Kopfzeile stapeln.
 
@@ -192,11 +192,14 @@ Ecken sind durchgehend gerundet. Kontrollen nutzen 0.45rem, ein Hinweis 0.55rem,
 
 ### Cards / Containers
 
-- **Corner Style:** Kartenrundung (1rem).
+- **Corner Style:** Kartenrundung (0.75rem).
 - **Background:** Karte, im Dunkeln Nachtkarte.
 - **Shadow Strategy:** Ruhehauch nur im Hellen. Siehe Elevation.
-- **Border:** 1px Linie.
+- **Border:** Keine. Die Fläche trägt die Karte. Eine Linie bleibt an Kontrollen, an der Tabelle und an Hinweis oder Fehler.
 - **Internal Padding:** 1rem. Die Überschrift darin hat 0.6rem Luft nach unten.
+- **Abstand:** Zwei Karten, eine Liste aus Karten und das folgende Formular berühren sich nicht. Dazwischen liegt der Abschnittabstand, 1.75rem. Dieselbe Luft gilt innerhalb einer Liste aus Karten.
+
+**The Clearance Rule.** Eine ruhende Fläche bekommt keine Umrandung. Sie hebt sich durch den Ton vom Papier ab. Der Abstand trennt die Blöcke. Eine Linie, die jede Karte einrahmt, macht aus der Schicht wieder die graue Feldkasten-Haut.
 
 ### Inputs / Fields
 
@@ -206,7 +209,7 @@ Ecken sind durchgehend gerundet. Kontrollen nutzen 0.45rem, ein Hinweis 0.55rem,
 
 ### Navigation
 
-Die Tür zeigt den Anwendungsnamen, dann Übersicht, die registrierten Apps mit ihren Modellen, für Superuser Benutzer und Rollen, und unter System die Historie. Der aktuelle Eintrag hat Schriftstärke 650 und eine violette Fläche, keine Unterstreichung. Modelle stehen eingerückt unter dem App-Namen. Unter 800px bleibt die Liste senkrecht und offen. Anmeldung und Staff-Sperre haben keine Tür.
+Die Tür zeigt den Anwendungsnamen, dann Dashboards mit den gespeicherten Menüs und der Konfiguration, die registrierten Apps mit ihren Modellen, für Superuser Benutzer und Rollen, und unter System die Historie. Der aktuelle Eintrag hat Schriftstärke 650 und eine violette Fläche, keine Unterstreichung. Modelle stehen eingerückt unter dem App-Namen. Unter 800px bleibt die Liste senkrecht und offen. Anmeldung und Staff-Sperre haben keine Tür.
 
 ### Hinweis
 
@@ -221,6 +224,7 @@ Erfolg sitzt über dem Inhalt: Waldgrün zu etwa 18 Prozent in die Karte gemisch
 - **Do** unter 800px stapeln, statt Aktionen zu verstecken.
 - **Do** Status mit Worten tragen. Farbe allein unterscheidet Staff, Superuser und Aktiv nicht.
 - **Do** Segoe UI für Titel, Label und Tabelle verwenden.
+- **Do** benachbarte Flächen mit 1.75rem Abstand setzen. Eine Liste aus Karten nutzt denselben Abstand zwischen den Einträgen.
 
 ### Don't
 
@@ -230,3 +234,5 @@ Erfolg sitzt über dem Inhalt: Waldgrün zu etwa 18 Prozent in die Karte gemisch
 - **Don't** die Projektfarbe im Dunkeln auf Tür oder Primärbutton legen, bevor der Kontrast geprüft ist.
 - **Don't** im Dunkeln den Ruhehauch der hellen Karte weiterverwenden.
 - **Don't** eine Kernaktion nur nach einem Script zeigen oder nur über Hover erreichbar machen.
+- **Don't** eine ruhende Karte umranden. Die Linie gehört an Kontrolle, Tabelle, Hinweis und Fehler.
+- **Don't** zwei Flächen ohne Abstand aneinander setzen.
