@@ -1,7 +1,9 @@
 name: Publish Fexu crates to crates.io
 
 # Releasing is deliberate: publishing a GitHub Release of a version tag
-# triggers this job, which then requires approval of the 'release' environment.
+# triggers this job. The 'release' environment restricts eligible deployment tags;
+# it does not require manual approval unless required reviewers are configured.
+# Publishing the GitHub Release is the manual authorization point.
 on:
   release:
     types: [published]
