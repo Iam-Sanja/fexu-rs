@@ -4,6 +4,12 @@
 
 - Disposable PostgreSQL fixtures clone `template0` and keep administrative sessions off `template0` and `template1`. Concurrent `STRATEGY FILE_COPY` is not used; those copies stalled on Windows PostgreSQL 18. `drop_database` still drops only `fexu_test_` plus 32 hexadecimal characters, and only when the current role owns that database (#117).
 
+## Unreleased — embedded framework migrations
+
+- Auth and job migrations stay embedded in the binary. A relocated `embedded-migrate` process no longer needs the crate `migrations/` directories. `scripts/cold-start-embedded.sh` hides those directories, and CI runs that check for SQLite and for `fexu_test_relocated`.
+- `inspect_framework` and the auth and jobs status commands report a missing table or a missing column from the latest applied framework snapshot as an error. The latest snapshot is the highest migration number, not the last array entry. They do not recreate the table or column and do not describe that database as fully migrated. Empty and absent application directories stay optional. Checksums of the checked-in migration files are unchanged.
+- Cold-start Bash and PowerShell accept a PostgreSQL URL only when it has no query string, the decoded database name starts with `fexu_test_`, and the host is the literal form `127.0.0.1`, `localhost`, or `[::1]`. The host is not percent-decoded. Every query parameter is refused. The URL user must already be a disposable test role; the scripts do not verify that role's privileges. Both scripts require `login=ok` and a reported job. Linux CI runs the Bash script and Windows CI runs the PowerShell script.
+
 ## Unreleased — fexu-cli 0.1.1
 
 - `fexu new <name>` and `fexu new project <name>` write `fexu = "=0.1.0"` unless `--fexu-path` is set. The fullstack template keeps `features = ["admin-ui"]` on that registry dependency. The api template adds no features.

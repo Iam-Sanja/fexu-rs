@@ -28,6 +28,14 @@ cargo test --workspace
 cargo build --workspace
 ```
 
+Cold start of a relocated binary, without the auth and job JSON directories on disk:
+
+```powershell
+powershell -File scripts/cold-start-embedded.ps1
+```
+
+On Linux, `bash scripts/test-cold-start-url.sh` and `bash scripts/cold-start-embedded.sh` do the same. Both scripts require exit code 0, `login=ok`, and a reported `job=`. A PostgreSQL argument is accepted only when it has no query string, the decoded path is a database name starting with `fexu_test_`, and the host is the literal form `127.0.0.1`, `localhost`, or `[::1]`. The host is not percent-decoded. A host containing `%`, a socket path, or any other spelling is refused. A port, when present, must be from 1 to 65535. An empty query is refused, as is every parameter, including `dbname`, `host`, `hostaddr`, `port`, `user`, `password`, `options`, and `application_name`. The query is not stripped before that decision. The URL user must already be a disposable test role. The scripts do not read `pg_roles` and do not verify that role's privileges. A match in the user, password, or host is refused, as is the exact name `fexu_test`. Each renamed directory is restored on its own. A killed process cannot do that; move a leftover `migrations.cold-hidden` directory back by hand.
+
 Optional PostgreSQL run, only against a dispensable database:
 
 ```powershell

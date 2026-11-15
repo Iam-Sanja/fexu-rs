@@ -1,0 +1,200 @@
+# Shared PostgreSQL guard for the embedded cold start.
+# A disposable name is not enough: the host must be the literal loopback form
+# 127.0.0.1, localhost, or [::1]. The host is not percent-decoded, because
+# sqlx-postgres 0.8.6 connects to url.host_str() as written. A host containing
+# "%" is refused, as is every other spelling, including socket paths. The URL
+# user must already be a disposable test role. The scripts do not read pg_roles
+# and do not verify that role's privileges. Any query string is refused,
+# including an empty query and parameters such as dbname, host, hostaddr, port,
+# user, password, options, and application_name. The query is not removed before
+# this decision. The database path is decoded once. User, password, and host
+# never satisfy the database-name rule. Unsupported or unclear URLs are refused.
+
+url_decode() {
+  local raw="$1"
+  local i=0
+  local len=${#raw}
+  local out=""
+  while [ "$i" -lt "$len" ]; do
+    local c="${raw:$i:1}"
+    if [ "$c" = "%" ]; then
+      if [ $((i + 2)) -ge "$len" ]; then
+        return 1
+      fi
+      local hex="${raw:$((i + 1)):2}"
+      case "$hex" in
+        [0-9A-Fa-f][0-9A-Fa-f]) ;;
+        *) return 1 ;;
+      esac
+      local hexlower
+      hexlower=$(printf '%s' "$hex" | tr 'A-F' 'a-f')
+      if [ "$hexlower" = "00" ]; then
+        return 1
+      fi
+      local decoded
+      decoded=$(printf '%b' "\\x${hex}")
+      out="${out}${decoded}"
+      i=$((i + 3))
+    else
+      out="${out}${c}"
+      i=$((i + 1))
+    fi
+  done
+  printf '%s' "$out"
+}
+
+cold_start_database_rejection() {
+  local url="$1"
+  case "$url" in
+    *[[:space:]]*|*"#"*)
+      echo "database URL is unclear"
+      return 0
+      ;;
+  esac
+  case "$url" in
+    *"://"*) ;;
+    *)
+      echo "unsupported or unclear database URL"
+      return 0
+      ;;
+  esac
+  local scheme="${url%%://*}"
+  scheme=$(printf '%s' "$scheme" | tr '[:upper:]' '[:lower:]')
+  case "$scheme" in
+    sqlite) return 0 ;;
+    postgres|postgresql) ;;
+    *)
+      echo "unsupported database URL scheme"
+      return 0
+      ;;
+  esac
+  case "$url" in
+    *\?*)
+      echo "database URL query is not accepted"
+      return 0
+      ;;
+  esac
+
+  local rest="${url#*://}"
+  case "$rest" in
+    */*) ;;
+    *)
+      echo "database URL has no database path"
+      return 0
+      ;;
+  esac
+  local authority="${rest%%/*}"
+  local path="${rest#*/}"
+  case "$path" in
+    */*)
+      echo "database URL path is not a single database name"
+      return 0
+      ;;
+    "")
+      echo "database URL has an empty database name"
+      return 0
+      ;;
+  esac
+  local name
+  if ! name=$(url_decode "$path"); then
+    echo "database name is not valid URL encoding"
+    return 0
+  fi
+  case "$name" in
+    fexu_test_*) ;;
+    *)
+      echo "database name must be an approved disposable name that starts with fexu_test_"
+      return 0
+      ;;
+  esac
+  local suffix="${name#fexu_test_}"
+  if [ -z "$suffix" ]; then
+    echo "database name must be an approved disposable name that starts with fexu_test_"
+    return 0
+  fi
+  case "$suffix" in
+    *[!A-Za-z0-9_]*)
+      echo "database name must be an approved disposable name that starts with fexu_test_"
+      return 0
+      ;;
+  esac
+  if [ "${#name}" -gt 63 ]; then
+    echo "database name must be an approved disposable name that starts with fexu_test_"
+    return 0
+  fi
+
+  local userinfo=""
+  local hostport="$authority"
+  case "$authority" in
+    *@*)
+      userinfo="${authority%@*}"
+      hostport="${authority##*@}"
+      ;;
+  esac
+  if [ -n "$userinfo" ]; then
+    if ! url_decode "$userinfo" >/dev/null; then
+      echo "database URL user info is not valid URL encoding"
+      return 0
+    fi
+  fi
+  if [ -z "$hostport" ]; then
+    echo "database URL has no host"
+    return 0
+  fi
+
+  # Match the host string PgConnectOptions stores. Do not percent-decode it.
+  local host=""
+  local port=""
+  local has_port=0
+  if [ "$hostport" = "[::1]" ]; then
+    host="[::1]"
+  elif [[ "$hostport" == "[::1]:"* ]]; then
+    host="[::1]"
+    port="${hostport#"[::1]:"}"
+    has_port=1
+  elif [[ "$hostport" == \[* ]]; then
+    echo "a disposable database name does not make this host a cold-start test instance; only a literal loopback host is accepted"
+    return 0
+  elif [[ "$hostport" == *%* ]]; then
+    echo "database URL host is not percent-decoded; only a literal loopback host is accepted, and a socket path is not a cold-start test instance"
+    return 0
+  else
+    case "$hostport" in
+      *:*:*)
+        echo "database URL host is unclear"
+        return 0
+        ;;
+      *:*)
+        host="${hostport%%:*}"
+        port="${hostport#*:}"
+        has_port=1
+        ;;
+      *) host="$hostport" ;;
+    esac
+  fi
+  if [ -z "$host" ]; then
+    echo "database URL has no host"
+    return 0
+  fi
+  if [ "$has_port" -eq 1 ]; then
+    case "$port" in
+      ""|*[!0-9]*|0*)
+        echo "database URL port is unclear"
+        return 0
+        ;;
+    esac
+    if [ "${#port}" -gt 5 ] || [ "$port" -gt 65535 ]; then
+      echo "database URL port is unclear"
+      return 0
+    fi
+  fi
+  local host_key
+  host_key=$(printf '%s' "$host" | tr '[:upper:]' '[:lower:]')
+  case "$host_key" in
+    127.0.0.1|localhost|"[::1]") ;;
+    *)
+      echo "a disposable database name does not make a remote PostgreSQL server a cold-start test instance; only a literal loopback host is accepted, and the URL user must already be a disposable test role"
+      return 0
+      ;;
+  esac
+}

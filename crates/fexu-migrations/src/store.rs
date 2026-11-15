@@ -637,4 +637,57 @@ mod tests {
         assert!(state.conflicts.is_empty());
         let _ = std::fs::remove_dir_all(empty);
     }
+
+    #[test]
+    fn required_framework_package_keeps_checksums_and_rejects_gaps() {
+        let plan = MigrationPlan {
+            operations: Vec::new(),
+            risks: Vec::new(),
+            refusal: None,
+        };
+        let empty = SchemaSnapshot::empty();
+        let file = seal(
+            "0001_alpha".into(),
+            "alpha".into(),
+            empty.clone(),
+            empty,
+            &plan,
+        )
+        .unwrap();
+        let text = serde_json::to_string(&file).unwrap();
+        let loaded = super::require_embedded_migrations(
+            "fexu-auth",
+            &["0001_alpha"],
+            &[("0001_alpha", text.as_str())],
+        )
+        .unwrap();
+        assert_eq!(loaded.len(), 1);
+        assert_eq!(loaded[0].id, "0001_alpha");
+        assert_eq!(loaded[0].checksum, file.checksum);
+        let incomplete = super::require_embedded_migrations(
+            "fexu-jobs",
+            &["0001_alpha", "0002_beta"],
+            &[("0001_alpha", text.as_str())],
+        )
+        .unwrap_err()
+        .0;
+        assert!(incomplete.contains("fexu-jobs"), "{incomplete}");
+        assert!(incomplete.contains("0002_beta"), "{incomplete}");
+        assert!(incomplete.contains("missing"), "{incomplete}");
+        let tampered = text.replacen(
+            &format!("\"checksum\":\"{}\"", file.checksum),
+            &format!("\"checksum\":\"{}\"", "0".repeat(file.checksum.len())),
+            1,
+        );
+        let mismatch = super::require_embedded_migrations(
+            "fexu-auth",
+            &["0001_alpha"],
+            &[("0001_alpha", tampered.as_str())],
+        )
+        .unwrap_err()
+        .0;
+        assert!(mismatch.contains("fexu-auth"), "{mismatch}");
+        assert!(mismatch.contains("Checksum mismatch"), "{mismatch}");
+        assert!(mismatch.contains("corrupted"), "{mismatch}");
+    }
 }
