@@ -1,6 +1,6 @@
 # Fexu documentation portal
 
-Fexu is an experimental Rust framework with a model-first data layer, versioned migrations, authentication, a native admin, typed apps and background jobs. The Cargo package version is `0.1.0` (experimental); historical v0.x feature milestones are not registry releases. SQLite is the local default, and PostgreSQL is the optional server backend. The documentation is in English; the admin supports German and English.
+Fexu is an experimental Rust framework with a model-first data layer, versioned migrations, authentication, a native admin, typed apps and background jobs. The Cargo package version is `0.1.2` (experimental); historical v0.x feature milestones are not registry releases. crates.io may still list `0.1.0` until this release is published. SQLite is the local default, and PostgreSQL is the optional server backend. The documentation is in English; the admin supports German and English.
 
 ## How to read this manual
 
@@ -14,7 +14,7 @@ The [Django 6.1 capability matrix](django-capability-matrix.md) compares Fexu's 
 
 ## Documentation by topic
 
-**Status labels below describe source capabilities, not published versions.** The numbered `v0.x` labels in older per-feature pages refer to historical development milestones. Fexu's Cargo version is `0.1.0` and publishing proceeds by crate dependency order. Verify any registry-based install commands against the live registry.
+**Status labels below describe source capabilities, not published versions.** The numbered `v0.x` labels in older per-feature pages refer to historical development milestones. Fexu's Cargo version is `0.1.2` and publishing proceeds by crate dependency order. Verify any registry-based install commands against the live registry.
 
 | Topic | Status | Pages | Responsibility |
 |---|---|---|---|
@@ -28,9 +28,9 @@ The [Django 6.1 capability matrix](django-capability-matrix.md) compares Fexu's 
 | CLI | Implemented | [cli.md](cli.md), [fixtures.md](fixtures.md), [management-commands.md](management-commands.md), [migration-diagnostics.md](migration-diagnostics.md), [project-upgrade.md](project-upgrade.md), [project-generator.md](project-generator.md), [development-server.md](development-server.md), [cli-doctor.md](cli-doctor.md), [project-templates.md](project-templates.md) | Generation, diagnostics, fixtures, project commands, upgrades, builds and development server |
 | Example | Implemented | [example-myshop.md](example-myshop.md) | The myshop integration example |
 | Settings | Implemented | [settings.md](settings.md), [custom-settings.md](custom-settings.md), [configuration.md](configuration.md) | `fexu.toml`, environment overrides and custom sections |
-| URLs and views | Implemented | [urls.md](urls.md), [routing.md](routing.md), [views.md](views.md), [templates.md](templates.md), [project-structure.md](project-structure.md) | Named Axum routes, responses, templates and project layout |
+| URLs and views | Implemented | [urls.md](urls.md), [routing.md](routing.md), [views.md](views.md), [web-views.md](web-views.md), [templates.md](templates.md), [project-structure.md](project-structure.md) | Named Axum routes, HTML CRUD, flash messages, responses, templates and project layout |
 | Jobs | Implemented | [jobs.md](jobs.md), [job-scheduling.md](job-scheduling.md), [workers.md](workers.md), [job-retries.md](job-retries.md), [job-security.md](job-security.md), [job-mail-integration.md](job-mail-integration.md) | Persistent queue, cron in UTC, Europe/Berlin and fixed offsets, application workers, hidden payloads and mail without reset tokens |
-| Cache | Implemented, process-local | [cache.md](cache.md) | Optional typed cache. Not a distributed cache |
+| Cache | Implemented, process-local | [cache.md](cache.md) | Optional typed cache, explicit view cache, no shared server cache |
 | Advanced services | Implemented with stated limits | [advanced-services.md](advanced-services.md) | How auth, jobs, cache and storage fit together, and what #97–#100 do not provide |
 | Apps | Implemented | [apps.md](apps.md), [app-registry.md](app-registry.md), [app-migrations.md](app-migrations.md), [app-lifecycle.md](app-lifecycle.md), [reusable-apps.md](reusable-apps.md), [create-app.md](create-app.md) | Typed registration, startup checks and app migrations |
 | Models | Implemented | [models.md](models.md), [model-components.md](model-components.md), [model-timestamps.md](model-timestamps.md), [model-soft-delete.md](model-soft-delete.md) | Model definitions, reusable fields, managed timestamps and explicit limits |
@@ -47,7 +47,7 @@ The [Django 6.1 capability matrix](django-capability-matrix.md) compares Fexu's 
 | Storage and uploads | Local storage implemented; remote object storage is configuration only | [storage.md](storage.md), [storage-remote.md](storage-remote.md), [uploads.md](uploads.md) | Local files, lifecycle, signed downloads and an S3 plan without a network client |
 | Middleware | Implemented | [middleware.md](middleware.md), [request-lifecycle.md](request-lifecycle.md) | Request IDs, logging, limits and security headers |
 | Admin | Implemented with documented limitations | [admin.md](admin.md), [admin-devex.md](admin-devex.md), [admin-native.md](admin-native.md), [admin-navigation.md](admin-navigation.md), [admin-components.md](admin-components.md), [admin-extension-api.md](admin-extension-api.md), [transactions.md](transactions.md), [admin-directory-audit.md](admin-directory-audit.md), [admin-transactional-inlines.md](admin-transactional-inlines.md), [admin-form-drafts.md](admin-form-drafts.md), [admin-inlines.md](admin-inlines.md), [admin-bulk-actions.md](admin-bulk-actions.md), [admin-audit-log.md](admin-audit-log.md), [admin-custom-actions.md](admin-custom-actions.md), [admin-django-parity.md](admin-django-parity.md) | Native HTML, JSON API, permissions, navigation, forms, transactions, actions, history and extensions |
-| OpenAPI | Implemented in main | [openapi.md](openapi.md) | OpenAPI 3.1 from model metadata, plus an optional explorer |
+| OpenAPI | Implemented in main | [openapi.md](openapi.md) | OpenAPI 3.1 from model metadata, Swagger UI at `/api/docs`, and an optional explorer |
 | General plugin hooks | Planned only | [extensions.md](extensions.md) | Extension points beyond the implemented admin API |
 | Deployment | Local SQLite, optional Docker PostgreSQL, and a disposable app image in `deploy/` | [deployment.md](deployment.md), [deploy-docker.md](deploy-docker.md) | Local startup, proxy boundaries, trusted proxies and embedded framework migrations |
 | Implementation process | Implemented and planned | [implementation-guide.md](implementation-guide.md) | Change scope, acceptance checks and architecture decisions |

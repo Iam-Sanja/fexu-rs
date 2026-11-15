@@ -2,7 +2,7 @@
 
 [Overview](admin.md) · Security: [admin-security.md](admin-security.md)
 
-**Milestone:** v0.17. The Cargo version remains `0.1.0`.
+**Milestone:** v0.17. The Cargo version is `0.1.2`.
 
 The form offers a `<select>` containing up to 100 readable target records. If the current value is outside that page but readable, it is prepended. A “Continue searching” link opens the selection page.
 

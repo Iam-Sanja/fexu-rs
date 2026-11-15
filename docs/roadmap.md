@@ -2,11 +2,11 @@
 
 [Documentation](index.md) · [Django capability matrix](django-capability-matrix.md) · [Admin comparison](admin-django-parity.md) · [GitHub issues](https://github.com/Iam-Sanja/fexu-rs/issues)
 
-**Baseline:** Fexu source at `a39c952` (2026-11-14). **Cargo package version: `0.1.0`**, experimental. Individual workspace crates are being published to crates.io in dependency order; a partially published set is not yet an installable standalone framework. Check [release readiness](release-readiness.md) and the [crates.io package](https://crates.io/crates/fexu) for current availability. Publication does not imply production readiness.
+**Baseline:** Fexu source prepared as Cargo `0.1.2`, experimental. `0.1.0` and `fexu-cli` `0.1.1` are the versions already on crates.io. Check [release readiness](release-readiness.md) and the [crates.io package](https://crates.io/crates/fexu) for current availability. Publication does not imply production readiness.
 
 ## Release versions versus historical milestones
 
-Older documents and the [changelog](../CHANGELOG.md) use internal feature milestones such as `v0.13` and `v0.28`. **Those labels are not crates.io releases or Cargo semver versions.** They record a development sequence. The first planned crates.io package version is `0.1.0`. This page tracks the actual current design and remaining work instead of presenting a second version numbering system.
+Older documents and the [changelog](../CHANGELOG.md) use internal feature milestones such as `v0.13` and `v0.28`. **Those labels are not crates.io releases or Cargo semver versions.** They record a development sequence. `0.1.0` is the first crates.io package version. This branch prepares `0.1.2`. This page tracks the actual current design and remaining work instead of presenting a second version numbering system.
 
 ## Available in the source baseline
 
@@ -26,7 +26,7 @@ Details and limits are in the [capability matrix](django-capability-matrix.md), 
 ## Next priorities
 
 1. **Finish and independently validate the first registry release.** Release all 16 crates in the documented dependency order. After publishing, test `cargo add fexu` and `cargo install fexu-cli` in a clean external project with no path dependency. Do not report these commands as tested before their packages are indexed.
-2. **Resolve parallel PostgreSQL test fixture contention** ([#117](https://github.com/Iam-Sanja/fexu-rs/issues/117)). Isolated database creation can collide via `template1` when tests run concurrently. Serial fixture execution works; concurrency needs a regression test on PostgreSQL 17 and 18.
+2. **Keep parallel PostgreSQL fixtures isolated** ([#117](https://github.com/Iam-Sanja/fexu-rs/issues/117)). `DisposablePostgres` opens administrative sessions on the approved database or `postgres`, never on `template0` or `template1`, and clones `template0`. Concurrent `STRATEGY FILE_COPY` is not used; on Windows PostgreSQL 18 those copies stalled. `drop_database` drops only `fexu_test_` plus 32 hex characters, and only when the current role owns that database. One ignored regression test covers concurrent creation, isolated writes, overlapping cleanup, and a connection left open by an aborted test. Run it on PostgreSQL 16, 17, and 18 when that server is the approved loopback target.
 3. **Keep the public documentation aligned with the shipped code** ([#119](https://github.com/Iam-Sanja/fexu-rs/issues/119)). Verify install instructions, the current DB driver, CLI command behavior and compatibility notes.
 4. **Extend deployment and integration coverage.** The TestShop passed 24 SQLite tests, 24 serial PostgreSQL tests and a separate PostgreSQL 17 Docker HTTP acceptance against `a39c952` ([#118](https://github.com/Iam-Sanja/fexu-rs/issues/118)). That TestShop does not cover MFA or `Prefer` TLS negotiation against an SSL-enabled PostgreSQL server.
 5. **Improve framework ergonomics and capability parity** according to individually scoped issues and the [Django capability matrix](django-capability-matrix.md). Do not promise unimplemented features or dates.

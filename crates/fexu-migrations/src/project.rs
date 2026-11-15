@@ -61,9 +61,71 @@ pub struct ProjectConfig {
     pub jobs_max_attempts: u32,
     pub jobs_retention_hours: u32,
     pub jobs_jitter: bool,
+    pub api_docs: ApiDocsSettings,
     pub custom: BTreeMap<String, BTreeMap<String, String>>,
     /// Migration directories. Entries never load Rust code.
     pub apps: Vec<DeclaredApp>,
+}
+
+/// `[api.docs]` in `fexu.toml`. Omitted keys keep the safe default.
+///
+/// `enabled: None` is on outside production and off in production.
+/// `access: None` is `public` outside production and `session` in production.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ApiDocsSettings {
+    pub enabled: Option<bool>,
+    pub ui: String,
+    pub path: String,
+    pub schema_path: String,
+    pub schema_enabled: bool,
+    pub try_it_out: bool,
+    pub access: Option<String>,
+}
+
+/// Values after production defaults have been applied.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ResolvedApiDocs {
+    pub enabled: bool,
+    pub ui: String,
+    pub path: String,
+    pub schema_path: String,
+    pub schema_enabled: bool,
+    pub try_it_out: bool,
+    pub access: String,
+}
+
+impl Default for ApiDocsSettings {
+    fn default() -> Self {
+        Self {
+            enabled: None,
+            ui: "swagger".to_owned(),
+            path: "/api/docs".to_owned(),
+            schema_path: "/api/openapi.json".to_owned(),
+            schema_enabled: true,
+            try_it_out: false,
+            access: None,
+        }
+    }
+}
+
+impl ApiDocsSettings {
+    pub fn resolve(&self, production: bool) -> ResolvedApiDocs {
+        let access = match self.access.as_deref() {
+            Some("session") => "session",
+            Some("public") => "public",
+            _ if production => "session",
+            _ => "public",
+        };
+        ResolvedApiDocs {
+            enabled: self.enabled.unwrap_or(!production),
+            ui: self.ui.clone(),
+            path: self.path.clone(),
+            schema_path: self.schema_path.clone(),
+            schema_enabled: self.schema_enabled,
+            try_it_out: self.try_it_out,
+            access: access.to_owned(),
+        }
+    }
 }
 
 /// Deklariertes Migrationsverzeichnis einer App. Es aktiviert keine Rust-App.
@@ -326,6 +388,7 @@ fn parse_manifest(path: &Path) -> Result<ProjectConfig, MigrationError> {
     let mut jobs_max_attempts = 5_u32;
     let mut jobs_retention_hours = 168_u32;
     let mut jobs_jitter = true;
+    let mut api_docs = ApiDocsSettings::default();
     let mut custom: BTreeMap<String, BTreeMap<String, String>> = BTreeMap::new();
     let mut declared: BTreeMap<String, (Option<String>, Vec<String>)> = BTreeMap::new();
     for (line_number, raw) in text.lines().enumerate() {
@@ -374,6 +437,7 @@ fn parse_manifest(path: &Path) -> Result<ProjectConfig, MigrationError> {
                     | "storage"
                     | "mail"
                     | "jobs"
+                    | "api.docs"
             ) {
                 return Err(MigrationError::new(format!(
                     "{}:{line_number}: unbekannter Abschnitt `[{section}]`.",
@@ -449,6 +513,38 @@ fn parse_manifest(path: &Path) -> Result<ProjectConfig, MigrationError> {
                 .entry(name.to_owned())
                 .or_default()
                 .insert(key.to_owned(), value);
+            continue;
+        }
+        if section == "api.docs" {
+            match key {
+                "enabled" => api_docs.enabled = Some(parse_bool(&value)?),
+                "ui" => {
+                    if !matches!(value.as_str(), "swagger" | "explorer" | "none") {
+                        return Err(MigrationError::new(
+                            "api.docs.ui must be swagger, explorer or none.".to_owned(),
+                        ));
+                    }
+                    api_docs.ui = value;
+                }
+                "path" => api_docs.path = value,
+                "schema_path" => api_docs.schema_path = value,
+                "schema" => api_docs.schema_enabled = parse_bool(&value)?,
+                "try_it_out" => api_docs.try_it_out = parse_bool(&value)?,
+                "access" => {
+                    if !matches!(value.as_str(), "public" | "session") {
+                        return Err(MigrationError::new(
+                            "api.docs.access must be public or session.".to_owned(),
+                        ));
+                    }
+                    api_docs.access = Some(value);
+                }
+                _ => {
+                    return Err(MigrationError::new(format!(
+                        "{}:{line_number}: unknown key `api.docs.{key}`.",
+                        path.display()
+                    )));
+                }
+            }
             continue;
         }
         let qualified = if section.is_empty() {
@@ -760,6 +856,7 @@ fn parse_manifest(path: &Path) -> Result<ProjectConfig, MigrationError> {
         });
     }
     apps.sort_by(|left, right| left.name.cmp(&right.name));
+    validate_api_docs(&api_docs)?;
     if wildcard_host(&host) && !allow_wildcard_bind {
         return Err(MigrationError::new(
             "server.host must not be a wildcard interface unless server.allow_wildcard_bind = true. The bind address is not a public origin.".to_owned(),
@@ -816,6 +913,7 @@ fn parse_manifest(path: &Path) -> Result<ProjectConfig, MigrationError> {
         jobs_max_attempts,
         jobs_retention_hours,
         jobs_jitter,
+        api_docs,
         custom,
         apps,
     })
@@ -966,6 +1064,91 @@ fn validate_locale(value: &str) -> Result<(), MigrationError> {
     } else {
         Err(MigrationError::new(format!(
             "Locale `{value}` is not configured. Supported values are de and en."
+        )))
+    }
+}
+
+fn validate_api_docs(docs: &ApiDocsSettings) -> Result<(), MigrationError> {
+    if !matches!(docs.ui.as_str(), "swagger" | "explorer" | "none") {
+        return Err(MigrationError::new(
+            "api.docs.ui must be swagger, explorer or none.".to_owned(),
+        ));
+    }
+    if let Some(access) = &docs.access {
+        if !matches!(access.as_str(), "public" | "session") {
+            return Err(MigrationError::new(
+                "api.docs.access must be public or session.".to_owned(),
+            ));
+        }
+    }
+    validate_docs_path("api.docs.path", &docs.path)?;
+    validate_docs_path("api.docs.schema_path", &docs.schema_path)?;
+    let ui_on = docs.ui != "none";
+    if ui_on && !docs.schema_enabled {
+        return Err(MigrationError::new(
+            "api.docs UI needs schema = true. The page loads the OpenAPI document from this process."
+                .to_owned(),
+        ));
+    }
+    if ui_on && docs.path == docs.schema_path {
+        return Err(MigrationError::new(
+            "api.docs.path and api.docs.schema_path must be different.".to_owned(),
+        ));
+    }
+    if docs.enabled != Some(false) && !docs.schema_enabled && !ui_on {
+        return Err(MigrationError::new(
+            "api.docs enables neither the schema nor a UI. Set enabled = false to turn documentation off."
+                .to_owned(),
+        ));
+    }
+    if ui_on {
+        for name in [
+            "swagger-ui-bundle.js",
+            "swagger-ui.css",
+            "swagger-initializer.js",
+            "LICENSE",
+            "NOTICE",
+        ] {
+            let asset = format!("{}/{name}", docs.path);
+            validate_docs_path("api.docs asset", &asset)?;
+            if asset == docs.schema_path {
+                return Err(MigrationError::new(format!(
+                    "api.docs asset `{asset}` collides with schema_path."
+                )));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn validate_docs_path(label: &str, path: &str) -> Result<(), MigrationError> {
+    let segments: Vec<&str> = path.split('/').skip(1).collect();
+    let safe = path.starts_with('/')
+        && path.len() > 1
+        && !path.ends_with('/')
+        && !path.contains("//")
+        && !path.contains('?')
+        && !path.contains('#')
+        && path != "/admin"
+        && !path.starts_with("/admin/")
+        && !segments.is_empty()
+        && segments.iter().all(|segment| {
+            !segment.is_empty()
+                && !segment.contains("..")
+                && segment.chars().all(|char| {
+                    char.is_ascii_alphanumeric()
+                        || char == '_'
+                        || char == '-'
+                        || char == '.'
+                        || char == '{'
+                        || char == '}'
+                })
+        });
+    if safe {
+        Ok(())
+    } else {
+        Err(MigrationError::new(format!(
+            "{label} `{path}` must be an absolute path and must not publish an admin route."
         )))
     }
 }
@@ -1123,6 +1306,16 @@ mod tests {
         assert_eq!(config.jobs_concurrency, 1);
         assert_eq!(config.jobs_max_attempts, 5);
         assert!(!config.allow_wildcard_bind);
+        assert_eq!(config.api_docs.path, "/api/docs");
+        assert_eq!(config.api_docs.schema_path, "/api/openapi.json");
+        assert_eq!(config.api_docs.ui, "swagger");
+        assert!(!config.api_docs.try_it_out);
+        assert!(config.api_docs.schema_enabled);
+        assert!(config.api_docs.enabled.is_none());
+        assert!(!config.api_docs.resolve(true).enabled);
+        assert_eq!(config.api_docs.resolve(true).access, "session");
+        assert!(config.api_docs.resolve(false).enabled);
+        assert_eq!(config.api_docs.resolve(false).access, "public");
         let jobs = write_manifest(
             "migrations_dir = \"migrations\"\n[jobs]\nenabled = false\npoll_ms = 250\nconcurrency = 2\nlease_secs = 30\nmax_attempts = 3\nretention_hours = 24\njitter = false\n",
         );
@@ -1331,5 +1524,41 @@ primary_color = "#0f172a"
         let _ = fs::remove_dir_all(rejected.parent().unwrap());
         let _ = fs::remove_dir_all(allowed.parent().unwrap());
         let _ = fs::remove_dir_all(strict.root);
+    }
+
+    #[test]
+    fn api_docs_paths_are_explicit_and_admin_paths_are_rejected() {
+        let path = write_manifest(
+            r#"
+migrations_dir = "migrations"
+[api.docs]
+enabled = true
+ui = "swagger"
+path = "/help/api"
+schema_path = "/help/openapi.json"
+schema = true
+try_it_out = false
+access = "session"
+"#,
+        );
+        let config = parse_manifest(&path).expect("docs");
+        assert_eq!(config.api_docs.path, "/help/api");
+        assert_eq!(config.api_docs.access.as_deref(), Some("session"));
+        assert!(!config.api_docs.try_it_out);
+        let resolved = config.api_docs.resolve(true);
+        assert!(resolved.enabled);
+        assert_eq!(resolved.access, "session");
+        fs::remove_dir_all(path.parent().unwrap()).unwrap();
+        for text in [
+            "migrations_dir = \"migrations\"\n[api.docs]\npath = \"/admin/docs\"\n",
+            "migrations_dir = \"migrations\"\n[api.docs]\nui = \"redoc\"\n",
+            "migrations_dir = \"migrations\"\n[api.docs]\nschema = false\nui = \"swagger\"\n",
+            "migrations_dir = \"migrations\"\n[api.docs]\nui = \"none\"\nschema = false\nenabled = true\n",
+            "migrations_dir = \"migrations\"\n[api]\nenabled = true\n",
+        ] {
+            let rejected = write_manifest(text);
+            assert!(parse_manifest(&rejected).is_err(), "{text}");
+            fs::remove_dir_all(rejected.parent().unwrap()).unwrap();
+        }
     }
 }

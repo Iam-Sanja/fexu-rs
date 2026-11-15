@@ -5,8 +5,8 @@ pub use async_trait;
 pub use chrono;
 pub use fexu_admin as admin;
 pub use fexu_api::{
-    apps, openapi, pages, require_browser, serve, testing, urls, views, web, App, OpenApiOperation,
-    OpenApiOptions,
+    apps, openapi, pages, require_browser, serve, testing, urls, views, web, App, DocsAccess,
+    OpenApiOperation, OpenApiOptions, OpenApiUi,
 };
 pub use fexu_auth as auth;
 pub use fexu_cache as cache;

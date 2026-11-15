@@ -1,6 +1,6 @@
 # Date and time
 
-**Milestone:** v0.19. The Cargo version remains `0.1.0`.
+**Milestone:** v0.19. The Cargo version is `0.1.2`.
 
 Fexu distinguishes three types. They are not converted into each other.
 

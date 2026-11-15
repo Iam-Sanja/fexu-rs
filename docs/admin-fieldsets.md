@@ -2,7 +2,7 @@
 
 [Overview](admin.md) · Templates: [admin-templates.md](admin-templates.md)
 
-**Milestone:** v0.17. The Cargo version remains `0.1.0`.
+**Milestone:** v0.17. The Cargo version is `0.1.2`.
 
 Without `admin_fieldset`, the form remains a single unnamed group.
 

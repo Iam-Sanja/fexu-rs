@@ -31,4 +31,4 @@ let when = fexu::jobs::When::cron("notes-morning", "0 9 * * 1-5", "europe/berlin
 queue.enqueue::<NotePulseHandler>(&pulse, when).await?;
 ```
 
-`examples/notes` checks that this expression is accepted and that a process-local cache does not share entries with a second cache.
+`examples/notes` checks that this expression is accepted and that a process-local cache does not share entries with a second cache. The notes page cache in `examples/notes/src/cache_page.rs` is a separate explicit cache; it is not attached to the job queue.

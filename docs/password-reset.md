@@ -2,7 +2,7 @@
 
 [Overview](index.md) · Auth: [auth.md](auth.md) · Email: [mail.md](mail.md) · Security: [mail-security.md](mail-security.md)
 
-**Milestone:** v0.23. The Cargo version remains `0.1.0`. The migration is `crates/fexu-auth/migrations/0004_password_reset.json`. `0001`, `0002` and `0003` remain unchanged.
+**Milestone:** v0.23. The Cargo version is `0.1.2`. The migration is `crates/fexu-auth/migrations/0004_password_reset.json`. `0001`, `0002` and `0003` remain unchanged.
 
 ## Routes
 
@@ -18,7 +18,7 @@
 
 The public acknowledgement is “If an account with this address exists, an email with further steps has been requested.” Unknown, inactive or invalid addresses, rate limits, disabled mail and delivery failures do not reveal account existence. Inactive users receive no email. CSRF and origin failures return 403 without naming the address. Without an auth service, POST returns 404. Bodies over 8 KiB are rejected with 403.
 
-The pages are server-rendered HTML without external file and without JavaScript. `Referrer-Policy` is `no-referrer`. The content security policy does not allow an external asset. The admin login remains unchanged and does not contain an additional link.
+The pages are server-rendered HTML without external file and without JavaScript. `Referrer-Policy` is `no-referrer`, including the forbidden and unconfigured recovery responses. The security-header layer keeps that explicit value when the configured default is `same-origin`. The admin login document uses `same-origin` and is unchanged as a page. The content security policy does not allow an external asset. The admin login remains unchanged and does not contain an additional link.
 
 ## Token
 

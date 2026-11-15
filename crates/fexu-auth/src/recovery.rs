@@ -574,8 +574,11 @@ fn html_response(
 }
 
 fn secure_headers(response: &mut Response, state: &AppState) {
-    let headers = response.headers_mut();
     let _ = state;
+    recovery_headers(response.headers_mut());
+}
+
+fn recovery_headers(headers: &mut HeaderMap) {
     insert(headers, header::REFERRER_POLICY, "no-referrer");
     insert(headers, header::CACHE_CONTROL, "no-store");
     insert(headers, header::X_CONTENT_TYPE_OPTIONS, "nosniff");
@@ -593,19 +596,23 @@ fn insert(headers: &mut HeaderMap, name: header::HeaderName, value: &str) {
 }
 
 fn forbidden_page(locale: &str) -> Response {
-    (
+    let mut response = (
         StatusCode::FORBIDDEN,
         Html(page(locale, "forbidden", None, None)),
     )
-        .into_response()
+        .into_response();
+    recovery_headers(response.headers_mut());
+    response
 }
 
 fn missing_auth() -> Response {
-    (
+    let mut response = (
         StatusCode::NOT_FOUND,
         Html(page("de", "missing", None, None)),
     )
-        .into_response()
+        .into_response();
+    recovery_headers(response.headers_mut());
+    response
 }
 
 fn cookie_config(auth: Option<&AuthService>) -> crate::AuthConfig {

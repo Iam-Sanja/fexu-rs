@@ -30,7 +30,7 @@ fn load() -> Result<fexu::migrations::ProjectConfig, Box<dyn std::error::Error>>
 
 ## Sections
 
-Existing sections remain `project`, `server`, `database`, `admin`, `auth`, `templates`, `branding`, `static`, `storage`, `mail` and `jobs`. Omitted settings retain their defaults: language `de` with fallback `en`, 12-hour sessions, a 30-minute idle timeout, templates disabled, color `#0f172a`, currency `EUR`, static files disabled, local storage under `media` with a 10 MiB limit, and mail backend `disabled`. `[jobs]` is optional. Without it, workers are permitted but never start automatically. See [workers.md](workers.md) for limits.
+Existing sections remain `project`, `server`, `database`, `admin`, `auth`, `templates`, `branding`, `static`, `storage`, `mail`, `jobs` and `api.docs`. Omitted settings retain their defaults: language `de` with fallback `en`, 12-hour sessions, a 30-minute idle timeout, templates disabled, color `#0f172a`, currency `EUR`, static files disabled, local storage under `media` with a 10 MiB limit, and mail backend `disabled`. `[jobs]` is optional. Without it, workers are permitted but never start automatically. See [workers.md](workers.md) for limits. `[api.docs]` is optional. Outside production the OpenAPI document and Swagger UI are on, try-it-out is off, and access is public. In production an omitted section mounts no documentation routes. See [openapi.md](openapi.md).
 
 `server.host` must not be `0.0.0.0`. `templates.engine` is `tera`. Languages are `de` and `en`. `branding.currency` consists of three capital letters. `storage.backend` is `local`. Static prefixes must not cover Admin, API, Auth, Health and Uploads.
 
@@ -84,6 +84,15 @@ debug = true
 
 [database]
 url = "sqlite://db.sqlite3?mode=rwc"
+
+[api.docs]
+enabled = true
+ui = "swagger"
+path = "/api/docs"
+schema_path = "/api/openapi.json"
+schema = true
+try_it_out = false
+access = "public"
 ```
 
 The workspace file with only `migrations_dir` and `schema_command` remains valid.

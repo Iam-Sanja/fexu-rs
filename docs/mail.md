@@ -2,7 +2,7 @@
 
 [Overview](index.md) · SMTP: [mail-smtp.md](mail-smtp.md) · Security: [mail-security.md](mail-security.md) · Notifications: [notifications.md](notifications.md) · Password: [password-reset.md](password-reset.md)
 
-**Milestone:** v0.23. The Cargo version remains `0.1.0`. The crate is `fexu-mail`. The facade is `fexu::mail`.
+**Milestone:** v0.23. The Cargo version is `0.1.2`. The crate is `fexu-mail`. The facade is `fexu::mail`.
 
 ## Purpose
 

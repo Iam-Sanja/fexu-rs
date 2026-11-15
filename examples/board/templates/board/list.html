@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Notes</title>
+  {% if canonical %}<link rel="canonical" href="{{ canonical | safe }}">{% endif %}
+</head>
+<body>
+  <ul class="flashes">
+  {% for flash in flashes %}
+    <li data-level="{{ flash.level }}">{{ flash.text }}</li>
+  {% endfor %}
+  </ul>
+  <p>{{ total }} notes</p>
+  <ul>
+  {% for row in rows %}
+    <li><a href="{{ row.href | safe }}">{{ row.title }}</a></li>
+  {% endfor %}
+  </ul>
+  {% if prev_url %}<a href="{{ prev_url | safe }}">Previous</a>{% endif %}
+  {% if next_url %}<a href="{{ next_url | safe }}">Next</a>{% endif %}
+  <a href="{{ create_url | safe }}">New</a>
+</body>
+</html>

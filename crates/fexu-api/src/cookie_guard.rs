@@ -1,11 +1,12 @@
 //! Cookie-Schreibzugriffe brauchen einen CSRF-Nachweis, bevor ein Handler läuft.
 //!
-//! Ohne `fexu_session` oder `fexu_anonymous` bleibt die Anfrage unberührt,
-//! außer `require_browser` verlangt einen Nachweis.
-//! Das gilt auch für `Authorization: Bearer`: der Header wird hier nicht geprüft.
-//! `POST /admin/login` und die Passwort-Reset-Formulare behalten ihren eigenen
-//! Double-Submit-Nachweis. Unter `require_browser` reicht dieses Login-Cookie auch dann,
-//! wenn noch kein Session-Cookie existiert. Andere Schreibrouten bleiben ohne Session-Cookie gesperrt.
+//! `App::require_browser_writes` legt [`require_browser`] außen um [`enforce`]. Beide rufen
+//! [`gate`] auf. Ohne `fexu_session` oder `fexu_anonymous` lässt `enforce` die Anfrage zum Handler,
+//! außer der Pfad ist ein dediziertes Login- oder Reset-Formular und [`require_browser`] ist aktiv.
+//! Dann reicht `fexu_login_csrf` beziehungsweise `fexu_reset_csrf` als Nachweis, auch aus einem
+//! frischen Cookie-Jar. Andere Schreibrouten bleiben ohne Session-Cookie gesperrt.
+//! `Authorization: Bearer` wird hier nicht geprüft. Ein abgelaufenes oder unbekanntes Session-Cookie
+//! ersetzt den Login-Nachweis nicht und blockiert ihn auch nicht.
 //! `Origin: null` wird nicht allgemein erlaubt. Die bestehende Ausnahme gilt nur zusammen mit
 //! `Sec-Fetch-Site: same-origin`. Der Host-Header und `X-Forwarded-*` werden hier nicht gelesen.
 

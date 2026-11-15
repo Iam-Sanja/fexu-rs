@@ -2,7 +2,7 @@
 
 [Overview](index.md) · Routes: [admin-routing.md](admin-routing.md) Templates: [admin-templates.md](admin-templates.md) Design: [admin-design-system.md](admin-design-system.md)
 
-**Milestone:** v0.22. The Cargo version remains `0.1.0`. Custom pages under `/admin/pages/{key}` share the native server-rendered layout. React, Vite and Node.js are not required. Allowed login origins follow the bind address from `fexu.toml` or `BIND_ADDRESS`. Drafts, has-many inlines, opt-in parent-child forms, bulk actions, history and date hierarchy work without JavaScript. `admin.js` uses `defer` and is not required for submission. Date fields use `type="date"`, `type="time"` and `type="datetime-local"` with a UTC hint.
+**Milestone:** v0.22. The Cargo version is `0.1.2`. Custom pages under `/admin/pages/{key}` share the native server-rendered layout. React, Vite and Node.js are not required. Allowed login origins follow the bind address from `fexu.toml` or `BIND_ADDRESS`. Drafts, has-many inlines, opt-in parent-child forms, bulk actions, history and date hierarchy work without JavaScript. `admin.js` uses `defer` and is not required for submission. Date fields use `type="date"`, `type="time"` and `type="datetime-local"` with a UTC hint.
 
 ## Purpose
 

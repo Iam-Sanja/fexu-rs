@@ -1,6 +1,6 @@
 # Form validation
 
-**Milestone:** v0.19, Implemented. The Cargo version remains `0.1.0`. Additional codes: `validation.date`, `validation.time`, `validation.datetime`, `validation.datetime_offset`.
+**Milestone:** v0.19, Implemented. The Cargo version is `0.1.2`. Additional codes: `validation.date`, `validation.time`, `validation.datetime`, `validation.datetime_offset`.
 
 ## Responsibility
 

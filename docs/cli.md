@@ -2,7 +2,7 @@
 
 [Overview](index.md) · **Implemented file:** `crates/fexu-cli/src/main.rs`.
 
-Until `fexu-cli@0.1.0` is confirmed on crates.io, install the CLI from a framework checkout as shown in the [README](../README.md). After publication, `cargo install fexu-cli` is the registry installation path. Run project creation outside the framework workspace and subsequent commands inside the generated project.
+`fexu-cli` 0.1.0 and 0.1.1 are on crates.io. This checkout is 0.1.2 and writes `fexu = "=0.1.2"` unless `--fexu-path` is set. Install 0.1.2 from crates.io only after that version is listed. Until then, install the CLI from a framework checkout as shown in the [README](../README.md). Run project creation outside the framework workspace and subsequent commands inside the generated project.
 
 ## Actual Functionality (Implemented)
 

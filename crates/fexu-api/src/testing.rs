@@ -369,9 +369,11 @@ impl TestDatabase {
 
     /// Creates one new `fexu_test_<uuid>` database and connects only to it.
     ///
-    /// `admin_url` must name an approved test database. Creating the database
+    /// `admin_url` must name an approved test database. The administrative
+    /// session uses that database, or `postgres` when the name is a clone
+    /// template. The new database is copied from `template0`. Creating it
     /// requires `CREATEDB` or an equivalent role. [`Self::cleanup`] drops only
-    /// the database this call created.
+    /// the database this call created, and only when the current role owns it.
     pub async fn postgres_isolated(admin_url: &str) -> Result<Self, String> {
         let owned = DisposablePostgres::create(admin_url).await?;
         let url = owned.url().to_owned();

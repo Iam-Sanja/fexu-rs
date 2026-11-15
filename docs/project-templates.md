@@ -23,4 +23,4 @@ New API/fullstack models require their declared model permissions. They do not g
 
 Project templates live in `templates/`. App templates live in `<app>/templates/<appname>/` with explicit project overrides in `templates/<appname>/`. Overrides apply to that namespace only. Apps cannot replace admin/login/base templates. Project `templates/base.html` can be inherited by app pages.
 
-Generated files use internal template version `0.25` and layout version `2`; the Cargo version remains `0.1.0`. See [compatibility](project-generator.md#migration-from-old-clilayouts).
+Generated files use internal template version `0.25` and layout version `2`; the Cargo version is `0.1.2`. See [compatibility](project-generator.md#migration-from-old-clilayouts).

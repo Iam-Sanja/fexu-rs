@@ -760,6 +760,22 @@ mod tests {
     use uuid::Uuid;
 
     #[tokio::test]
+    async fn stored_file_sha256_matches_the_fixed_digest() {
+        let root = std::env::temp_dir().join(format!("fexu-sha-{}", Uuid::new_v4()));
+        let storage = LocalStorage::open(&root, 64, &["text/plain"]).unwrap();
+        let stored = storage
+            .save(Uuid::nil(), "notes.txt", b"hello fexu")
+            .await
+            .unwrap();
+        assert_eq!(
+            stored.sha256,
+            "7b9029e3d8166382a8df80877dea98730b557ad7a5f69564c1de1f6ae867b81a"
+        );
+        assert_eq!(stored.sha256.len(), 64);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[tokio::test]
     async fn stores_reads_and_isolates_owners() {
         let root = std::env::temp_dir().join(format!("fexu-storage-{}", Uuid::new_v4()));
         let storage = LocalStorage::open(&root, 32, &["text/plain", "image/png"]).unwrap();

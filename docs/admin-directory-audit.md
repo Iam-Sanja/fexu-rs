@@ -2,7 +2,7 @@
 
 [Overview](admin.md) · Auth: [auth.md](auth.md) · Transactions: [transactions.md](transactions.md) · History: [admin-audit-log.md](admin-audit-log.md)
 
-**Milestone:** v0.20. The Cargo version remains `0.1.0`.
+**Milestone:** v0.20. The Cargo version is `0.1.2`.
 
 The HTML and JSON directory endpoints call the same functions in `fexu-admin`. Auth changes, session revocation and the audit entry share one transaction. If auditing fails, the previous authentication state is preserved.
 

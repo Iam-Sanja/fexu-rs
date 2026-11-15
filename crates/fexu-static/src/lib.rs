@@ -169,9 +169,7 @@ async fn file_response(
     if bytes.len() as u64 > options.max_bytes {
         return StatusCode::PAYLOAD_TOO_LARGE.into_response();
     }
-    let mut hasher = Sha256::new();
-    hasher.update(&bytes);
-    let etag = format!("\"{:x}\"", hasher.finalize());
+    let etag = quoted_sha256_etag(&bytes);
     if if_none_match.and_then(|value| value.to_str().ok()) == Some(etag.as_str()) {
         return StatusCode::NOT_MODIFIED.into_response();
     }
@@ -209,6 +207,22 @@ async fn file_response(
 
 fn missing() -> Response {
     StatusCode::NOT_FOUND.into_response()
+}
+
+/// SHA-256 als ETag. Jedes Byte wird explizit zweistellig und kleingeschrieben ausgegeben.
+fn quoted_sha256_etag(bytes: &[u8]) -> String {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let digest = Sha256::digest(bytes);
+    let raw: &[u8] = digest.as_ref();
+    let mut etag = String::with_capacity(2 + raw.len() * 2);
+    etag.push('"');
+    for byte in raw {
+        let byte = *byte;
+        etag.push(HEX[usize::from(byte >> 4)] as char);
+        etag.push(HEX[usize::from(byte & 0x0f)] as char);
+    }
+    etag.push('"');
+    etag
 }
 
 use axum::response::IntoResponse;
@@ -294,6 +308,50 @@ mod tests {
             "GET /static/missing.css HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
         );
         assert!(missing.contains("404"), "{missing}");
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn sha256_etag_keeps_quotes_and_leading_zero_nibbles() {
+        let etag = super::quoted_sha256_etag(b"abc");
+        assert_eq!(
+            etag,
+            "\"ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad\""
+        );
+        assert_eq!(etag.len(), 66);
+        assert!(etag.contains("00"));
+        assert!(etag.starts_with('"') && etag.ends_with('"'));
+    }
+
+    #[test]
+    fn if_none_match_returns_304_for_the_same_etag() {
+        let root = std::env::temp_dir().join(format!("fexu-static-etag-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+        fs::write(root.join("notes.txt"), b"abc").unwrap();
+        let app = mount(axum::Router::new(), StaticOptions::new(&root));
+        let etag = "\"ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad\"";
+        let fresh = exchange(
+            &app,
+            "GET /static/notes.txt HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
+        );
+        assert!(fresh.contains("200"), "{fresh}");
+        assert!(fresh.contains(etag), "{fresh}");
+        assert!(fresh.contains("abc"), "{fresh}");
+        let cached = exchange(
+            &app,
+            &format!(
+                "GET /static/notes.txt HTTP/1.1\r\nHost: localhost\r\nIf-None-Match: {etag}\r\nConnection: close\r\n\r\n"
+            ),
+        );
+        assert!(cached.contains("304"), "{cached}");
+        assert!(!cached.contains("abc"), "{cached}");
+        let stale = exchange(
+            &app,
+            "GET /static/notes.txt HTTP/1.1\r\nHost: localhost\r\nIf-None-Match: \"0000000000000000000000000000000000000000000000000000000000000000\"\r\nConnection: close\r\n\r\n",
+        );
+        assert!(stale.contains("200"), "{stale}");
+        assert!(stale.contains("abc"), "{stale}");
         let _ = fs::remove_dir_all(&root);
     }
 

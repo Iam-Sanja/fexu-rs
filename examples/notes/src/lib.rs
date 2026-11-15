@@ -1,5 +1,6 @@
 //! Wiederverwendbare Notiz-App. Sie hängt nur an der öffentlichen Fexu-API.
 
+pub mod cache_page;
 pub mod jobs;
 
 use axum::routing::get;

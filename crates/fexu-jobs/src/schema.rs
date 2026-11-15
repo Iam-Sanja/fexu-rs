@@ -64,9 +64,13 @@ pub async fn migration_status(
     db: &DatabaseConnection,
 ) -> Result<fexu_migrations::StatusReport, JobError> {
     let files = embedded_migrations()?;
-    fexu_migrations::status_of_files(db, &files, JOB_HISTORY, None)
+    let mut report = fexu_migrations::status_of_files(db, &files, JOB_HISTORY, None)
         .await
-        .map_err(|error| JobError::message("job.migration", error.to_string()))
+        .map_err(|error| JobError::message("job.migration", error.to_string()))?;
+    fexu_migrations::note_missing_applied_tables(db, &files, &mut report, "Job")
+        .await
+        .map_err(|error| JobError::message("job.migration", error.to_string()))?;
+    Ok(report)
 }
 
 pub async fn render_migration_status(db: &DatabaseConnection) -> Result<(String, bool), JobError> {

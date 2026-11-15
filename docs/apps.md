@@ -2,7 +2,7 @@
 
 [Overview](index.md) · Registry: [app-registry.md](app-registry.md) · Migrations: [app-migrations.md](app-migrations.md) · Reuse: [reusable-apps.md](reusable-apps.md) · Generator: [create-app.md](create-app.md)
 
-**Implemented.** Milestone v0.25. The Cargo version remains `0.1.0`. New projects use template version `0.25` and layout 2; existing projects are unchanged. An app is a Rust type that passes models, routes, admins, migrations, templates, and static files to the existing engines. There is no second router, auth, model or admin engine and no reloading of unknown crates.
+**Implemented.** Milestone v0.25. The Cargo version is `0.1.2`. New projects use template version `0.25` and layout 2; existing projects are unchanged. An app is a Rust type that passes models, routes, admins, migrations, templates, and static files to the existing engines. There is no second router, auth, model or admin engine and no reloading of unknown crates.
 
 Create a project with `fexu new project Shop` and a business module with `fexu new app produkte`. See [structure](project-structure.md) and [CLI migration](project-generator.md#migration-from-old-clilayouts).
 
