@@ -11,7 +11,6 @@ A Django-inspired, experimental web framework built with **Axum**, **Tera**, **S
 ![Status: experimental](https://img.shields.io/badge/status-experimental-orange)
 ![MSRV: 1.89](https://img.shields.io/badge/MSRV-1.89-informational)
 ![Workspace: 16 crates](https://img.shields.io/badge/workspace-16%20crates-informational)
-[![fexu-core on crates.io](https://img.shields.io/crates/v/fexu-core.svg?label=fexu-core)](https://crates.io/crates/fexu-core)
 
 [**Quick start**](#quick-start) · [**Features**](#why-fexu) · [**Docs**](docs/index.md) · [**Contribute**](#help-build-fexu) · [**Roadmap**](docs/roadmap.md)
 
