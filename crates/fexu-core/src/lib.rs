@@ -1,5 +1,7 @@
 //! Shared contracts, independent of HTTP and database implementations.
 
+pub mod i18n;
+
 pub mod choice;
 pub mod decimal;
 mod messages;
