@@ -15,7 +15,7 @@ pub(crate) async fn ensure(db: &DatabaseConnection) -> Result<(), FexuError> {
     ensure_table(db).await
 }
 
-/// Schreibt das Bild auf der übergebenen Verbindung. Der Aufrufer committet.
+/// Writes the image using the supplied connection. The caller commits the transaction.
 pub(crate) async fn save_on(
     db: &impl ConnectionTrait,
     model_key: &str,
