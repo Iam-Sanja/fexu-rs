@@ -54,33 +54,6 @@ pub fn catalog(locale: &str) -> Value {
     Value::Object(translated)
 }
 
-#[cfg(test)]
-mod catalog_tests {
-    use super::{catalog, normalize, parse_catalog, DE_PO, EN_PO};
-
-    #[test]
-    fn bundled_catalogs_have_matching_keys_and_preserve_existing_labels() {
-        let en = parse_catalog(EN_PO);
-        let de = parse_catalog(DE_PO);
-        assert_eq!(en.len(), 313);
-        assert_eq!(en.keys().collect::<Vec<_>>(), de.keys().collect::<Vec<_>>());
-        assert_eq!(en["save"], "Save");
-        assert_eq!(de["save"], "Speichern");
-        assert_eq!(en["menu"], "Menu");
-        assert_eq!(de["menu"], "Menü");
-        assert_eq!(catalog("en")["login"], "Sign in");
-        assert_eq!(catalog("de")["login"], "Anmelden");
-    }
-
-    #[test]
-    fn unknown_language_falls_back_to_english_without_file_access() {
-        assert_eq!(catalog("fr")["save"], "Save");
-        assert_eq!(normalize("fr", "en", "de"), "en");
-        assert_eq!(normalize("fr", "fr", "fr"), "en");
-        assert_eq!(normalize("de", "en", "en"), "de");
-    }
-}
-
 pub fn notice(locale: &str, code: &str) -> Option<String> {
     let catalog = catalog(locale);
     let key = match code {
@@ -239,4 +212,31 @@ pub fn validation_text(locale: &str, detail: &str) -> String {
             .to_owned();
     }
     detail.to_owned()
+}
+
+#[cfg(test)]
+mod catalog_tests {
+    use super::{catalog, normalize, parse_catalog, DE_PO, EN_PO};
+
+    #[test]
+    fn bundled_catalogs_have_matching_keys_and_preserve_existing_labels() {
+        let en = parse_catalog(EN_PO);
+        let de = parse_catalog(DE_PO);
+        assert_eq!(en.len(), 313);
+        assert_eq!(en.keys().collect::<Vec<_>>(), de.keys().collect::<Vec<_>>());
+        assert_eq!(en["save"], "Save");
+        assert_eq!(de["save"], "Speichern");
+        assert_eq!(en["menu"], "Menu");
+        assert_eq!(de["menu"], "Menü");
+        assert_eq!(catalog("en")["login"], "Sign in");
+        assert_eq!(catalog("de")["login"], "Anmelden");
+    }
+
+    #[test]
+    fn unknown_language_falls_back_to_english_without_file_access() {
+        assert_eq!(catalog("fr")["save"], "Save");
+        assert_eq!(normalize("fr", "en", "de"), "en");
+        assert_eq!(normalize("fr", "fr", "fr"), "en");
+        assert_eq!(normalize("de", "en", "en"), "de");
+    }
 }
