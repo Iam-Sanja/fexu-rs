@@ -172,7 +172,7 @@ mod tests {
     fn parses_contexts_multiline_text_and_english_fallback() {
         let english = r#"msgid ""
 msgstr ""
-"Language: en\\n"
+"Language: en\n"
 
 msgctxt "app.save"
 msgid "Save"
@@ -216,9 +216,9 @@ msgstr "Again"
         assert!(PoCatalog::parse(duplicate)
             .unwrap_err()
             .contains("duplicate key"));
-        assert!(PoCatalog::parse("msgctxt \"a\"\\nmsgid \"A\"\\nmsgstr[0] \"A\"")
+        assert!(PoCatalog::parse("msgctxt \"a\"\nmsgid \"A\"\nmsgstr[0] \"A\"")
             .is_err());
-        assert!(PoCatalog::parse("msgctxt \"a\"\\nmsgid \"A\"\\nmsgstr \"broken")
+        assert!(PoCatalog::parse("msgctxt \"a\"\nmsgid \"A\"\nmsgstr \"broken")
             .is_err());
     }
 }
