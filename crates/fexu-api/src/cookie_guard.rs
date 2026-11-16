@@ -1,14 +1,14 @@
-//! Cookie-Schreibzugriffe brauchen einen CSRF-Nachweis, bevor ein Handler läuft.
+//! Cookie-authenticated writes require CSRF validation before a handler runs.
 //!
-//! `App::require_browser_writes` legt [`require_browser`] außen um [`enforce`]. Beide rufen
-//! [`gate`] auf. Ohne `fexu_session` oder `fexu_anonymous` lässt `enforce` die Anfrage zum Handler,
-//! außer der Pfad ist ein dediziertes Login- oder Reset-Formular und [`require_browser`] ist aktiv.
-//! Dann reicht `fexu_login_csrf` beziehungsweise `fexu_reset_csrf` als Nachweis, auch aus einem
-//! frischen Cookie-Jar. Andere Schreibrouten bleiben ohne Session-Cookie gesperrt.
-//! `Authorization: Bearer` wird hier nicht geprüft. Ein abgelaufenes oder unbekanntes Session-Cookie
-//! ersetzt den Login-Nachweis nicht und blockiert ihn auch nicht.
-//! `Origin: null` wird nicht allgemein erlaubt. Die bestehende Ausnahme gilt nur zusammen mit
-//! `Sec-Fetch-Site: same-origin`. Der Host-Header und `X-Forwarded-*` werden hier nicht gelesen.
+//! `App::require_browser_writes` wraps [`enforce`] with [`require_browser`]. Both call
+//! [`gate`]. Without `fexu_session` or `fexu_anonymous`, `enforce` passes the request to the handler,
+//! except for dedicated login/reset forms when [`require_browser`] is enabled.
+//! In that case, `fexu_login_csrf` or `fexu_reset_csrf` is sufficient proof even from a
+//! fresh cookie jar. Other write routes still require a session cookie.
+//! `Authorization: Bearer` is not validated here. An expired or unknown session cookie
+//! neither replaces nor blocks the dedicated login proof.
+//! `Origin: null` is not generally accepted. The existing exception requires
+//! `Sec-Fetch-Site: same-origin`. The Host and `X-Forwarded-*` headers are not read here.
 
 use axum::body::Body;
 use axum::extract::{Request, State};
@@ -29,8 +29,8 @@ pub async fn enforce(State(state): State<AppState>, request: Request, next: Next
     gate(state, request, next, false).await
 }
 
-/// Schreibzugriff nur mit gültigem Browser-CSRF. Ein fehlendes Session-Cookie und ein ungeprüftes
-/// `Authorization: Bearer` reichen nicht.
+/// Restricts writes to requests with valid browser CSRF proof. Missing session cookies and unchecked
+/// `Authorization: Bearer` values are insufficient.
 pub async fn require_browser(
     State(state): State<AppState>,
     request: Request,
