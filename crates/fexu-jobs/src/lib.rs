@@ -1,9 +1,9 @@
-//! Persistente Hintergrundjobs. Der Webserver startet den Worker nicht.
+//! Persistent background jobs. The web server does not start the worker.
 //!
-//! Zustellung ist **at least once**. Ein Handler muss einen zweiten Lauf vertragen.
+//! Delivery is **at least once**. Handlers must tolerate repeated execution.
 //! [`DELIVERY`] ist die einzige Zusage. Ein abgelaufenes Lease kann denselben Effekt
-//! erneut ausführen. Externe Effekte wie SMTP kann eine Datenbanktransaktion nicht
-//! genau einmal garantieren. Eine angenommene SMTP-Antwort ist keine Zustellbestätigung.
+//! repeat work. Database transactions cannot guarantee exactly-once external effects
+//! such as SMTP. An accepted SMTP response does not prove final delivery.
 
 mod clock;
 mod error;
@@ -32,7 +32,7 @@ pub use schema::{
 };
 pub use worker::{stop_flag, Worker};
 
-/// Einzige Zustellzusage der Queue. Es gibt keine Exactly-Once-Garantie.
+/// The queue guarantees at-least-once delivery only, not exactly once.
 pub const DELIVERY: &str = "at-least-once";
 
 #[cfg(test)]
