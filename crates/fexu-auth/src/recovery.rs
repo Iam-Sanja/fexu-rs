@@ -1,4 +1,4 @@
-//! Passwort zurücksetzen. Der Roh-Token steht nur im Speicher und in der E-Mail.
+//! Password reset. The raw token exists only in memory and the email.
 
 use crate::cookie::{read_cookie, set_cookie};
 use crate::error::AuthError;

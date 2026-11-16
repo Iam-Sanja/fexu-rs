@@ -1,4 +1,4 @@
-//! Sicherheitsprüfungen für den zweiten Faktor, Sitzungen und Kontoschluss.
+//! Security tests for MFA, sessions, and account closure.
 
 use crate::{AuthConfig, AuthError, AuthService, RemoteProtocol};
 use argon2::password_hash::rand_core::{OsRng, RngCore};

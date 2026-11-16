@@ -1,8 +1,8 @@
 //! Projektlokale Management-Befehle.
 //!
-//! Die Befehle werden in das Projekt kompiliert. Die Fexu-CLI startet
-//! nur die feste Binary `fexu-manage` und übergibt Argumente einzeln.
-//! Sie lädt keine Plugins und führt keine Zeichenkette als Shell-Befehl aus.
+//! Commands are compiled into the project. The Fexu CLI starts
+//! only the fixed `fexu-manage` binary and passes arguments individually.
+//! It does not load plugins or execute strings as shell commands.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -69,8 +69,8 @@ pub struct Invocation<'a> {
 }
 
 impl<'a> Invocation<'a> {
-    /// Öffnet die Projektdatenbank erst, wenn der Befehl sie braucht.
-    /// `--database-url` gilt nur für diesen Aufruf und wird nicht protokolliert.
+    /// Opens the project database only when the command needs it.
+    /// `--database-url` applies only to this invocation and is not logged.
     pub async fn database(&self) -> Result<DatabaseConnection, CommandError> {
         let url = match self.options.get("database-url") {
             Some(url) if !url.trim().is_empty() => url.clone(),

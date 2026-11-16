@@ -1,0 +1,69 @@
+msgid ""
+msgstr ""
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Language: en\n"
+
+msgctxt "cli.project_created"
+msgid "Created project:"
+msgstr "Created project:"
+
+msgctxt "cli.model_created"
+msgid "Created model:"
+msgstr "Created model:"
+
+msgctxt "cli.dev_started"
+msgid "Development server for"
+msgstr "Development server for"
+
+msgctxt "cli.dev_stop_hint"
+msgid "Stop with Ctrl+C."
+msgstr "Stop with Ctrl+C."
+
+msgctxt "cli.dev_stopped"
+msgid "Development server stopped."
+msgstr "Development server stopped."
+
+msgctxt "cli.dev_test_stopped"
+msgid "Development server stopped after the test limit."
+msgstr "Development server stopped after the test limit."
+
+msgctxt "cli.admin_assets_missing"
+msgid "The admin ships inside the Rust binary."
+msgstr "The admin ships inside the Rust binary."
+
+msgctxt "cli.user_created"
+msgid "Created user:"
+msgstr "Created user:"
+
+msgctxt "cli.flag_active"
+msgid "Active: yes. An inactive account cannot sign in."
+msgstr "Active: yes. An inactive account cannot sign in."
+
+msgctxt "cli.flag_staff_on"
+msgid "Staff: yes. This account can open the admin."
+msgstr "Staff: yes. This account can open the admin."
+
+msgctxt "cli.flag_staff_off"
+msgid "Staff: no. Without staff the admin stays closed."
+msgstr "Staff: no. Without staff the admin stays closed."
+
+msgctxt "cli.flag_super_on"
+msgid "Superuser: yes. This does not replace staff."
+msgstr "Superuser: yes. This does not replace staff."
+
+msgctxt "cli.flag_super_off"
+msgid "Superuser: no."
+msgstr "Superuser: no."
+
+msgctxt "cli.super_without_staff"
+msgid "Note: --superuser without --staff. Model rights apply, but the admin stays closed."
+msgstr "Note: --superuser without --staff. Model rights apply, but the admin stays closed."
+
+msgctxt "cli.dev_no_migrate"
+msgid "fexu dev does not apply migrations and does not write the schema."
+msgstr "fexu dev does not apply migrations and does not write the schema."
+
+msgctxt "cli.port_busy"
+msgid "The port is already in use. Stop the other process or change server.port. Nothing is migrated."
+msgstr "The port is already in use. Stop the other process or change server.port. Nothing is migrated."

@@ -1,7 +1,7 @@
 //! `dumpdata` und `loaddata`.
 //!
-//! Die Befehle lesen das Schema über dieselbe Projekterkennung wie `migrate`.
-//! Fixture-JSON wird nicht ausgeführt.
+//! Commands load the schema through the same project discovery as `migrate`.
+//! Fixture JSON is data and is never executed.
 
 use std::collections::BTreeSet;
 use std::path::PathBuf;

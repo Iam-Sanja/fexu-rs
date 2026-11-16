@@ -1,23 +1,23 @@
-//! Standard-Middleware für Axum. Die zuletzt hinzugefügte Schicht sieht die Anfrage zuerst.
+//! Standard Axum middleware. The most recently added layer sees requests first.
 //!
-//! Reihenfolge von außen nach innen: Body-Limit, Request-ID, Access-Log, Sicherheitsheader, Route.
-//! Die Antwort läuft in umgekehrter Richtung, daher setzt diese Schicht die endgültigen
-//! Sicherheitsheader nach dem Handler.
+//! Outer-to-inner order: body limit, request ID, access log, security headers, route.
+//! Responses travel in reverse, so this layer sets the final security headers
+//! after the handler returns.
 //!
-//! `X-Content-Type-Options` und `X-Frame-Options` gehören dieser Schicht und werden immer auf
-//! `nosniff` und `DENY` gesetzt. Eine Anwendung kann sie nicht abschwächen.
-//! `Referrer-Policy` gehört derselben Schicht. Alle Headerfelder und alle kommaseparierten
-//! Tokens werden gelesen. Nur ein einzelner erlaubter Policy-Wert bleibt erhalten und wird als
-//! genau ein kanonischer Header geschrieben. Mehrere identische erlaubte Werte werden auf diesen
-//! einen Header reduziert. Unterschiedliche, leere oder unsichere Tokens, darunter `unsafe-url`,
-//! `origin` und `no-referrer-when-downgrade`, werden durch die konfigurierte Policy ersetzt.
-//! Recovery-Seiten setzen selbst `no-referrer` und behalten diesen Wert auch dann, wenn die
-//! Konfiguration `same-origin` ist. Die Standardvorgabe ist `no-referrer` und kann über
-//! [`Standard::referrer_policy`] geändert werden. Diese Schicht liest weder `Host` noch
-//! `X-Forwarded-*` und entscheidet keine Origin- oder CSRF-Prüfung.
+//! This layer owns `X-Content-Type-Options` and `X-Frame-Options`, always setting
+//! them to `nosniff` and `DENY`. Applications cannot weaken these protections.
+//! It also owns `Referrer-Policy`. All header fields and comma-separated tokens
+//! are inspected. A single allowed policy value is retained as one canonical
+//! header. Repeated identical allowed values are normalized to one header.
+//! Conflicting, empty, or unsafe tokens such as `unsafe-url`, `origin`, and
+//! `no-referrer-when-downgrade` are replaced with the configured policy.
+//! Recovery pages retain their own `no-referrer` policy even when configuration
+//! specifies `same-origin`. The default is `no-referrer`, customizable through
+//! [`Standard::referrer_policy`]. This layer neither reads `Host`/`X-Forwarded-*`
+//! nor performs Origin or CSRF validation.
 //!
-//! Diese Crate ersetzt weder Authentifizierung noch Autorisierung. Den Cookie-CSRF-Schutz setzt
-//! `App::into_router`, nicht diese Schicht.
+//! This crate provides neither authentication nor authorization. Cookie-based
+//! CSRF protection is installed by `App::into_router`, not by this layer.
 
 use axum::extract::Request;
 use axum::http::{header, HeaderMap, HeaderValue};
@@ -50,7 +50,7 @@ impl ReferrerPolicy {
         }
     }
 
-    /// Akzeptiert nur die Policies, die diese Schicht selbst setzen darf.
+    /// Accepts only policies that this layer is permitted to set.
     pub fn parse(value: &str) -> Option<Self> {
         match value.trim().to_ascii_lowercase().as_str() {
             "no-referrer" => Some(Self::NoReferrer),
@@ -153,8 +153,8 @@ async fn security_headers(mut request: Request, next: Next, policy: ReferrerPoli
 
 /// Ein erlaubter Policy-Wert, sonst die konfigurierte Policy.
 ///
-/// Mehrere Headerfelder und Kommas werden einzeln gelesen. Die Antwort behält den Wert nur,
-/// wenn jedes Token dieselbe erlaubte Policy ist.
+/// Reads repeated header fields and comma-separated values individually.
+/// The response retains the value only when every token names the same allowed policy.
 fn shared_referrer_policy(headers: &HeaderMap, configured: ReferrerPolicy) -> ReferrerPolicy {
     let mut accepted = None;
     for value in headers.get_all(header::REFERRER_POLICY) {
@@ -181,7 +181,7 @@ fn shared_referrer_policy(headers: &HeaderMap, configured: ReferrerPolicy) -> Re
     accepted.unwrap_or(configured)
 }
 
-/// Nur der Pfad. Query-Werte wie Passwörter oder Tokens werden nicht protokolliert.
+/// Logs only the path; query values such as passwords or tokens are never recorded.
 pub fn logged_path(uri: &axum::http::Uri) -> String {
     uri.path().to_owned()
 }

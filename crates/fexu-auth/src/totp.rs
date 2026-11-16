@@ -1,7 +1,7 @@
-//! TOTP nach RFC 6238 mit SHA-1, Wiederherstellungscodes und kurzlebige Beweise.
+//! RFC 6238 TOTP with SHA-1, recovery codes, and short-lived proofs.
 //!
-//! SHA-1 ist hier nur der HMAC des Zählers, weil Authenticator-Apps ihn erwarten.
-//! Das Geheimnis hat 160 Bit und liegt verschlüsselt in der Datenbank.
+//! SHA-1 is used only to HMAC the counter because authenticator apps expect it.
+//! The 160-bit secret is encrypted in the database.
 
 use crate::error::AuthError;
 use crate::service::constant_eq;
@@ -19,8 +19,8 @@ type HmacSha256 = Hmac<Sha256>;
 const ALPHABET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
 const RECOVERY_ALPHABET: &[u8] = b"ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 
-/// Schlüssel, mit dem ältere TOTP-Geheimnisse und Recovery-Hashes gebaut wurden.
-/// Das ist HMAC-SHA256 über das CSRF-Geheimnis, nicht der aktuelle MFA-Schlüssel.
+/// Key used to derive legacy TOTP secrets and recovery hashes.
+/// This is HMAC-SHA256 over the CSRF secret, not the current MFA key.
 pub fn legacy_mfa_key(csrf_secret: &[u8; 32]) -> [u8; 32] {
     let mut mac = <HmacSha256 as KeyInit>::new_from_slice(csrf_secret).expect("mfa key length");
     mac.update(b"fexu-mfa-v1");
@@ -29,17 +29,17 @@ pub fn legacy_mfa_key(csrf_secret: &[u8; 32]) -> [u8; 32] {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SealFormat {
-    /// `v2.` und 24 Hex-Zeichen. Nur mit `FEXU_MFA_KEY` zu öffnen.
+    /// `v2.` plus 24 hexadecimal characters. Decryptable only using `FEXU_MFA_KEY`.
     Current,
-    /// Genau 24 Hex-Zeichen. Nur mit dem vom CSRF-Geheimnis abgeleiteten Schlüssel zu öffnen.
+    /// Exactly 24 hexadecimal characters. Decryptable only with the key derived from the CSRF secret.
     Legacy,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RecoveryFormat {
-    /// `v2.` und 64 Hex-Zeichen. HMAC, kein Geheimtext.
+    /// `v2.` plus 64 hexadecimal characters. HMAC, not ciphertext.
     Current,
-    /// Genau 64 Hex-Zeichen. HMAC mit dem Legacy-Schlüssel, kein Geheimtext.
+    /// Exactly 64 hexadecimal characters. HMAC with the legacy key, not ciphertext.
     Legacy,
 }
 
@@ -161,7 +161,7 @@ pub fn totp_code(secret: &[u8], unix: i64, digits: u32) -> Result<String, AuthEr
     ))
 }
 
-/// Prüft das aktuelle Fenster und lehnt einen bereits verbrauchten Schritt ab.
+/// Checks the current window and rejects an already consumed time step.
 pub fn accept_totp(
     secret: &[u8],
     code: &str,

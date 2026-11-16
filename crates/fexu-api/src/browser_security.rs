@@ -1,9 +1,9 @@
-//! HTTP-Nachweis für Referrer-Policy, Origin, Fetch Metadata und den nativen Admin-Login.
+//! HTTP coverage for Referrer-Policy, Origin, Fetch Metadata, and native admin login.
 //!
-//! Der Listener ist `127.0.0.1`. LAN- und HTTPS-Fälle sind Konfigurationen: die Origin-Header
-//! tragen `http://192.168.178.49:3000` und `https://shop.example`. Es wird kein TLS-Listener
-//! und kein LAN-Socket geöffnet. Es gibt keine öffentliche Kontoregistrierung; eine frische
-//! Browser-Sitzung entsteht über `GET /auth/anonymous` und `GET /admin/login`.
+//! The listener is `127.0.0.1`. LAN and HTTPS cases use configured origins in headers:
+//! `http://192.168.178.49:3000` and `https://shop.example`. No TLS listener
+//! or LAN socket is opened. Public account registration is disabled; a fresh
+//! browser session starts through `GET /auth/anonymous` and `GET /admin/login`.
 
 use std::collections::BTreeMap;
 use std::io::{Read, Write};

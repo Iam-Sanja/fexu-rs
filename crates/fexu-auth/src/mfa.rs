@@ -170,7 +170,7 @@ impl AuthService {
         Ok(())
     }
 
-    /// Schließt den offenen zweiten Faktor ab und gibt eine neue Sitzung zurück.
+    /// Completes the pending second factor and returns a new session.
     pub async fn complete_pending_login(
         &self,
         challenge: &str,

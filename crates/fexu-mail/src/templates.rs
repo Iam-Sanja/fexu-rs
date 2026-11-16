@@ -1,4 +1,4 @@
-//! Tera-Vorlagen für Konto-Nachrichten. HTML wird escaped. Text bleibt roh.
+//! Tera templates for account messages. HTML is escaped; plain text remains unescaped.
 
 use std::sync::OnceLock;
 use tera::{Context, Tera};

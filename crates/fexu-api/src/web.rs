@@ -1,4 +1,4 @@
-//! Statische Dateien und Standard-Middleware über die Projekteinstellungen.
+//! Static files and default middleware configured through project settings.
 
 use axum::Router;
 use fexu_middleware::{apply, Standard};

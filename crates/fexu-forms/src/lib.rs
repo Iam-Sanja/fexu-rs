@@ -1,6 +1,6 @@
-//! Typisierte Formulare. Sie sind nicht an eine Datenbanktabelle gebunden.
+//! Typed forms independent of database tables.
 //!
-//! Feldregeln kommen aus `fexu_core`. HTML wird escaped. Unbekannte Felder werden abgelehnt.
+//! Field rules come from `fexu_core`. HTML is escaped and unknown fields are rejected.
 
 use chrono::{DateTime, NaiveDate, NaiveTime, Utc};
 use fexu_core::{
@@ -60,7 +60,7 @@ impl FormValues {
         self.values.keys().map(String::as_str)
     }
 
-    /// `application/x-www-form-urlencoded`. Zusätzliche Felder bleiben sichtbar für `reject_unknown`.
+    /// `application/x-www-form-urlencoded`. Extra fields remain available to `reject_unknown`.
     pub fn parse_urlencoded(body: &str) -> Result<Self, FormErrors> {
         if body.len() > 65_536 {
             let mut errors = FormErrors::default();
@@ -94,7 +94,7 @@ impl FormValues {
         self.values.remove(name)
     }
 
-    /// Flaches JSON-Objekt. Verschachtelte Werte und doppelte Schlüssel werden abgelehnt.
+    /// Flat JSON object. Nested values and duplicate keys are rejected.
     pub fn parse_json(body: &str) -> Result<Self, FormErrors> {
         if body.len() > 65_536 {
             let mut errors = FormErrors::default();
@@ -230,7 +230,7 @@ pub fn optional_datetime_utc(
     optional_temporal(values, name, parse_datetime_utc)
 }
 
-/// `datetime-local` ohne Offset. Die Zeichenkette gilt als UTC.
+/// Offset-free `datetime-local`. The input is interpreted as UTC.
 pub fn required_datetime_local(
     values: &FormValues,
     name: &'static str,
@@ -446,7 +446,7 @@ pub fn optional_choice<'a>(
     required_choice(values, name, options).map(Some)
 }
 
-/// Fünf Ziffern. Kürzere oder längere Werte behalten die Längencodes.
+/// Five digits. Shorter or longer values retain length-specific error codes.
 pub fn required_postal(values: &FormValues, name: &'static str) -> Result<String, FieldFailure> {
     let value = required_text(
         values,
@@ -469,7 +469,7 @@ pub fn required_postal(values: &FormValues, name: &'static str) -> Result<String
     }
 }
 
-/// Nur der exakte Checkbox-Wert `1` gilt. Andere Werte sind ungültig, ein fehlender Wert ist keine Bestätigung.
+/// Only the exact checkbox value `1` counts. Other values are invalid; absence is not confirmation.
 pub fn require_confirmation(values: &FormValues) -> Result<(), FormErrors> {
     let mut errors = FormErrors::default();
     match values.get("confirm") {
@@ -608,7 +608,7 @@ pub enum Widget {
     Relation,
 }
 
-/// Sichtbares Feld. `required` ist nur ein Hinweis; die Prüfung bleibt serverseitig.
+/// Visible field. `required` is only a hint; validation remains server-side.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Field {
     pub name: &'static str,
@@ -966,7 +966,7 @@ pub fn contact_widgets(locale: &str) -> [Field; 5] {
     ]
 }
 
-/// `Create` und `Replace` verlangen jedes Pflichtfeld. `Patch` lässt fehlende Schlüssel unverändert.
+/// `Create` and `Replace` require all mandatory fields; `Patch` preserves omitted fields.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SubmitMode {
     Create,
@@ -1009,7 +1009,7 @@ pub struct BoundField {
     pub value: BoundValue,
 }
 
-/// Nur Namen aus `allow` werden Felder. Primärschlüssel sowie sensitive, schreibgeschützte und versteckte Admin-Felder werden abgelehnt.
+/// Only allowlisted names become fields. Primary keys and sensitive, read-only, or hidden admin fields are rejected.
 pub fn model_fields(
     columns: &[ColumnSpec],
     admin: &[AdminFieldMeta],
@@ -1087,7 +1087,7 @@ pub fn model_widget(field: &ModelField, label: &'static str) -> Field {
     Field::new(field.name, label, widget, field.required)
 }
 
-/// `choices` begrenzt einzelne Felder auf erlaubte Werte. Zusätzliche Eingabefelder werden abgelehnt.
+/// `choices` restricts field values to allowed options. Extra input fields are rejected.
 pub fn bind_model(
     mode: SubmitMode,
     fields: &[ModelField],
@@ -1117,7 +1117,7 @@ pub fn bind_model(
     }
 }
 
-/// HTML und JSON rufen dieselbe Bindung auf. Geschützte Namen werden nie übernommen.
+/// HTML and JSON use the same binding. Protected field names are never accepted.
 pub fn bind_submission(
     mode: SubmitMode,
     fields: &[ModelField],
@@ -1143,7 +1143,7 @@ pub fn bind_submission(
     }
 }
 
-/// Auswahl, deren Optionen der Aufrufer bereits mit `QueryScope` begrenzt hat.
+/// Selection whose options the caller has already restricted with `QueryScope`.
 pub fn render_relation_select(
     name: &str,
     label: &str,
@@ -1393,7 +1393,7 @@ pub struct UploadPolicy {
     pub kinds: &'static [&'static str],
 }
 
-/// Prüft Name, Größe, erlaubte Art und bei Bildern die ersten Bytes.
+/// Validates name, size, allowed type, and leading bytes for images.
 pub fn inspect_upload(
     original_name: &str,
     content_type: &str,
@@ -1442,7 +1442,7 @@ pub struct FormsetPlan {
     pub delete: usize,
 }
 
-/// Zählt neue, geänderte und gelöschte Zeilen. Die Datenbank schreibt sie in einer Transaktion.
+/// Counts inserted, updated, and deleted rows. The database writes them in one transaction.
 pub fn plan_formset(
     initial: usize,
     total: usize,

@@ -1,14 +1,14 @@
-//! Konfiguration für einen späteren S3-kompatiblen Speicher.
+//! Configuration for a future S3-compatible storage backend.
 //!
-//! Es gibt keinen Netzwerkclient. `prepare` prüft nur die Form und liest
-//! Zugangsdaten aus den genannten Umgebungsvariablen, ohne sie zu protokollieren.
+//! No network client exists. `prepare` validates configuration and reads
+//! credentials from named environment variables without logging them.
 
 use crate::StorageError;
 
 pub const ACCESS_KEY_ENV: &str = "FEXU_S3_ACCESS_KEY";
 pub const SECRET_KEY_ENV: &str = "FEXU_S3_SECRET_KEY";
 
-/// Geprüfte Zielangabe. Geheimnisse stehen hier nicht.
+/// Validated destination settings. Secrets are excluded.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct S3Plan {
     pub endpoint: String,
@@ -18,7 +18,7 @@ pub struct S3Plan {
     pub secret_key_env: String,
 }
 
-/// Kurzlebige Zugangsdaten. `Debug` zeigt die Werte nicht.
+/// Short-lived credentials. `Debug` does not expose values.
 pub struct S3Credentials {
     pub access_key: String,
     pub secret_key: String,

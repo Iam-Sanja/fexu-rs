@@ -1,4 +1,4 @@
-//! HttpOnly-Session-Cookie. Der Token steht nicht in der JSON-Antwort.
+//! HttpOnly session cookie. The token is never included in the JSON response.
 
 use crate::config::{AuthConfig, CookieSameSite};
 

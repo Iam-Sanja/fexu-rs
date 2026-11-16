@@ -1,4 +1,4 @@
-//! Upload-Routen sind nicht öffentlich, solange sie nicht ausdrücklich eingehängt werden.
+//! Upload routes remain private unless explicitly mounted.
 
 use crate::{LocalStorage, Storage, StorageError};
 use axum::body::to_bytes;
@@ -327,9 +327,9 @@ pub fn read_multipart(content_type: &str, body: &[u8]) -> Result<Vec<FormPart>, 
     parse_parts(content_type, body, true, false)
 }
 
-/// Wie [`read_multipart`], behält aber wiederholte Namen.
+/// Like [`read_multipart`], but preserves repeated field names.
 ///
-/// Der Admin entscheidet danach, welche Namen eine Wiederholung tragen dürfen.
+/// The admin then determines which field names may be repeated.
 pub fn read_multipart_repeated(
     content_type: &str,
     body: &[u8],

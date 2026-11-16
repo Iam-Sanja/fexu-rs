@@ -1,4 +1,4 @@
-//! Explizite Admin-Registry. Nur Modelle mit `admin = true` werden aufgenommen.
+//! Explicit admin registry. Only models marked `admin = true` are included.
 
 use crate::actions::{self, AdminAction};
 use crate::audit::{self, Event};
@@ -117,7 +117,7 @@ impl Default for AdminBranding {
 }
 
 impl AdminBranding {
-    /// Verwirft Farben, Sprachen und Währungen, die nicht dem öffentlichen Vertrag entsprechen.
+    /// Rejects colors, locales, and currencies that violate the public configuration contract.
     pub fn sanitized(mut self) -> Self {
         let fallback = Self::default();
         if !is_public_label(&self.site_title) {
@@ -243,8 +243,8 @@ impl AdminRegistry {
             .unwrap_or_else(|error| error.into_inner()) = icons;
     }
 
-    /// Ordnet genau die nächste Modell- oder Seitenregistrierung dieser App zu.
-    /// Für weitere Registrierungen `with_app` erneut aufrufen.
+    /// Associates exactly the next model or page registration with this app.
+    /// Call `with_app` again for additional registrations.
     pub fn with_app(mut self, key: impl Into<String>, label: impl Into<String>) -> Self {
         let key = key.into();
         let label = label.into().trim().to_owned();
@@ -309,7 +309,7 @@ impl AdminRegistry {
         self.push(Arc::new(Policed::<M, P>::new()))
     }
 
-    /// Engt ein bereits geprüftes Modell ein. Wirksam erst nach [`Self::seal`].
+    /// Further restricts an already validated model. Takes effect after [`Self::seal`].
     pub fn configure(
         mut self,
         checked: crate::configure::CheckedModelAdmin,
@@ -455,7 +455,7 @@ impl AdminRegistry {
         Ok(self)
     }
 
-    /// Prüft Erweiterungen gegen die registrierten Modelle. Danach ist die Registry startbereit.
+    /// Validates extensions against registered models. The registry is then ready for startup.
     pub fn seal(mut self) -> Result<Self, ExtensionError> {
         self.check_configured()?;
         let names: Vec<&str> = self.templates.iter().map(|(name, _)| *name).collect();
@@ -810,7 +810,7 @@ impl AdminRegistry {
         self.models.iter().find(|model| model.meta().key == key)
     }
 
-    /// Genau ein registriertes Modell für diese Tabelle. Zwei Treffer bleiben unaufgelöst.
+    /// Returns exactly one registered model for this table. Ambiguous matches remain unresolved.
     pub fn model_for_table(&self, table: &str) -> Option<&Arc<dyn ManagedModel>> {
         let mut found = None;
         for model in self.models.iter() {

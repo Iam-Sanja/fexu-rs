@@ -37,7 +37,7 @@ fn session_cookie(token: &str) -> String {
     format!("fexu_session={token}")
 }
 
-/// Dieselbe öffentliche In-Memory-Fixture wie die übrigen Auth-Tests. Kein ausgeliefertes Geheimnis.
+/// Same public in-memory fixture as other auth tests. No production secret is shipped.
 fn memory_fixture_password() -> String {
     String::from_utf8(vec![
         99, 111, 114, 114, 101, 99, 116, 45, 104, 111, 114, 115, 101, 45, 98, 97, 116, 116, 101,

@@ -110,10 +110,10 @@ pub async fn push_flash(
     Ok(())
 }
 
-/// Löscht die Hinweise einer Sitzung und gibt genau diese Zeilen zurück.
+/// Deletes a session's flash messages and returns exactly those rows.
 ///
-/// Eine `DELETE … RETURNING`-Anweisung. Eine parallel eingefügte Zeile bleibt liegen,
-/// und dieselbe Zeile kann nicht an zwei Requests ausgeliefert werden.
+/// Uses one `DELETE … RETURNING` statement. Concurrently inserted rows remain,
+/// and the same row cannot be delivered to two requests.
 pub async fn take_flashes(
     db: &DatabaseConnection,
     session_id: Uuid,
