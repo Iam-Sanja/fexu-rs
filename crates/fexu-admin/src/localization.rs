@@ -24,7 +24,10 @@ fn parse_catalog(source: &str) -> Map<String, Value> {
     for line in source.lines().chain(std::iter::once("")) {
         if line.is_empty() {
             if let (Some(key), Some(translation)) = (key.take(), translation.take()) {
-                assert!(map.insert(key, Value::String(translation)).is_none(), "duplicate admin translation key");
+                assert!(
+                    map.insert(key, Value::String(translation)).is_none(),
+                    "duplicate admin translation key"
+                );
             }
             continue;
         }
@@ -77,7 +80,6 @@ mod catalog_tests {
         assert_eq!(normalize("de", "en", "en"), "de");
     }
 }
-
 
 pub fn notice(locale: &str, code: &str) -> Option<String> {
     let catalog = catalog(locale);
