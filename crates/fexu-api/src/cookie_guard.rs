@@ -373,15 +373,26 @@ fn reject(error: AuthError, headers: &HeaderMap) -> Response {
 }
 
 fn html_csrf(headers: &HeaderMap) -> Response {
-    let english = headers
-        .get(header::ACCEPT_LANGUAGE)
-        .and_then(|value| value.to_str().ok())
-        .is_some_and(|value| value.to_ascii_lowercase().starts_with("en"));
-    let sentence = if english {
-        "The security check failed."
-    } else {
-        "Die Sicherheitsprüfung ist fehlgeschlagen."
+    // Match the admin's locale priority: an explicit locale cookie wins.
+    // Without a locale preference, new Fexu projects use English.
+    let locale_cookie = cookie_value(headers, "fexu_locale");
+    let locale = match locale_cookie.as_deref() {
+        Some("de") => "de",
+        Some("en") => "en",
+        _ => {
+            let accept_language = headers
+                .get(header::ACCEPT_LANGUAGE)
+                .and_then(|value| value.to_str().ok())
+                .unwrap_or("")
+                .to_ascii_lowercase();
+            if accept_language.contains("de") {
+                "de"
+            } else {
+                "en"
+            }
+        }
     };
+    let sentence = fexu_core::message_text(locale, "form.csrf");
     (
         StatusCode::FORBIDDEN,
         [(
