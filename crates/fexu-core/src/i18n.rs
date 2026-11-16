@@ -223,9 +223,7 @@ msgstr "Again"
         assert!(PoCatalog::parse(duplicate)
             .unwrap_err()
             .contains("duplicate key"));
-        assert!(PoCatalog::parse("msgctxt \"a\"\nmsgid \"A\"\nmsgstr[0] \"A\"")
-            .is_err());
-        assert!(PoCatalog::parse("msgctxt \"a\"\nmsgid \"A\"\nmsgstr \"broken")
-            .is_err());
+        assert!(PoCatalog::parse("msgctxt \"a\"\nmsgid \"A\"\nmsgstr[0] \"A\"").is_err());
+        assert!(PoCatalog::parse("msgctxt \"a\"\nmsgid \"A\"\nmsgstr \"broken").is_err());
     }
 }
