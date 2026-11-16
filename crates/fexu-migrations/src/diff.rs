@@ -21,7 +21,7 @@ pub enum MigrationOperation {
         column: ColumnSnapshot,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         foreign_key: Option<ForeignKeySnapshot>,
-        /// Wert nur für bestehende Zeilen. Kein dauerhafter Default und keine erfundenen Werte.
+        /// Value used only for existing rows. Not a persistent default; no fabricated data.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         backfill: Option<BackfillLiteral>,
     },
@@ -66,8 +66,8 @@ pub enum MigrationOperation {
     DropForeignKey {
         table: String,
         name: String,
-        /// Vorhandener Schlüssel, damit `migrate down` ihn wieder anlegen kann.
-        /// Alte Dateien ohne dieses Feld bleiben lesbar.
+        /// Existing key metadata so `migrate down` can recreate it.
+        /// Older files without this field remain readable.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         previous: Option<ForeignKeySnapshot>,
     },
