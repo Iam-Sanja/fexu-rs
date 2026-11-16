@@ -1,4 +1,4 @@
-//! Verzeichnisänderungen und ihr Audit teilen sich eine Transaktion.
+//! Directory changes and their audit entries share a transaction.
 
 use crate::audit::{self, Event};
 use fexu_auth::{AuthError, AuthService, PublicUser};
