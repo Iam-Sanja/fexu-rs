@@ -1,4 +1,4 @@
-//! Typisierte Handler. Die Registry gehört dem Prozess, der den Worker startet.
+//! Typed handlers. The registry belongs to the process running the worker.
 
 use crate::error::JobError;
 use crate::queue::JobRecord;
@@ -14,8 +14,8 @@ pub struct JobContext {
     pub id: Uuid,
     pub attempt: u32,
     pub now: i64,
-    /// Stabiler Schlüssel des Eintrags, wenn der Erzeuger einen gesetzt hat.
-    /// Ein wiederholter Lauf sieht denselben Schlüssel. Das verhindert keine doppelte Wirkung.
+    /// Stable entry key when provided by the producer.
+    /// Retries see the same key; this does not guarantee exactly-once effects.
     pub idempotency_key: Option<String>,
 }
 
