@@ -1,8 +1,8 @@
-//! Explizite Modellregistrierung erzeugt Listen-, Lese-, Anlage-, Änderungs- und Löschrouten.
+//! Explicit model registration creates list, read, create, update, and delete routes.
 //!
-//! `allow_anonymous` bleibt die einzige öffentliche Freigabe. Jede andere Route prüft die
-//! Sitzung und die am Modell hinterlegte Berechtigung. Cookie-Schreibzugriffe prüft zusätzlich
-//! die Schicht in `cookie_guard`, bevor ein Handler läuft. Gebundene Objektregeln filtern über `QueryScope`.
+//! `allow_anonymous` is the only public access grant. Every other route checks
+//! the session and model permission. Cookie-authenticated writes also pass
+//! through `cookie_guard` before the handler. Bound object policies filter using `QueryScope`.
 
 use std::collections::BTreeSet;
 
@@ -158,7 +158,7 @@ impl App {
         &self.names
     }
 
-    /// Hängt benannte Anwendungsrouten an. Reservierte Framework-Pfade werden abgelehnt.
+    /// Adds named application routes. Reserved framework paths are rejected.
     pub fn urls(mut self, set: urls::UrlSet) -> Result<Self, urls::UrlError> {
         self.accept_urls(set)?;
         Ok(self)
@@ -169,7 +169,7 @@ impl App {
         self
     }
 
-    /// Hängt zusätzliche Routen an, bevor der Zustand gebunden wird.
+    /// Adds routes before binding application state.
     pub fn merge(mut self, router: Router<AppState>) -> Self {
         self.routes = self.routes.merge(router);
         self
@@ -238,9 +238,9 @@ impl App {
             .push(openapi::DocumentedModel::from_model::<M>(access));
     }
 
-    /// Bindet eine Objektregel. Listen und Schreibzugriffe verwenden denselben Query-Scope.
+    /// Binds an object policy. Lists and writes use the same query scope.
     ///
-    /// `register_policy` ersetzt `register` für dasselbe Modell. Beide Aufrufe erzeugen doppelte Routen.
+    /// `register_policy` replaces `register` for the same model; calling both creates duplicate routes.
     pub fn register_policy<M, P>(mut self) -> Self
     where
         M: ModelRepository,
@@ -302,9 +302,9 @@ impl App {
         Ok(())
     }
 
-    /// Legacy-Helfer für leere Testdatenbanken. Keine Migrationshistorie und kein Schema-Diff.
+    /// Legacy helper for empty test databases. Does not inspect migration history or schema diffs.
     ///
-    /// Existiert `_fexu_migrations`, wird nichts verändert.
+    /// If `_fexu_migrations` exists, no changes are made.
     pub async fn bootstrap_schema(&self) -> Result<(), FexuError> {
         if history_exists(&self.db)
             .await
