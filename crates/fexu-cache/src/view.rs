@@ -45,9 +45,9 @@ impl<B: CacheBackend> FragmentCache<B> {
 /// Who may see a rendered view or template.
 ///
 /// `Anonymous` is shared and rejects authenticated viewers.
-/// `User` stores data under an encoded user ID and rejects anonymous viewers
-/// . The application must supply the actual session and matching user ID
-/// . `viewer_is_authenticated` is not proof of authentication.
+/// `User` stores data under an encoded user ID and rejects anonymous viewers.
+/// The application must supply a verified session and its matching user ID.
+/// `viewer_is_authenticated` is not proof of authentication.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ViewScope {
     Anonymous,
