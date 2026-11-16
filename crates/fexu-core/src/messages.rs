@@ -1,4 +1,4 @@
-//! Anzeigetexte für Validierung. Codes bleiben stabil; nur diese Schicht übersetzt.
+//! Display messages for validation. Error codes remain stable; this layer localizes text.
 
 use crate::i18n::PoCatalog;
 use std::sync::OnceLock;
@@ -46,8 +46,8 @@ pub fn message_for(
     apply_params(template, params)
 }
 
-/// Übersetzt einen Modell- oder Formularfehler. Unbekannte Texte bleiben erhalten und werden escaped.
-/// SQL, Passwortfelder und Stacktraces werden nicht angezeigt.
+/// Localizes model or form errors. Unknown messages remain available and are escaped.
+/// SQL, password fields, and stack traces are never displayed.
 pub fn localize_detail(locale: &str, detail: &str) -> String {
     if sensitive(detail) {
         return message_text(locale, "request.rejected").to_owned();
@@ -315,7 +315,10 @@ mod bundled_catalog_tests {
         assert_eq!(message_text("en", "validation.required"), "This field is required.");
         assert_eq!(message_text("de", "validation.required"), "Dieses Feld ist erforderlich.");
         assert_eq!(message_text("fr", "validation.required"), "This field is required.");
-        assert_eq!(message_text("de", "validation.mismatch"), "Name und E-Mail dürfen nicht denselben lokalen Teil haben.");
+        assert_eq!(
+            message_text("de", "validation.mismatch"),
+            "Name und E-Mail dürfen nicht denselben lokalen Teil haben."
+        );
         assert_eq!(message_text("en", "no.such.key"), "missing message");
     }
 }
