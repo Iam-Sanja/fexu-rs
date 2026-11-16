@@ -39,7 +39,7 @@ pub struct IssuedSession {
     pub token: String,
     pub csrf_token: String,
     pub cookie: String,
-    /// Cookies, die der Browser zusätzlich verwerfen soll. Login löscht damit die anonyme Sitzung.
+    /// Additional cookies to clear in the browser. Login uses this to clear the anonymous session.
     pub clear_cookies: Vec<String>,
     pub user: PublicUser,
 }
@@ -125,7 +125,7 @@ impl AuthService {
             .map(public_user))
     }
 
-    /// Admin-Anlage. Superuser bleibt der CLI vorbehalten. Der Hash entsteht vor dem Schreibvorgang.
+    /// Admin-driven account creation. Superuser creation remains CLI-only. Hashing precedes the write.
     pub async fn create_directory_user(
         &self,
         email: &str,
@@ -169,7 +169,7 @@ impl AuthService {
         })
     }
 
-    /// Setzt das Passwort ohne das bisherige zu kennen und widerruft alle Sitzungen dieses Benutzers.
+    /// Resets a password without the previous password and revokes all of the user's sessions.
     pub async fn reset_password(&self, id: Uuid, password: &str) -> Result<(), AuthError> {
         validate_new_password(password)?;
         let hash = hash_password(password)?;
@@ -214,8 +214,8 @@ impl AuthService {
         self.login_replacing(email, password, client, None).await
     }
 
-    /// Login legt immer eine neue Benutzer-Sitzung an. Eine mitgeschickte anonyme Sitzung wird
-    /// in derselben Transaktion widerrufen und nicht zur Benutzer-Sitzung umgewidmet.
+    /// Login always creates a new user session. A presented anonymous session is
+    /// revoked in the same transaction, never promoted to a user session.
     pub async fn login_replacing(
         &self,
         email: &str,
@@ -365,7 +365,7 @@ impl AuthService {
         }
     }
 
-    /// Prüft einen vollständigen Code wie `orders.read`. Superuser bestehen, inaktive Benutzer nicht.
+    /// Checks a full permission code such as `orders.read`. Superusers pass; inactive users do not.
     pub async fn holds(&self, user: &AuthUser, code: &str) -> Result<bool, AuthError> {
         if !user.is_active || code.is_empty() || code.len() > 80 {
             return Ok(false);
@@ -484,7 +484,7 @@ impl AuthService {
         self.db.begin().await.map_err(AuthError::database)
     }
 
-    /// Prüft Staff-Superuser erneut auf derselben Verbindung wie die folgende Schreiboperation.
+    /// Revalidates staff superuser status on the same connection as the subsequent write.
     pub async fn require_directory_actor(
         &self,
         db: &impl ConnectionTrait,
@@ -500,7 +500,7 @@ impl AuthService {
         }
     }
 
-    /// Superuser oder die Berechtigung `roles.update`.
+    /// Requires a superuser or the `roles.update` permission.
     pub async fn require_role_manager(
         &self,
         db: &impl ConnectionTrait,
@@ -535,7 +535,7 @@ impl AuthService {
         store::set_profile_name(&self.db, id, &name).await
     }
 
-    /// Ändert nur die E-Mail, auch beim eigenen Superuser. Flags bleiben unverändert.
+    /// Changes only the email, including for the current superuser. Flags remain unchanged.
     pub async fn update_own_email(&self, id: Uuid, email: &str) -> Result<(), AuthError> {
         let user = store::find_user_by_id(&self.db, id)
             .await?
@@ -815,9 +815,9 @@ impl AuthService {
         self.allow_presented(headers)
     }
 
-    /// Origin oder Referer müssen exakt auf der Liste stehen. Der Host-Header wird nicht gelesen.
-    /// `Origin: null` gilt nur zusammen mit `Sec-Fetch-Site: same-origin`: Browser setzen genau
-    /// diese Kombination bei einem Same-Origin-Formular, wenn `Referrer-Policy: no-referrer` gilt.
+    /// Origin or Referer must exactly match the allowlist. The Host header is not read.
+    /// `Origin: null` is accepted only with `Sec-Fetch-Site: same-origin`: browsers send
+    /// this combination for same-origin forms under `Referrer-Policy: no-referrer`.
     fn allow_presented(&self, headers: &HeaderMap) -> Result<(), AuthError> {
         let Some(origin) = presented_origin(headers) else {
             return Ok(());
@@ -843,7 +843,7 @@ impl AuthService {
         self.authenticate_csrf(headers, method, supplied).await
     }
 
-    /// Dieselbe HMAC-Prüfung wie der Header. HTML-Formulare übergeben das Token als Feld.
+    /// Uses the same HMAC verification as the header. HTML forms submit the token as a field.
     pub async fn authenticate_csrf(
         &self,
         headers: &HeaderMap,
