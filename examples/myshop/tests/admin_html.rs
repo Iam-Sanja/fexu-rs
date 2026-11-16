@@ -1580,9 +1580,7 @@ async fn html_admin_works_without_javascript() {
     .await
     .unwrap();
     assert_ne!(locked.status, 303);
-    assert!(locked
-        .body
-        .contains("This field cannot be set."));
+    assert!(locked.body.contains("This field cannot be set."));
 
     let edit = call(
         "GET",
