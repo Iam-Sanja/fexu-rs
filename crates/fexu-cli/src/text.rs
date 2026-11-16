@@ -85,8 +85,14 @@ mod tests {
         assert_eq!(line_for("en", "model_created"), "Created model:");
         assert_eq!(line_for("de", "model_created"), "Modell erzeugt:");
         assert_eq!(line_for("fr", "model_created"), "Created model:");
-        assert_eq!(line_for("de", "super_without_staff"), "Hinweis: --superuser ohne --staff. Die Modellrechte gelten, der Admin-Zugang bleibt zu.");
-        assert_eq!(line_for("en", "flag_staff_off"), "Staff: no. Without staff the admin stays closed.");
+        assert_eq!(
+            line_for("de", "super_without_staff"),
+            "Hinweis: --superuser ohne --staff. Die Modellrechte gelten, der Admin-Zugang bleibt zu."
+        );
+        assert_eq!(
+            line_for("en", "flag_staff_off"),
+            "Staff: no. Without staff the admin stays closed."
+        );
         assert!(!line_for("de", "flag_super_on").contains("is_staff = true"));
         assert_eq!(line_for("en", "missing.key"), "missing message");
     }
