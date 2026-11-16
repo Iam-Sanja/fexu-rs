@@ -1978,7 +1978,11 @@ async fn html_admin_works_without_javascript() {
     .await
     .unwrap();
     assert_eq!(staff_bare.status, 403);
-    assert!(staff_bare.body.contains("The security check failed."));
+    assert!(
+        staff_bare.body.contains("The security check failed."),
+        "Unexpected CSRF response body: {}",
+        staff_bare.body
+    );
     let role = call(
         "POST",
         "/admin/directory/roles".into(),
