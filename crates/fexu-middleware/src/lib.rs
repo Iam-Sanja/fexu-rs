@@ -153,8 +153,8 @@ async fn security_headers(mut request: Request, next: Next, policy: ReferrerPoli
 
 /// Ein erlaubter Policy-Wert, sonst die konfigurierte Policy.
 ///
-/// Reads repeated header fields and comma-separated values individually. The response retains the value only,
-/// wenn jedes Token dieselbe erlaubte Policy ist.
+/// Reads repeated header fields and comma-separated values individually.
+/// The response retains the value only when every token names the same allowed policy.
 fn shared_referrer_policy(headers: &HeaderMap, configured: ReferrerPolicy) -> ReferrerPolicy {
     let mut accepted = None;
     for value in headers.get_all(header::REFERRER_POLICY) {
