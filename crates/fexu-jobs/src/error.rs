@@ -1,4 +1,4 @@
-//! Stabile Job-Fehler. Der angezeigte Code enthält keinen Payload und kein Geheimnis.
+//! Stable job errors. Exposed error codes contain no payloads or secrets.
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FailureKind {
