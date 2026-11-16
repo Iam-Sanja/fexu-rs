@@ -1,15 +1,15 @@
-//! Exakte Dezimalwerte über `rust_decimal`.
+//! Exact decimal values using `rust_decimal`.
 //!
-//! Geldbeträge werden nie als `f32` oder `f64` geführt. Ein Wert muss bereits zur
-//! deklarierten Precision und Scale passen. Zusätzliche Nachkommastellen sind ein
-//! Validierungsfehler, es gibt keine stillen Rundung.
+//! Monetary amounts never use `f32` or `f64`. Values must already match
+//! the declared precision and scale. Excess fractional digits are a
+//! validation error; values are never silently rounded.
 //!
 //! Die Datenbank speichert den unskalierten Koeffizienten als 16 Byte in
-//! vorzeichenbehafteter, big-endian Ordnung (das höchste Bit ist invertiert).
+//! signed, big-endian order (the highest bit is inverted).
 //! SQLite legt das als `BLOB` ab, PostgreSQL als `BYTEA`. `ORDER BY` und
-//! Vergleiche folgen damit der numerischen Ordnung, nicht einer Text- oder
+//! Comparisons follow numerical order rather than text or
 //! Float-Sortierung. Scale und Precision stehen in den Spaltenmetadaten.
-//! JSON verwendet immer einen kanonischen Dezimalstring, nie eine JSON-Zahl.
+//! JSON always uses a canonical decimal string, never a JSON number.
 
 use rust_decimal::Decimal;
 use std::str::FromStr;
@@ -35,10 +35,10 @@ pub fn validate_decimal_meta(precision: u8, scale: u8) -> Result<(), DecimalErro
     }
 }
 
-/// Prüft Precision und Scale und liefert den auf `scale` normierten Wert.
+/// Validates precision and scale, returning a value normalized to `scale`.
 ///
-/// `1e2` ist erlaubt und wird zu einem exakten Koeffizienten. `1.005` bei Scale 2
-/// wird abgelehnt, weil die dritte Nachkommastelle nicht null ist.
+/// `1e2` is accepted as an exact coefficient. `1.005` at scale 2
+/// is rejected because the third fractional digit is nonzero.
 pub fn prepare_decimal(value: Decimal, precision: u8, scale: u8) -> Result<Decimal, DecimalError> {
     validate_decimal_meta(precision, scale)?;
     if value.normalize().scale() > u32::from(scale) {
@@ -104,7 +104,7 @@ pub fn format_decimal_text(text: &str, precision: u8, scale: u8) -> Result<Strin
     format_decimal(parse_decimal(text, precision, scale)?, scale)
 }
 
-/// SQL-Literal für einen Backfill. SQLite nutzt `X'..'`, PostgreSQL `'\x..'::bytea`.
+/// SQL literal for backfill. SQLite uses `X'..'`; PostgreSQL uses `'\x..'::bytea`.
 pub fn decimal_sql_literal(
     postgres: bool,
     text: &str,
