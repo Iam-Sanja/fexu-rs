@@ -1195,7 +1195,7 @@ async fn html_admin_works_without_javascript() {
     assert_eq!(plain_home.status, 403);
     assert!(plain_home
         .body
-        .contains("Die Verwaltung verlangt einen Staff-Zugang."));
+        .contains("Administration requires staff access."));
     assert!(plain_home.body.contains("action=\"/admin/logout\""));
     assert!(!plain_home.body.contains("<aside"));
     assert!(!plain_home.body.contains("Stapel"));
@@ -1285,7 +1285,7 @@ async fn html_admin_works_without_javascript() {
     assert_eq!(power_home.status, 403);
     assert!(power_home
         .body
-        .contains("Die Verwaltung verlangt einen Staff-Zugang."));
+        .contains("Administration requires staff access."));
     assert!(!power_home.body.contains("NurTitel"));
     let power_token = field_value(&power_home.body, "csrf_token");
     let power_out = call(
@@ -1490,7 +1490,7 @@ async fn html_admin_works_without_javascript() {
     assert!(detail.body.contains("Apfel"));
     assert!(detail.body.contains("Obst"));
     assert!(detail.body.contains(&category_id));
-    assert!(detail.body.contains("Der Eintrag wurde angelegt."));
+    assert!(detail.body.contains("The record was created."));
 
     let xss = call(
         "POST",
@@ -1582,7 +1582,7 @@ async fn html_admin_works_without_javascript() {
     assert_ne!(locked.status, 303);
     assert!(locked
         .body
-        .contains("Dieses Feld kann nicht gesetzt werden."));
+        .contains("This field cannot be set."));
 
     let edit = call(
         "GET",
@@ -1644,7 +1644,7 @@ async fn html_admin_works_without_javascript() {
     .await
     .unwrap();
     assert!(
-        missing_relation.body.contains("Nicht sichtbar"),
+        missing_relation.body.contains("Not visible"),
         "{}",
         missing_relation.body
     );
@@ -1750,7 +1750,7 @@ async fn html_admin_works_without_javascript() {
     .unwrap();
     assert_eq!(links.status, 200, "{}", links.body);
     assert!(links.body.contains("Eigen"));
-    assert!(!links.body.contains("Nicht sichtbar"));
+    assert!(!links.body.contains("Not visible"));
     assert!(!links.body.contains("RootOnlySecret"));
 
     let root_login = call("GET", "/admin/login".into(), None, String::new())
@@ -1801,7 +1801,7 @@ async fn html_admin_works_without_javascript() {
     .await
     .unwrap();
     assert!(
-        hidden_label.body.contains("Nicht sichtbar"),
+        hidden_label.body.contains("Not visible"),
         "{}",
         hidden_label.body
     );
@@ -1814,7 +1814,7 @@ async fn html_admin_works_without_javascript() {
     )
     .await
     .unwrap();
-    assert!(root_missing.body.contains("Nicht vorhanden"));
+    assert!(root_missing.body.contains("Missing"));
     assert!(!root_missing.body.contains("Obst"));
     let root_links = call(
         "GET",
@@ -2648,7 +2648,7 @@ async fn html_admin_works_without_javascript() {
         "{}",
         edited.body
     );
-    assert!(edited.body.contains("Nur lesen"));
+    assert!(edited.body.contains("Read only"));
     let found = call(
         "GET",
         "/admin/models/html_offers/pick/category_id?q=Zettel%20100".into(),
