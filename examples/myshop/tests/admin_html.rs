@@ -1980,9 +1980,7 @@ async fn html_admin_works_without_javascript() {
     .await
     .unwrap();
     assert_eq!(staff_bare.status, 403);
-    assert!(staff_bare
-        .body
-        .contains("The security check failed."));
+    assert!(staff_bare.body.contains("The security check failed."));
     let role = call(
         "POST",
         "/admin/directory/roles".into(),
@@ -2396,9 +2394,7 @@ async fn html_admin_works_without_javascript() {
     .await
     .unwrap();
     assert_eq!(self_off.status, 422, "{}", self_off.body);
-    assert!(self_off
-        .body
-        .contains("This action requires confirmation."));
+    assert!(self_off.body.contains("This action requires confirmation."));
     let unconfirmed = call(
         "POST",
         format!("/admin/directory/users/{}/active", plain.id),
@@ -2741,9 +2737,7 @@ async fn html_admin_works_without_javascript() {
     assert_eq!(mismatched.status, 422, "{}", mismatched.body);
     assert!(mismatched.body.contains("value=\"kept@example.com\""));
     assert!(mismatched.body.contains("value=\"catalog\" checked"));
-    assert!(mismatched
-        .body
-        .contains("The passwords do not match."));
+    assert!(mismatched.body.contains("The passwords do not match."));
     assert!(!mismatched.body.contains("correct-horse-battery"));
     assert!(!mismatched.body.contains("other-horse-battery"));
     assert!(!mismatched.body.contains("csrf_token="));
@@ -2886,9 +2880,7 @@ async fn html_login_csrf_respects_the_bound_port() {
     .await
     .unwrap();
     assert_eq!(missing_cookie.status, 403);
-    assert!(missing_cookie
-        .body
-        .contains("The security check failed."));
+    assert!(missing_cookie.body.contains("The security check failed."));
 
     let tampered = call(
         "POST",
@@ -4271,9 +4263,7 @@ async fn admin_modeladmin_order_timeline_and_keyboard_markup() {
     .unwrap();
     assert_eq!(editor.status, 200, "{}", editor.body);
     assert!(!editor.body.contains("class=\"record-history\""));
-    assert!(!editor
-        .body
-        .contains("Only changes made through the admin"));
+    assert!(!editor.body.contains("Only changes made through the admin"));
     assert!(editor.body.contains("audit?model="), "{}", editor.body);
     assert!(editor.body.contains("Timeline-Apfel"));
     assert!(editor.body.contains("root@example.com"));
@@ -4732,7 +4722,10 @@ async fn html_many_to_many_respects_scope_and_keyboard_markup() {
     .await
     .unwrap();
     assert_eq!(denied.status, 422, "{}", denied.body);
-    assert!(denied.body.contains("cannot read the related records") || denied.body.contains("ungültigen"));
+    assert!(
+        denied.body.contains("cannot read the related records")
+            || denied.body.contains("invalid or hidden record")
+    );
     let open = call(
         "POST",
         "/admin/models/html_products/new".into(),
