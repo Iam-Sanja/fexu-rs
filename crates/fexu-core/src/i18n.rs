@@ -37,7 +37,11 @@ impl PoCatalog {
             serde_json::from_str::<String>(input)
                 .map_err(|_| format!("PO line {line}: invalid quoted string"))
         }
-        fn finish(entry: &mut Entry, map: &mut BTreeMap<String, String>, line: usize) -> Result<(), String> {
+        fn finish(
+            entry: &mut Entry,
+            map: &mut BTreeMap<String, String>,
+            line: usize,
+        ) -> Result<(), String> {
             if entry.id.is_none() && entry.context.is_none() && entry.translated.is_none() {
                 return Ok(());
             }
@@ -46,9 +50,18 @@ impl PoCatalog {
                 *entry = Entry::default();
                 return Ok(());
             }
-            let context = entry.context.take().ok_or_else(|| format!("PO line {line}: missing msgctxt"))?;
-            let id = entry.id.take().ok_or_else(|| format!("PO line {line}: missing msgid"))?;
-            let translated = entry.translated.take().ok_or_else(|| format!("PO line {line}: missing msgstr"))?;
+            let context = entry
+                .context
+                .take()
+                .ok_or_else(|| format!("PO line {line}: missing msgctxt"))?;
+            let id = entry
+                .id
+                .take()
+                .ok_or_else(|| format!("PO line {line}: missing msgid"))?;
+            let translated = entry
+                .translated
+                .take()
+                .ok_or_else(|| format!("PO line {line}: missing msgstr"))?;
             if context.trim().is_empty() || id.is_empty() {
                 return Err(format!("PO line {line}: empty translation key or source text"));
             }
@@ -88,7 +101,10 @@ impl PoCatalog {
                     Part::Id => &mut entry.id,
                     Part::Translation => &mut entry.translated,
                 };
-                target.as_mut().ok_or_else(|| format!("PO line {line}: missing preceding value"))?.push_str(&decoded);
+                target
+                    .as_mut()
+                    .ok_or_else(|| format!("PO line {line}: missing preceding value"))?
+                    .push_str(&decoded);
                 continue;
             } else {
                 return Err(format!("PO line {line}: unexpected directive"));
@@ -126,7 +142,9 @@ impl PoCatalog {
         translated: Option<&'a Self>,
         key: &str,
     ) -> Option<&'a str> {
-        translated.and_then(|catalog| catalog.get(key)).or_else(|| english.get(key))
+        translated
+            .and_then(|catalog| catalog.get(key))
+            .or_else(|| english.get(key))
     }
 
     /// Validates that a translated catalog has no extra keys and that all
@@ -152,10 +170,34 @@ mod tests {
 
     #[test]
     fn parses_contexts_multiline_text_and_english_fallback() {
-        let en = PoCatalog::parse("msgid \"\"\nmsgstr \"\"\n\"Language: en\\n\"\n\nmsgctxt \"app.save\"\nmsgid \"Save\"\nmsgstr \"Save\"\n\nmsgctxt \"app.more\"\nmsgid \"More\"\nmsgstr \"More\"\n").unwrap();
-        let de = PoCatalog::parse("msgctxt \"app.save\"\nmsgid \"Save\"\nmsgstr \"Spei\"\n\"chern\"\n\nmsgctxt \"app.more\"\nmsgid \"More\"\nmsgstr \"\"\n").unwrap();
+        let english = r#"msgid ""
+msgstr ""
+"Language: en\\n"
+
+msgctxt "app.save"
+msgid "Save"
+msgstr "Save"
+
+msgctxt "app.more"
+msgid "More"
+msgstr "More"
+"#;
+        let german = r#"msgctxt "app.save"
+msgid "Save"
+msgstr "Spei"
+"chern"
+
+msgctxt "app.more"
+msgid "More"
+msgstr ""
+"#;
+        let en = PoCatalog::parse(english).unwrap();
+        let de = PoCatalog::parse(german).unwrap();
         de.check_keys(&en).unwrap();
-        assert_eq!(PoCatalog::resolve(&en, Some(&de), "app.save"), Some("Speichern"));
+        assert_eq!(
+            PoCatalog::resolve(&en, Some(&de), "app.save"),
+            Some("Speichern")
+        );
         assert_eq!(PoCatalog::resolve(&en, Some(&de), "app.more"), Some("More"));
         assert_eq!(PoCatalog::resolve(&en, None, "app.save"), Some("Save"));
         assert_eq!(PoCatalog::resolve(&en, Some(&de), "unknown"), None);
@@ -163,9 +205,20 @@ mod tests {
 
     #[test]
     fn rejects_broken_or_ambiguous_catalogs() {
-        let duplicate = "msgctxt \"a\"\nmsgid \"A\"\nmsgstr \"A\"\n\nmsgctxt \"a\"\nmsgid \"A\"\nmsgstr \"Again\"\n";
-        assert!(PoCatalog::parse(duplicate).unwrap_err().contains("duplicate key"));
-        assert!(PoCatalog::parse("msgctxt \"a\"\nmsgid \"A\"\nmsgstr[0] \"A\"").is_err());
-        assert!(PoCatalog::parse("msgctxt \"a\"\nmsgid \"A\"\nmsgstr \"broken").is_err());
+        let duplicate = r#"msgctxt "a"
+msgid "A"
+msgstr "A"
+
+msgctxt "a"
+msgid "A"
+msgstr "Again"
+"#;
+        assert!(PoCatalog::parse(duplicate)
+            .unwrap_err()
+            .contains("duplicate key"));
+        assert!(PoCatalog::parse("msgctxt \"a\"\\nmsgid \"A\"\\nmsgstr[0] \"A\"")
+            .is_err());
+        assert!(PoCatalog::parse("msgctxt \"a\"\\nmsgid \"A\"\\nmsgstr \"broken")
+            .is_err());
     }
 }
