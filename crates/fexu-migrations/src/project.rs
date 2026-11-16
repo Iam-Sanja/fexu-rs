@@ -351,7 +351,7 @@ fn parse_manifest(path: &Path) -> Result<ProjectConfig, MigrationError> {
     let mut allow_wildcard_bind = false;
     let mut admin_enabled = false;
     let mut embedded_assets = false;
-    let mut default_locale = "de".to_owned();
+    let mut default_locale = "en".to_owned();
     let mut fallback_locale = "en".to_owned();
     let mut debug = false;
     let mut site_title = "Fexu Admin".to_owned();
@@ -1294,7 +1294,7 @@ mod tests {
             "migrations_dir = \"migrations\"\nschema_command = \"cargo run --quiet -- --print-schema\"\n",
         );
         let config = parse_manifest(&path).expect("legacy");
-        assert_eq!(config.default_locale, "de");
+        assert_eq!(config.default_locale, "en");
         assert!(!config.templates_enabled);
         assert_eq!(config.session_hours, 12);
         assert_eq!(config.primary_color, "#0f172a");
