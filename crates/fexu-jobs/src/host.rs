@@ -1,4 +1,4 @@
-//! Start eines Anwendungs-Workers. Es gibt keine zweite Queue.
+//! Application worker startup. There is no second queue.
 
 use crate::error::JobError;
 use crate::mail::{MailNoticeHandler, MAIL_HANDLER};
@@ -12,7 +12,7 @@ use std::path::Path;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
-/// Einstellungen, die der Worker aus dem Projekt oder von Hand erhält.
+/// Worker settings provided by the project or explicitly configured.
 #[derive(Clone, Debug)]
 pub struct WorkerConfig {
     pub database_url: String,
@@ -39,7 +39,7 @@ impl WorkerConfig {
     }
 }
 
-/// Baut Registry, Mail-Handler und Worker. Der Aufruf startet keinen Webserver und keine Migration.
+/// Builds the registry, mail handler, and worker. Does not start a web server or migrations.
 pub struct WorkerHost {
     config: WorkerConfig,
     registry: JobRegistry,
@@ -72,7 +72,7 @@ impl WorkerHost {
         self.registry.register(handler)
     }
 
-    /// SQLite bleibt bei einer Verbindung. Ein höherer Wert wird auf 1 gesetzt.
+    /// SQLite uses one connection. Larger values are capped at 1.
     pub fn effective_concurrency(&self) -> u16 {
         let requested = self.config.concurrency.clamp(1, 4);
         if self.config.database_url.starts_with("sqlite") {
@@ -120,7 +120,7 @@ impl WorkerHost {
         ))
     }
 
-    /// Läuft bis Ctrl+C. Der laufende Handler wird nicht mitten im Effekt abgebrochen.
+    /// Runs until Ctrl+C. The active handler is not interrupted in the middle of its effects.
     pub fn run_until_ctrl_c(self) -> Result<(), JobError> {
         let runtime = tokio::runtime::Runtime::new().map_err(|_| {
             JobError::message("job.runtime", "Die Laufzeitumgebung konnte nicht starten.")
