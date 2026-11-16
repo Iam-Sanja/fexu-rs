@@ -1845,7 +1845,7 @@ async fn html_admin_works_without_javascript() {
     assert!(!users.body.contains("id=\"assign-email\""));
     assert!(users.body.contains("#roles"));
     assert!(!users.body.contains("No · Superuser"));
-    assert!(!users.body.contains("Add role"));
+    assert!(!users.body.contains("Create role"));
     assert!(users.body.contains("Users and access"));
     assert!(
         users.body.contains("href=\"/admin/directory/roles\"")
@@ -4245,7 +4245,7 @@ async fn admin_modeladmin_order_timeline_and_keyboard_markup() {
     )
     .await
     .unwrap();
-    assert!(missed.body.contains("No matches"));
+    assert!(missed.body.contains("No records match"));
     let csrf = field_value(&list.body, "csrf_token");
     let created = call(
         "POST",
