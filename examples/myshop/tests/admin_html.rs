@@ -1734,7 +1734,7 @@ async fn html_admin_works_without_javascript() {
     .unwrap();
     assert_ne!(foreign_link.status, 303, "{}", foreign_link.body);
     assert!(
-        foreign_link.body.contains("sichtbaren Eintrag"),
+        foreign_link.body.contains("Choose a visible record."),
         "{}",
         foreign_link.body
     );
@@ -1885,9 +1885,9 @@ async fn html_admin_works_without_javascript() {
     );
     assert!(counts.body.contains("name=\"filter.total\""));
     assert!(counts.body.contains("type=\"number\""));
-    assert!(counts.body.contains(">Alle<"));
-    assert!(counts.body.contains(">Ja<"));
-    assert!(counts.body.contains(">Nein<"));
+    assert!(counts.body.contains(">All<"));
+    assert!(counts.body.contains(">Yes<"));
+    assert!(counts.body.contains(">No<"));
     let counted = call(
         "GET",
         "/admin/models/html_counts?filter.total=42&filter.active=true".into(),
@@ -2702,7 +2702,7 @@ async fn html_admin_works_without_javascript() {
     .unwrap();
     assert_ne!(forged.status, 303, "{}", forged.body);
     assert!(
-        forged.body.contains("sichtbaren Eintrag"),
+        forged.body.contains("Choose a visible record."),
         "{}",
         forged.body
     );
