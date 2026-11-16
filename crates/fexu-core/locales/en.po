@@ -1,0 +1,130 @@
+msgid ""
+msgstr ""
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Language: en\n"
+
+msgctxt "validation.required"
+msgid "This field is required."
+msgstr "This field is required."
+
+msgctxt "validation.min_length"
+msgid "The text is too short."
+msgstr "The text is too short."
+
+msgctxt "validation.max_length"
+msgid "The text is too long."
+msgstr "The text is too long."
+
+msgctxt "validation.email"
+msgid "The email address is invalid."
+msgstr "The email address is invalid."
+
+msgctxt "validation.url"
+msgid "The address must start with http:// or https://."
+msgstr "The address must start with http:// or https://."
+
+msgctxt "validation.invalid_type"
+msgid "The value has the wrong type."
+msgstr "The value has the wrong type."
+
+msgctxt "validation.min_value"
+msgid "The value is too small."
+msgstr "The value is too small."
+
+msgctxt "validation.max_value"
+msgid "The value is too large."
+msgstr "The value is too large."
+
+msgctxt "validation.uuid"
+msgid "The identifier is invalid."
+msgstr "The identifier is invalid."
+
+msgctxt "validation.unknown_field"
+msgid "This field is not allowed."
+msgstr "This field is not allowed."
+
+msgctxt "validation.readonly"
+msgid "This field cannot be changed."
+msgstr "This field cannot be changed."
+
+msgctxt "validation.duplicate"
+msgid "This field was submitted more than once."
+msgstr "This field was submitted more than once."
+
+msgctxt "validation.upload_name"
+msgid "The file name is invalid."
+msgstr "The file name is invalid."
+
+msgctxt "validation.upload_size"
+msgid "The file is too large."
+msgstr "The file is too large."
+
+msgctxt "validation.upload_type"
+msgid "This file type is not allowed."
+msgstr "This file type is not allowed."
+
+msgctxt "validation.upload"
+msgid "The file could not be stored."
+msgstr "The file could not be stored."
+
+msgctxt "validation.formset_size"
+msgid "The number of forms is invalid."
+msgstr "The number of forms is invalid."
+
+msgctxt "form.formset"
+msgid "The formset is invalid."
+msgstr "The formset is invalid."
+
+msgctxt "validation.mismatch"
+msgid "The name and email must not share the same local part."
+msgstr "The name and email must not share the same local part."
+
+msgctxt "validation.choice"
+msgid "Choose one of the listed values."
+msgstr "Choose one of the listed values."
+
+msgctxt "validation.postal"
+msgid "The postal code must contain five digits."
+msgstr "The postal code must contain five digits."
+
+msgctxt "validation.slug"
+msgid "The slug is invalid."
+msgstr "The slug is invalid."
+
+msgctxt "validation.null"
+msgid "This field must not be empty."
+msgstr "This field must not be empty."
+
+msgctxt "validation.date"
+msgid "The date is invalid."
+msgstr "The date is invalid."
+
+msgctxt "validation.time"
+msgid "The time is invalid."
+msgstr "The time is invalid."
+
+msgctxt "validation.json"
+msgid "The value is not a JSON document."
+msgstr "The value is not a JSON document."
+
+msgctxt "validation.datetime"
+msgid "The timestamp is invalid."
+msgstr "The timestamp is invalid."
+
+msgctxt "validation.datetime_offset"
+msgid "The timestamp needs an offset."
+msgstr "The timestamp needs an offset."
+
+msgctxt "form.csrf"
+msgid "The security check failed."
+msgstr "The security check failed."
+
+msgctxt "form.thanks"
+msgid "Thank you. The message was checked and was not sent."
+msgstr "Thank you. The message was checked and was not sent."
+
+msgctxt "request.rejected"
+msgid "The request was rejected."
+msgstr "The request was rejected."
+
