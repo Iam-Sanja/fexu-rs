@@ -1366,6 +1366,7 @@ primary_color = "#0f172a"
 "##,
         );
         let config = parse_manifest(&path).expect("settings");
+        assert_eq!(config.default_locale, "de");
         assert_eq!(config.app_name, "MyShop");
         assert!(config.templates_enabled);
         assert!(config.debug);
