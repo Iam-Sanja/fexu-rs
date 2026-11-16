@@ -129,7 +129,7 @@ pub fn admin_migration_file() -> Result<MigrationFile, AuthError> {
     .map_err(|error| AuthError::Validation(error.to_string()))
 }
 
-/// Hängt `operation_id` an die bestehende Audit-Tabelle. `0002` bleibt versiegelt.
+/// Adds `operation_id` to the existing audit table. Migration `0002` remains sealed.
 #[allow(dead_code)]
 pub fn operation_migration_file() -> Result<MigrationFile, AuthError> {
     let previous =
