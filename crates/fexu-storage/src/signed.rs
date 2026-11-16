@@ -1,4 +1,4 @@
-//! HMAC-Download-Links. Der Schlüssel kommt vom Aufrufer und steht nicht im Token.
+//! HMAC-signed download links. The caller supplies the key; it is not embedded in the token.
 
 use crate::StorageError;
 use hmac::{Hmac, KeyInit, Mac};
