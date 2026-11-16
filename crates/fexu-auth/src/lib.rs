@@ -1,6 +1,6 @@
-//! Authentifizierung, Sitzungen und Berechtigungen für Fexu.
+//! Authentication, sessions, and permissions for Fexu.
 //!
-//! Die Crate hängt nicht vom Admin-Frontend ab. Schemaänderungen laufen über die Migrations-Engine.
+//! This crate does not depend on the admin frontend. Schema changes use the migration engine.
 
 mod account_store;
 mod anonymous;
