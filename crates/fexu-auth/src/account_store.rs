@@ -1,4 +1,4 @@
-//! Tabellen für TOTP, Wiederherstellungscodes und Anmeldeherausforderungen.
+//! Tables for TOTP, recovery codes, and login challenges.
 
 use crate::error::AuthError;
 use crate::schema::{LOGIN_CHALLENGES, MFA_TOTP, RECOVERY_CODES, SESSIONS};
