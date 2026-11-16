@@ -1056,7 +1056,7 @@ async fn html_admin_works_without_javascript() {
     .await
     .unwrap();
     assert_eq!(login.status, 200);
-    assert!(login.body.contains("Anmelden"));
+    assert!(login.body.contains("Sign in"));
     assert!(!login.body.contains("evil.example"));
     let login_csrf = cookie_value(&login.headers, "fexu_login_csrf");
     assert_eq!(login_csrf, field_value(&login.body, "csrf_token"));
@@ -1099,8 +1099,8 @@ async fn html_admin_works_without_javascript() {
     .unwrap();
     assert_eq!(unknown.status, 401);
     assert_eq!(wrong.status, 401);
-    assert!(unknown.body.contains("E-Mail oder Passwort ist ungültig."));
-    assert!(wrong.body.contains("E-Mail oder Passwort ist ungültig."));
+    assert!(unknown.body.contains("Invalid email or password."));
+    assert!(wrong.body.contains("Invalid email or password."));
     assert!(wrong.body.contains("id=\"admin-alert\""));
     assert!(wrong.body.contains("aria-invalid=\"true\""));
     assert!(wrong.body.contains("aria-describedby=\"admin-alert\""));
@@ -1122,7 +1122,7 @@ async fn html_admin_works_without_javascript() {
     assert_eq!(missing_login_csrf.status, 403);
     assert!(missing_login_csrf
         .body
-        .contains("Die Sicherheitsprüfung ist fehlgeschlagen."));
+        .contains("The security check failed."));
     let foreign = call("POST", "/admin/login".into(), Some(form(&[("csrf_token", &login_csrf), ("email", "staff@example.com"), ("password", "correct-horse-battery"), ("next", "/admin")])), "Cookie: fexu_login_csrf=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\r\n".into()).await.unwrap();
     assert_eq!(foreign.status, 403);
 
@@ -1154,7 +1154,7 @@ async fn html_admin_works_without_javascript() {
     assert!(!home.body.contains("href=\"/admin/models\""));
     assert!(home.body.contains("Anwendungen"));
     assert!(home.body.contains("Historie"));
-    assert!(!home.body.contains("Benutzer und Zugang"));
+    assert!(!home.body.contains("Users and access"));
     assert!(!home.body.contains("Payroll") && !home.body.contains("html_payroll"));
     assert!(!home.body.contains("$argon"));
     let csrf = field_value(&home.body, "csrf_token");
@@ -1663,7 +1663,7 @@ async fn html_admin_works_without_javascript() {
     .await
     .unwrap();
     assert_eq!(confirm.status, 200);
-    assert!(confirm.body.contains("dauerhaft gelöscht"));
+    assert!(confirm.body.contains("deleted permanently"));
     let removed = call(
         "POST",
         format!("/admin/models/html_products/{xss_id}/delete"),
@@ -1836,17 +1836,17 @@ async fn html_admin_works_without_javascript() {
     .unwrap();
     assert_eq!(users.status, 200);
     assert!(users.body.contains("staff@example.com"));
-    assert!(users.body.contains("Kein Staff"));
-    assert!(users.body.contains("Kein Superuser"));
+    assert!(users.body.contains("Not staff"));
+    assert!(users.body.contains("Not a superuser"));
     assert!(users.body.contains(">Superuser<") || users.body.contains("Superuser</span>"));
     // Role assignments are managed on the user edit page, not the users list.
     assert!(!users.body.contains("name=\"role\""));
     assert!(!users.body.contains("id=\"assign-role\""));
     assert!(!users.body.contains("id=\"assign-email\""));
     assert!(users.body.contains("#roles"));
-    assert!(!users.body.contains("Nein · Superuser"));
-    assert!(!users.body.contains("Rolle anlegen"));
-    assert!(users.body.contains("Benutzer und Zugang"));
+    assert!(!users.body.contains("No · Superuser"));
+    assert!(!users.body.contains("Add role"));
+    assert!(users.body.contains("Users and access"));
     assert!(
         users.body.contains("href=\"/admin/directory/roles\"")
             || users
@@ -1970,7 +1970,7 @@ async fn html_admin_works_without_javascript() {
     .await
     .unwrap();
     assert_eq!(staff_post.status, 403);
-    assert!(staff_post.body.contains("Diese Aktion ist nicht erlaubt."));
+    assert!(staff_post.body.contains("This action is not allowed."));
     let staff_bare = call(
         "POST",
         "/admin/directory/roles".into(),
@@ -1982,7 +1982,7 @@ async fn html_admin_works_without_javascript() {
     assert_eq!(staff_bare.status, 403);
     assert!(staff_bare
         .body
-        .contains("Die Sicherheitsprüfung ist fehlgeschlagen."));
+        .contains("The security check failed."));
     let role = call(
         "POST",
         "/admin/directory/roles".into(),
@@ -2053,8 +2053,8 @@ async fn html_admin_works_without_javascript() {
     .await
     .unwrap();
     assert!(assigned.body.contains("editor"));
-    assert!(assigned.body.contains("Benutzer anlegen"));
-    assert!(assigned.body.contains("Anzeigen"));
+    assert!(assigned.body.contains("Add user"));
+    assert!(assigned.body.contains("View"));
     let new_user = call(
         "GET",
         "/admin/directory/users/new".into(),
@@ -2398,7 +2398,7 @@ async fn html_admin_works_without_javascript() {
     assert_eq!(self_off.status, 422, "{}", self_off.body);
     assert!(self_off
         .body
-        .contains("Diese Aktion braucht eine Bestätigung."));
+        .contains("This action requires confirmation."));
     let unconfirmed = call(
         "POST",
         format!("/admin/directory/users/{}/active", plain.id),
@@ -2410,7 +2410,7 @@ async fn html_admin_works_without_javascript() {
     assert_eq!(unconfirmed.status, 422, "{}", unconfirmed.body);
     assert!(unconfirmed
         .body
-        .contains("Diese Aktion braucht eine Bestätigung."));
+        .contains("This action requires confirmation."));
     let deactivate = call(
         "POST",
         format!("/admin/directory/users/{}/active", plain.id),
@@ -2443,7 +2443,7 @@ async fn html_admin_works_without_javascript() {
     .await
     .unwrap();
     assert_eq!(inactive.status, 401);
-    assert!(inactive.body.contains("E-Mail oder Passwort ist ungültig."));
+    assert!(inactive.body.contains("Invalid email or password."));
 
     let gone_page = call("GET", "/admin/login".into(), None, String::new())
         .await
@@ -2743,7 +2743,7 @@ async fn html_admin_works_without_javascript() {
     assert!(mismatched.body.contains("value=\"catalog\" checked"));
     assert!(mismatched
         .body
-        .contains("Die Passwörter stimmen nicht überein."));
+        .contains("The passwords do not match."));
     assert!(!mismatched.body.contains("correct-horse-battery"));
     assert!(!mismatched.body.contains("other-horse-battery"));
     assert!(!mismatched.body.contains("csrf_token="));
@@ -2888,7 +2888,7 @@ async fn html_login_csrf_respects_the_bound_port() {
     assert_eq!(missing_cookie.status, 403);
     assert!(missing_cookie
         .body
-        .contains("Die Sicherheitsprüfung ist fehlgeschlagen."));
+        .contains("The security check failed."));
 
     let tampered = call(
         "POST",
@@ -3601,7 +3601,7 @@ async fn admin_v018_drafts_inlines_bulk_and_audit() {
     .unwrap();
     assert_eq!(detail.status, 200, "{}", detail.body);
     assert!(detail.body.contains("Bleibtprodukt"), "{}", detail.body);
-    assert!(detail.body.contains("Hinzufügen"), "{}", detail.body);
+    assert!(detail.body.contains("Add"), "{}", detail.body);
     let created = call(
         "POST",
         format!("/admin/models/html_categories/{}/inline/items/new", obst.id),
@@ -3658,7 +3658,7 @@ async fn admin_v018_drafts_inlines_bulk_and_audit() {
     .await
     .unwrap();
     assert_eq!(confirm.status, 200, "{}", confirm.body);
-    assert!(confirm.body.contains("Betroffene Datensätze"));
+    assert!(confirm.body.contains("Affected records"));
     assert!(!HtmlCount::get(&db, first.id).await.unwrap().unwrap().active);
     let unconfirmed = call(
         "POST",
@@ -4197,11 +4197,11 @@ async fn admin_modeladmin_order_timeline_and_keyboard_markup() {
     assert!(home.body.contains("id=\"admin-nav\""));
     assert!(home.body.contains("class=\"nav-switch\""));
     assert!(home.body.contains("class=\"nav-fold\""));
-    assert!(home.body.contains("Konfiguration"));
+    assert!(home.body.contains("Configuration"));
     assert!(home.body.contains("class=\"account\""));
-    assert!(home.body.contains("Kontomenü"));
-    assert!(!home.body.contains("Letzte Vorgänge"));
-    assert!(home.body.contains("Noch kein Menü"));
+    assert!(home.body.contains("Account menu"));
+    assert!(!home.body.contains("Recent activity"));
+    assert!(home.body.contains("No menu yet"));
     assert!(!home.body.contains("model-card"));
     assert!(home.body.contains("href=\"#content\""));
     let own_page = call(
@@ -4236,7 +4236,7 @@ async fn admin_modeladmin_order_timeline_and_keyboard_markup() {
     assert_eq!(list.status, 200, "{}", list.body);
     assert!(list.body.contains("role=\"search\""));
     assert!(list.body.contains("aria-current=\"page\""));
-    assert!(list.body.contains("Keine Einträge."));
+    assert!(list.body.contains("No records."));
     let missed = call(
         "GET",
         "/admin/models/html_products?q=kein-treffer-zz".into(),
@@ -4245,7 +4245,7 @@ async fn admin_modeladmin_order_timeline_and_keyboard_markup() {
     )
     .await
     .unwrap();
-    assert!(missed.body.contains("Keine Treffer"));
+    assert!(missed.body.contains("No matches"));
     let csrf = field_value(&list.body, "csrf_token");
     let created = call(
         "POST",
@@ -4273,7 +4273,7 @@ async fn admin_modeladmin_order_timeline_and_keyboard_markup() {
     assert!(!editor.body.contains("class=\"record-history\""));
     assert!(!editor
         .body
-        .contains("Nur Änderungen über die Administration"));
+        .contains("Only changes made through the admin"));
     assert!(editor.body.contains("audit?model="), "{}", editor.body);
     assert!(editor.body.contains("Timeline-Apfel"));
     assert!(editor.body.contains("root@example.com"));
@@ -4345,7 +4345,7 @@ async fn admin_modeladmin_order_timeline_and_keyboard_markup() {
     assert!(!staff_page.body.contains("root@example.com"));
     assert!(!staff_page
         .body
-        .contains("Für diesen Datensatz ist noch kein Eintrag"));
+        .contains("No entry is stored for this record yet"));
     assert!(staff_page.body.contains("audit?model="));
     server.abort();
 }
@@ -4579,7 +4579,7 @@ async fn html_many_to_many_respects_scope_and_keyboard_markup() {
         "{}",
         rejected.body
     );
-    assert!(rejected.body.contains("ungültigen oder nicht sichtbaren"));
+    assert!(rejected.body.contains("invalid or hidden record"));
     assert!(!rejected.body.contains("value=\"Fremd\"") || rejected.body.contains("Fremd"));
     let kept = call(
         "POST",
@@ -4692,7 +4692,7 @@ async fn html_many_to_many_respects_scope_and_keyboard_markup() {
     .await
     .unwrap();
     assert_eq!(hidden.status, 422, "{}", hidden.body);
-    assert!(hidden.body.contains("ungültigen oder nicht sichtbaren"));
+    assert!(hidden.body.contains("invalid or hidden record"));
 
     let narrow_login = call("GET", "/admin/login".into(), None, String::new())
         .await
@@ -4732,7 +4732,7 @@ async fn html_many_to_many_respects_scope_and_keyboard_markup() {
     .await
     .unwrap();
     assert_eq!(denied.status, 422, "{}", denied.body);
-    assert!(denied.body.contains("nicht gelesen") || denied.body.contains("ungültigen"));
+    assert!(denied.body.contains("cannot read the related records") || denied.body.contains("ungültigen"));
     let open = call(
         "POST",
         "/admin/models/html_products/new".into(),
