@@ -63,7 +63,9 @@ impl PoCatalog {
                 .take()
                 .ok_or_else(|| format!("PO line {line}: missing msgstr"))?;
             if context.trim().is_empty() || id.is_empty() {
-                return Err(format!("PO line {line}: empty translation key or source text"));
+                return Err(format!(
+                    "PO line {line}: empty translation key or source text"
+                ));
             }
             if map.insert(context.clone(), translated).is_some() {
                 return Err(format!("PO line {line}: duplicate key {context}"));
@@ -85,7 +87,9 @@ impl PoCatalog {
                 continue;
             }
             if text.starts_with("msgid_plural ") || text.starts_with("msgstr[") {
-                return Err(format!("PO line {line}: plural forms are not yet supported"));
+                return Err(format!(
+                    "PO line {line}: plural forms are not yet supported"
+                ));
             }
             let (part, value) = if let Some(rest) = text.strip_prefix("msgctxt ") {
                 (Part::Context, rest)
@@ -124,7 +128,10 @@ impl PoCatalog {
     }
 
     pub fn get(&self, key: &str) -> Option<&str> {
-        self.entries.get(key).map(String::as_str).filter(|value| !value.is_empty())
+        self.entries
+            .get(key)
+            .map(String::as_str)
+            .filter(|value| !value.is_empty())
     }
 
     pub fn len(&self) -> usize {
