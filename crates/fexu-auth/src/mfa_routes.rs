@@ -1,4 +1,4 @@
-//! HTTP für den zweiten Faktor. Die Sitzung entsteht erst nach dem Code.
+//! HTTP routes for the second factor. The session is created only after code verification.
 
 use crate::routes::{append_cookie, auth_error, current_user, error_response, AppState, ClientIp};
 use axum::extract::State;
