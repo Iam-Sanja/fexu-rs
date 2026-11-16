@@ -19,7 +19,9 @@ fn validation_catalogs() -> &'static (PoCatalog, PoCatalog) {
     CATALOGS.get_or_init(|| {
         let english = PoCatalog::parse(EN_PO).expect("valid bundled English validation catalog");
         let german = PoCatalog::parse(DE_PO).expect("valid bundled German validation catalog");
-        german.check_keys(&english).expect("validation catalog keys match");
+        german
+            .check_keys(&english)
+            .expect("validation catalog keys match");
         (english, german)
     })
 }
@@ -312,9 +314,18 @@ mod bundled_catalog_tests {
         assert_eq!(english.len(), 31);
         assert_eq!(german.len(), 31);
         german.check_keys(english).unwrap();
-        assert_eq!(message_text("en", "validation.required"), "This field is required.");
-        assert_eq!(message_text("de", "validation.required"), "Dieses Feld ist erforderlich.");
-        assert_eq!(message_text("fr", "validation.required"), "This field is required.");
+        assert_eq!(
+            message_text("en", "validation.required"),
+            "This field is required."
+        );
+        assert_eq!(
+            message_text("de", "validation.required"),
+            "Dieses Feld ist erforderlich."
+        );
+        assert_eq!(
+            message_text("fr", "validation.required"),
+            "This field is required."
+        );
         assert_eq!(
             message_text("de", "validation.mismatch"),
             "Name und E-Mail dürfen nicht denselben lokalen Teil haben."
