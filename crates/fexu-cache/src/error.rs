@@ -1,4 +1,4 @@
-//! Fehler der Cache-Schicht. Texte enthalten keine gespeicherten Werte.
+//! Cache-layer errors. Messages contain no stored values.
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum CacheError {

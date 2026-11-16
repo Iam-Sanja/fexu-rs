@@ -29,15 +29,15 @@ pub struct ModelDescriptor {
     pub api_path: &'static str,
     /// Explicit opt-in for unauthenticated access (demo only).
     pub allow_anonymous: bool,
-    /// `None` verweigert den Zugriff, sofern `allow_anonymous` nicht gesetzt ist.
-    /// `Some("authenticated")` verlangt eine aktive Sitzung.
-    /// Jeder andere Wert ist der Ressourcenname für `{name}.read|create|update|delete`.
+    /// `None` denies access unless `allow_anonymous` is set.
+    /// `Some("authenticated")` requires an active session.
+    /// Any other value names the resource for `{name}.read|create|update|delete`.
     pub permission: Option<&'static str>,
-    /// Objektregeln liefern einen `QueryScope`. Ohne gebundene Policy bleiben die Routen gesperrt.
+    /// Object policies provide a `QueryScope`. Routes remain denied without a bound policy.
     pub requires_object_policy: bool,
 }
 
-/// Vergleichswert eines Query-Scopes. Er stammt aus der Policy, nicht aus der HTTP-Anfrage.
+/// Comparison value in a query scope. It comes from the policy, not the HTTP request.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ScopeValue {
     Text(String),
@@ -46,7 +46,7 @@ pub enum ScopeValue {
     Bool(bool),
 }
 
-/// Datenbankfilter einer Objektregel. `None` liefert keine Zeile. `All` nur, wenn die Policy das ausdrücklich sagt.
+/// Database filter from an object policy. `None` matches no rows; `All` requires explicit policy authorization.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum QueryScope {
     All,
@@ -57,7 +57,7 @@ pub enum QueryScope {
     },
 }
 
-/// Benannter Formularabschnitt. Die Feldreihenfolge bleibt die Struct-Reihenfolge.
+/// Named form section. Fields retain their struct declaration order.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AdminFieldset {
     pub name: &'static str,
@@ -65,7 +65,7 @@ pub struct AdminFieldset {
     pub optional: bool,
 }
 
-/// Admin-Feld. Die Werte stammen aus demselben Modell wie das Schema.
+/// Admin field. Values come from the same model as the schema.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AdminFieldMeta {
     pub name: &'static str,
@@ -77,25 +77,25 @@ pub struct AdminFieldMeta {
     pub filterable: bool,
     pub readonly: bool,
     pub hidden: bool,
-    /// Werte dieses Feldes dürfen weder in Entwürfen noch in der Historie stehen.
+    /// Field values must never appear in drafts or audit history.
     pub sensitive: bool,
-    /// Leer, wenn das Modell keine Fieldsets deklariert.
+    /// Empty when the model declares no fieldsets.
     pub fieldset: &'static str,
 }
 
-/// Has-Many-Abschnitt. `form` speichert Eltern und Kinder in einer Transaktion.
+/// Has-many section. `form` saves parent and children in one transaction.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AdminInline {
     pub name: &'static str,
     pub child_table: &'static str,
     pub column: &'static str,
-    /// Leer: die Oberfläche verwendet das Label des Kindmodells.
+    /// Empty: the interface uses the child model label.
     pub label: &'static str,
-    /// Leer: alle schreibbaren Felder außer dem Eltern-Fremdschlüssel.
+    /// Empty: all writable fields except the parent foreign key.
     pub fields: &'static [&'static str],
     pub readonly_fields: &'static [&'static str],
     pub min_count: u16,
-    /// `0` ohne `form` bedeutet: das gemeinsame Formular ist aus.
+    /// `0` without `form` disables the combined form.
     pub max_count: u16,
     pub extra: u16,
     pub can_add: bool,
@@ -105,54 +105,54 @@ pub struct AdminInline {
     pub form: bool,
 }
 
-/// Admin-Freigabe eines Modells. `None` bei `admin_meta` bedeutet: nicht im Admin.
+/// Admin exposure of a model. `None` from `admin_meta` means the model is absent from admin.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AdminModelMeta {
     pub key: &'static str,
     pub label: &'static str,
-    /// `None`: nur ein aktiver Superuser. Sonst `{permission}.read|create|update|delete`.
+    /// `None`: active superuser only. Otherwise `{permission}.read|create|update|delete` applies.
     pub permission: Option<&'static str>,
     pub fields: &'static [AdminFieldMeta],
-    /// `Some("-name")` sortiert absteigend. `None` lässt die Liste bei `id` aufsteigend.
+    /// `Some("-name")` sorts descending. `None` sorts by `id` ascending.
     pub ordering: Option<&'static str>,
-    /// HTML-Seitengröße. Der Server deckelt sie bei 100.
+    /// HTML page size. The server caps this at 100.
     pub per_page: u16,
     pub fieldsets: &'static [AdminFieldset],
     pub inlines: &'static [AdminInline],
-    /// `Some(field)` schaltet die UTC-Datumsnavigation der Liste ein. Nur `Date` oder `DateTime`.
+    /// `Some(field)` enables UTC date navigation in lists; only `Date` or `DateTime`.
     pub date_hierarchy: Option<&'static str>,
 }
 
-/// Backend, für den Fexu DDL und Abfragen erzeugt.
+/// Database backend targeted by Fexu DDL and queries.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DatabaseKind {
     Sqlite,
     Postgres,
 }
 
-/// Spaltentyp, unabhängig vom SQL-Dialekt.
+/// Column type independent of SQL dialect.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ColumnKind {
     Uuid,
     Text,
     BigInt,
     Boolean,
-    /// Kalendertag ohne Uhrzeit und ohne Zeitzone. Kanonisch `YYYY-MM-DD`.
+    /// Calendar date without time or timezone. Canonical format: `YYYY-MM-DD`.
     Date,
-    /// Tageszeit ohne Datum. Kanonisch `HH:MM:SS`.
+    /// Time of day without date. Canonical format: `HH:MM:SS`.
     Time,
-    /// Absoluter Zeitpunkt in UTC. Kanonisch RFC 3339 mit `Z`.
+    /// Absolute UTC instant. Canonical format: RFC 3339 with `Z`.
     DateTime,
-    /// Exakter Dezimalwert. Speicherformat: 16-Byte-Koeffizient, siehe `decimal`.
+    /// Exact decimal value. Storage format: 16-byte coefficient; see `decimal`.
     Decimal,
-    /// Enum-Wert mit festem Speichertext. Zulässige Werte stehen in `ColumnSpec::choices`.
+    /// Enum variant with a fixed stored string. Allowed values are in `ColumnSpec::choices`.
     Choice,
-    /// JSON-Dokument. PostgreSQL speichert `jsonb`, SQLite kanonischen Text.
-    /// Pfadoperatoren sind kein portabler Vertrag.
+    /// JSON document. PostgreSQL stores `jsonb`; SQLite stores canonical text.
+    /// Path operators are not part of the portable contract.
     Json,
 }
 
-/// Aktion für `ON DELETE`. `ON UPDATE` bleibt `NO ACTION`.
+/// Action for `ON DELETE`. `ON UPDATE` remains `NO ACTION`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ReferentialAction {
     Restrict,
@@ -160,7 +160,7 @@ pub enum ReferentialAction {
     SetNull,
 }
 
-/// Metadaten einer Modellspalte. Das Makro erzeugt sie, die Datenbankschicht rendert sie.
+/// Metadata for a model column. The macro generates it; the database layer renders it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ColumnSpec {
     pub name: &'static str,
@@ -173,15 +173,15 @@ pub struct ColumnSpec {
     pub foreign_table: Option<&'static str>,
     pub foreign_column: Option<&'static str>,
     pub on_delete: Option<ReferentialAction>,
-    /// `0`, wenn die Spalte kein `Decimal` ist. Sonst `1..=28`.
+    /// `0` for non-`Decimal` columns; otherwise `1..=28`.
     pub precision: u8,
-    /// Nachkommastellen. Nur für `Decimal` gesetzt und immer `<= precision`.
+    /// Fractional digits. Only set for `Decimal` and always `<= precision`.
     pub scale: u8,
-    /// Leer, außer bei `Choice`.
+    /// Empty except for `Choice`.
     pub choices: &'static [ChoiceValue],
 }
 
-/// Zusammengesetzte Unique-Constraints und Indizes. Leere Listen sind der Normalfall.
+/// Composite unique constraints and indexes. Empty lists are the default.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TableConstraints {
     pub unique_groups: &'static [&'static [&'static str]],
@@ -265,10 +265,10 @@ pub fn foreign_key_name(
     format!("fk_{table}_{column}_{referenced_table}_{referenced_column}")
 }
 
-/// Kompaktes JSON. Objektschlüssel folgen der `serde_json`-Map, hier alphabetisch, weil `preserve_order` nicht aktiv ist.
+/// Compact JSON. Object keys follow the `serde_json` map, sorted alphabetically without `preserve_order`.
 ///
-/// Ein JSON-`null` ist ein Dokument, kein SQL-`NULL`. Leerer Text und ungültiges JSON
-/// werden abgelehnt. PostgreSQL-`jsonb`-Operatoren werden nicht erzeugt.
+/// A JSON `null` is a document, not SQL `NULL`. Empty text and invalid JSON
+/// are rejected. PostgreSQL `jsonb` operators are not generated.
 pub fn canonical_json_text(text: &str) -> Result<String, &'static str> {
     let value: serde_json::Value = serde_json::from_str(text).map_err(|_| "validation.json")?;
     serde_json::to_string(&value).map_err(|_| "validation.json")
@@ -386,7 +386,7 @@ fn secret_at(lower: &str, index: usize) -> Option<(usize, usize)> {
     Some((key.len(), end))
 }
 
-/// Modelle mit den beiden verwalteten Zeitstempeln.
+/// Models with both managed timestamps.
 pub trait HasTimestamps {
     fn created_at(&self) -> chrono::DateTime<chrono::Utc>;
     fn updated_at(&self) -> chrono::DateTime<chrono::Utc>;
@@ -397,12 +397,12 @@ thread_local! {
         const { std::cell::Cell::new(None) };
 }
 
-/// UTC-Zeitpunkt für verwaltete Felder. Tests können ihn über [`set_test_clock`] festlegen.
+/// UTC instant for managed fields. Tests can override it through [`set_test_clock`].
 pub fn utc_now() -> chrono::DateTime<chrono::Utc> {
     FIXED_CLOCK.with(|slot| slot.get().unwrap_or_else(chrono::Utc::now))
 }
 
-/// Setzt die Uhr für den aktuellen Thread. `None` verwendet wieder die Systemzeit.
+/// Overrides the current thread's clock. `None` restores system time.
 pub fn set_test_clock(now: Option<chrono::DateTime<chrono::Utc>>) {
     FIXED_CLOCK.with(|slot| slot.set(now));
 }

@@ -1,4 +1,4 @@
-//! Stabiler Fehlervertrag. `code` ist sprachunabhängig, `detail` bleibt der bisherige Fallback.
+//! Stable error contract. `code` is language-independent; `detail` remains the legacy fallback.
 
 pub fn problem_json(status: u16, title: &str, detail: &str) -> serde_json::Value {
     let (code, field, safe_detail) = classify(detail);

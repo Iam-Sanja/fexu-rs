@@ -294,7 +294,7 @@ fn report(level: &str, message: &str) {
     println!("[{level}] {message}");
 }
 
-/// Bindet den Port nur zur Prüfung und gibt ihn sofort wieder frei.
+/// Binds the port only for validation and immediately releases it.
 pub fn port_available(host: &str, port: u16) -> bool {
     if !matches!(host, "127.0.0.1" | "localhost" | "::1") {
         return true;

@@ -1,4 +1,4 @@
-//! Feste Mail-Fehler. Anzeigetext enthält keine Serverantwort und kein Geheimnis.
+//! Fixed mail errors. Display text contains no server response or secrets.
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum MailError {

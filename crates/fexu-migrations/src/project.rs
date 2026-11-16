@@ -128,7 +128,7 @@ impl ApiDocsSettings {
     }
 }
 
-/// Deklariertes Migrationsverzeichnis einer App. Es aktiviert keine Rust-App.
+/// Declared migration directory for an app. Does not activate the Rust app.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DeclaredApp {
     pub name: String,
@@ -153,7 +153,7 @@ impl std::fmt::Debug for ProjectConfig {
 }
 
 impl ProjectConfig {
-    /// Dateipfad der Vorlagen. Er bleibt relativ zur Projektdatei.
+    /// Template path remains relative to the project file.
     pub fn templates_directory(&self) -> PathBuf {
         self.root.join(&self.templates_dir)
     }
@@ -170,7 +170,7 @@ impl ProjectConfig {
         self.storage_max_upload_mb.saturating_mul(1024 * 1024)
     }
 
-    /// `DATABASE_URL` ersetzt die Datei-URL, ohne sie in Protokolle zu schreiben.
+    /// `DATABASE_URL` overrides the configured file URL without logging it.
     pub fn resolved_database_url(&self) -> String {
         match std::env::var("DATABASE_URL") {
             Ok(value) if !value.is_empty() => value,

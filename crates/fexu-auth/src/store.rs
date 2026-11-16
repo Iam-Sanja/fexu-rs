@@ -1,4 +1,4 @@
-//! SQL für Auth-Tabellen über SeaQuery. Keine zweite ORM-Schicht.
+//! SQL for auth tables through SeaQuery. No second ORM layer.
 
 use crate::error::AuthError;
 use crate::schema::{
@@ -144,7 +144,7 @@ pub async fn list_user_rows(db: &impl ConnectionTrait) -> Result<Vec<UserRow>, A
     rows.iter().map(read_user).collect()
 }
 
-/// Rollennamen je Benutzer. Das Passwort-Hash wird nicht gelesen.
+/// Role names per user. Password hashes are not read.
 pub async fn list_user_role_names(
     db: &impl ConnectionTrait,
 ) -> Result<Vec<(Uuid, String)>, AuthError> {
@@ -1035,7 +1035,7 @@ fn text(value: &str) -> fexu_db::driver::sea_query::SimpleExpr {
     Expr::value(value)
 }
 
-/// PostgreSQL-Spalten vom Typ UUID bekommen einen UUID-Parameter. SQLite speichert dieselbe Spalte als TEXT.
+/// PostgreSQL UUID columns receive UUID parameters. SQLite stores the same column as TEXT.
 fn uuid_expr(backend: DatabaseBackend, id: Uuid) -> fexu_db::driver::sea_query::SimpleExpr {
     match backend {
         DatabaseBackend::Postgres => Expr::value(Value::Uuid(Some(Box::new(id)))),

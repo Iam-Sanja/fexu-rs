@@ -58,10 +58,10 @@ pub struct ListPage<T> {
     pub truncated: bool,
 }
 
-/// Drei Zustände eines PATCH-Feldes.
+/// Three states of a PATCH field.
 ///
-/// `Missing` entsteht nur über `#[serde(default)]`, wenn der Schlüssel fehlt.
-/// Ein JSON-`null` wird zu `Null`. Ein Wert wird zu `Value`.
+/// `Missing` is produced through `#[serde(default)]` when the key is absent.
+/// JSON `null` maps to `Null`; a supplied value maps to `Value`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum PatchField<T> {
     #[default]
@@ -129,7 +129,7 @@ where
     }
 }
 
-/// Ergebnis von `DELETE`, ohne den gelöschten Datensatz erneut zu laden.
+/// Result of `DELETE` without reloading the deleted record.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DeleteOutcome {
     Deleted,

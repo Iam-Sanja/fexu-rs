@@ -1,4 +1,4 @@
-//! Kurzlebige, sitzungsgebundene Formular- und Sammelaktionsentwürfe.
+//! Short-lived, session-bound form and bulk-action drafts.
 
 use fexu_auth::ADMIN_DRAFTS;
 use fexu_core::FexuError;

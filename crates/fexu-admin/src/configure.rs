@@ -1,9 +1,9 @@
-//! Typisierte Admin-Konfiguration über der bestehenden `AdminModelMeta`.
+//! Typed admin configuration built on the existing `AdminModelMeta`.
 //!
-//! `ModelAdmin` ersetzt die Registry nicht. `check` kopiert die Modellfelder und
+//! `ModelAdmin` does not replace the registry. `check` copies model fields and
 //! darf sie nur enger machen: weniger Listen- und Suchfelder in der angegebenen
-//! Reihenfolge, zusätzliche Nur-Lesen- und Hidden-Markierungen, eigene Fieldsets
-//! und zusätzliche Aktionsrechte. `AdminRegistry::seal` schaltet die Kopie frei.
+//! order, additional read-only and hidden markers, custom fieldsets,
+//! and additional action permissions. `AdminRegistry::seal` activates the checked copy.
 
 use fexu_core::{AdminFieldMeta, AdminFieldset, AdminModelMeta, ColumnKind, ColumnSpec};
 
@@ -47,14 +47,14 @@ struct FieldsetDecl {
     rows: Vec<Vec<&'static str>>,
 }
 
-/// Eine Feldgruppe in der Reihenfolge der Zeilen. Jede innere Liste steht in einer Zeile.
+/// A group of fields in row order. Each inner list represents one row.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FormLayout {
     pub name: &'static str,
     pub rows: Vec<Vec<&'static str>>,
 }
 
-/// Nur-Lese-Tabelle von Datensätzen eines anderen Modells, die auf diesen Datensatz zeigen.
+/// Read-only table of records from another model that reference this record.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RelatedTable {
     pub name: &'static str,
@@ -63,7 +63,7 @@ pub struct RelatedTable {
     pub label: &'static str,
 }
 
-/// Geprüfte Many-to-Many-Angabe. Die HTML-Oberfläche schreibt sie über `replace_links`.
+/// Validated many-to-many definition. The HTML interface persists it via `replace_links`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ManyLink {
     pub name: &'static str,
@@ -121,7 +121,7 @@ impl ModelAdmin {
         }
     }
 
-    /// Felder, die in der Liste geändert und einzeln gespeichert werden können.
+    /// Fields that can be edited and saved individually in the list.
     pub fn list_editable(mut self, fields: &'static [&'static str]) -> Self {
         self.list_editable = fields.to_vec();
         self
@@ -142,7 +142,7 @@ impl ModelAdmin {
         self
     }
 
-    /// `None` hebt die Modellsortierung auf. Ein führendes `-` sortiert absteigend.
+    /// `None` clears model ordering. A leading `-` sorts in descending order.
     pub fn ordering(mut self, ordering: Option<&'static str>) -> Self {
         self.ordering = Some(ordering);
         self
@@ -175,7 +175,7 @@ impl ModelAdmin {
         self
     }
 
-    /// Wie [`Self::fieldset`], aber jede innere Liste teilt sich eine Zeile. Eine Zeile trägt 1 bis 4 Felder.
+    /// Like [`Self::fieldset`], but each inner list shares a row. A row contains 1 to 4 fields.
     pub fn fieldset_rows(
         mut self,
         name: &'static str,
@@ -193,7 +193,7 @@ impl ModelAdmin {
         self
     }
 
-    /// Verlinkte Datensätze eines anderen Admin-Modells. `column` ist dort der Fremdschlüssel auf dieses Modell.
+    /// Linked records of another admin model. `column` is its foreign key to this model.
     pub fn related_table(
         mut self,
         name: &'static str,
@@ -210,7 +210,7 @@ impl ModelAdmin {
         self
     }
 
-    /// Zusätzliches Recht. `code` hat die Form `ressource.aktion` und wird mit `holds` geprüft.
+    /// Additional permission. `code` has the form `resource.action` and is checked by `holds`.
     pub fn action_permission(mut self, action: &'static str, code: &'static str) -> Self {
         self.actions.push((action, code));
         self
@@ -221,9 +221,9 @@ impl ModelAdmin {
         self
     }
 
-    /// Bestehende Kinddatensätze über eine Verbindungstabelle. Wirksam nach `seal`.
+    /// Existing child records linked through a join table. Effective after `seal`.
     ///
-    /// `name` darf keine Modellspalte sein. `child_key` muss beim Versiegeln registriert sein.
+    /// `name` must not be a model column. `child_key` must be registered when sealing.
     pub fn many_to_many(
         mut self,
         name: &'static str,
@@ -437,7 +437,7 @@ impl CheckedModelAdmin {
         &self.links
     }
 
-    /// Deklarierte Listenreihenfolge. `None` behält die Reihenfolge der Modellfelder.
+    /// Declared list order. `None` preserves the order of model fields.
     pub(crate) fn list_order(&self) -> Option<&[&'static str]> {
         self.list_order.as_deref()
     }
@@ -446,7 +446,7 @@ impl CheckedModelAdmin {
         &self.list_editable
     }
 
-    /// Deklarierte Filterreihenfolge. `None` behält die Reihenfolge der Modellfelder.
+    /// Declared filter order. `None` preserves the order of model fields.
     pub(crate) fn filter_order(&self) -> Option<&[&'static str]> {
         self.filter_order.as_deref()
     }

@@ -1,4 +1,4 @@
-//! Gespeicherte Dashboard-Menüs. Eine Kachel nennt Modell und Felder selbst.
+//! Persisted dashboard menus. Each widget identifies its model and fields.
 
 use fexu_core::{ColumnKind, ColumnSpec, FexuError, QueryScope, ScopeValue};
 use fexu_db::driver::sea_query::{

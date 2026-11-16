@@ -1,4 +1,4 @@
-//! Registrierte Sammelaktionen. Der HTTP-Name wählt nur einen bekannten Eintrag.
+//! Registered bulk actions. HTTP action names select only known entries.
 
 use fexu_core::{AdminModelMeta, ColumnKind, ColumnSpec};
 use serde_json::Value;
@@ -69,7 +69,7 @@ pub(crate) struct PlannedWrite {
     pub value: ActionValue,
 }
 
-/// Geprüfte Auswahl einer atomaren Aktion. Der Handler erhält keine Datenbankverbindung.
+/// Validated selection for an atomic action. The handler has no direct database connection.
 pub struct ActionContext<'a> {
     allowed: &'static [&'static str],
     specs: &'a [ColumnSpec],
@@ -365,7 +365,7 @@ impl AdminAction {
         self
     }
 
-    /// Spalten, die der Handler über den Aktionskontext setzen darf.
+    /// Columns the handler may update through the action context.
     pub fn writes(mut self, columns: &'static [&'static str]) -> Self {
         if let ActionOperation::Custom(custom) = &mut self.operation {
             custom.columns = columns;

@@ -1,4 +1,4 @@
-//! Tabelle `_fexu_migrations`. Ein Eintrag entsteht nur nach erfolgreicher Transaktion.
+//! `_fexu_migrations` table. An entry is created only after a successful transaction.
 
 use crate::error::MigrationError;
 use fexu_core::{ColumnKind, DatabaseKind};

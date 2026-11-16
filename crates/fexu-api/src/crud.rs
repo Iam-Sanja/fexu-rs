@@ -1,7 +1,7 @@
-//! Kleine, typisierte Helfer für Listen und Schreibprüfungen.
+//! Small typed helpers for listing and write validation.
 //!
-//! Sie erzeugen keinen zweiten Router. Der Aufrufer bleibt eine Axum-Funktion
-//! und übergibt den `QueryScope` der Policy. Ein Query-String kann keinen Scope bauen.
+//! They do not create a second router. The caller remains an Axum handler
+//! and supplies the policy's `QueryScope`. A query string cannot construct a scope.
 
 use fexu_core::{ColumnSpec, FexuError, QueryScope};
 use fexu_db::driver::ConnectionTrait;
@@ -38,7 +38,7 @@ pub fn page_window(query: PageQuery) -> Result<(u64, u64), CrudError> {
     Ok((offset, u64::from(query.page_size)))
 }
 
-/// Lokaler Pfad plus Seitenparameter. Externe Ziele und Scope-Schlüssel werden abgelehnt.
+/// Local path with pagination parameters. External targets and scope keys are rejected.
 pub fn pagination_href(path: &str, page: u32, extra: &[(&str, &str)]) -> Result<String, CrudError> {
     if page == 0 || page > 10_000 || !local_path(path) {
         return Err(CrudError::new(

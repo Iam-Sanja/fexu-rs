@@ -1,4 +1,4 @@
-//! Die Admin-Oberfläche wird aus dem Quellbaum eingebettet. Node.js wird nicht aufgerufen.
+//! The admin UI is embedded from the source tree. Node.js is not invoked.
 
 fn main() {
     println!("cargo:rerun-if-changed=templates");

@@ -1,4 +1,4 @@
-//! Kleine Antworten für Anwendungsviews. Auth bleibt im vorhandenen Dienst.
+//! Lightweight responses for application views. Authentication stays in the existing service.
 
 use crate::pages::{message, Site};
 use axum::http::{header, HeaderMap, StatusCode};

@@ -51,7 +51,7 @@ pub use serde;
 pub use serde_json;
 pub use uuid;
 
-/// Baut den Mail-Dienst aus `fexu.toml`. Das SMTP-Passwort bleibt in der Umgebung.
+/// Builds the mail service from `fexu.toml`. The SMTP password stays in the environment.
 pub fn mail_for(project: &fexu_migrations::ProjectConfig) -> fexu_mail::MailService {
     fexu_mail::MailService::open(&fexu_mail::MailConfig {
         backend: project.mail_backend.clone(),
