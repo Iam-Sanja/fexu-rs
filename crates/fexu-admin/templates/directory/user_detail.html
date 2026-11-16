@@ -4,6 +4,7 @@
 <div class="record-layout">
 <div class="record-main">
 <dl class="card">
+<dt>{{ i18n.name }}</dt><dd>{% if display_name %}{{ display_name }}{% else %}—{% endif %}</dd>
 <dt>{{ i18n.email }}</dt><dd>{{ email }}</dd>
 <dt>{{ i18n.active }}</dt><dd><span class="flag">{% if is_active %}{{ i18n.active }}{% else %}{{ i18n.inactive }}{% endif %}</span></dd>
 <dt>{{ i18n.staff }}</dt><dd><span class="flag">{% if is_staff %}{{ i18n.staff }}{% else %}{{ i18n.no_staff }}{% endif %}</span></dd>
@@ -11,12 +12,46 @@
 <dt>{{ i18n.roles }}</dt><dd>{% if roles | length == 0 %}—{% else %}{{ roles | join(sep=", ") }}{% endif %}</dd>
 <dt>{{ i18n.permissions }}</dt><dd>{% if permissions | length == 0 %}<span class="hint">{{ i18n.no_permissions }}</span>{% else %}{{ permissions | join(sep=", ") }}{% endif %}</dd>
 </dl>
+<section class="section" id="roles">
+<h2>{{ i18n.assign_heading }}</h2>
+<p class="hint">{{ i18n.hint_role_grant }}</p>
+{% if roles | length == 0 %}
+<p class="empty">—</p>
+{% else %}
+<ul class="perm-list">
+{% for role in roles %}
+<li><span>{{ role }}</span></li>
+{% endfor %}
+</ul>
+{% endif %}
+{% if role_choices | length == 0 %}
+<p><a href="/admin/directory/roles/new">{{ i18n.add_role }}</a></p>
+{% else %}
+<form class="card" method="post" action="/admin/directory/assignments">
+<input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+<input type="hidden" name="email" value="{{ email }}">
+<div class="field">
+<label for="assign-role">{{ i18n.role }} <span aria-hidden="true">*</span></label>
+<select id="assign-role" name="role" required>
+<option value="">{{ i18n.choose }}</option>
+{% for role in role_choices %}
+<option value="{{ role }}">{{ role }}</option>
+{% endfor %}
+</select>
+</div>
+<label class="check"><input type="checkbox" name="confirm" value="1" required> <span>{{ i18n.confirm_check }}</span></label>
+<div class="actions">
+<button name="action" value="assign" type="submit">{{ i18n.assign }}</button>
+<button name="action" value="revoke" type="submit" class="ghost danger">{{ i18n.revoke }}</button>
+</div>
+</form>
+{% endif %}
+</section>
 <div class="actions section">
 <a class="button ghost" href="/admin/directory/users">{{ i18n.back }}</a>
 {% if can_edit %}<a class="button" href="/admin/directory/users/{{ id }}/edit">{{ i18n.edit }}</a>{% endif %}
 <a class="button ghost" href="/admin/audit?model=_fexu_users&amp;record={{ id }}">{{ i18n.history }}</a>
 </div>
 </div>
-{% include "history_aside.html" %}
 </div>
 {% endblock %}

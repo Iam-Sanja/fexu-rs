@@ -643,7 +643,7 @@ async fn canonical_editors_preserve_permissions_readonly_fields_roles_and_naviga
         &root_session,
     )
     .await;
-    assert!(!root_view.body.contains("name=\"email\""));
+    assert!(root_view.body.contains("name=\"email\""));
     let user_csrf = field_value(&user.body, "csrf_token");
     let protected_user_write = editor_call(
         port,
@@ -653,14 +653,20 @@ async fn canonical_editors_preserve_permissions_readonly_fields_roles_and_naviga
             ("csrf_token", &user_csrf),
             ("confirm", "1"),
             ("email", &root.email),
-            ("active", "false"),
-            ("staff", "false"),
+            ("active", "true"),
+            ("staff", "true"),
         ])),
         &root_session,
     )
     .await;
-    assert_eq!(protected_user_write.status, 403);
-    assert!(auth.get_user(root.id).await.unwrap().unwrap().is_active);
+    assert_eq!(
+        protected_user_write.status, 303,
+        "{}",
+        protected_user_write.body
+    );
+    let stored = auth.get_user(root.id).await.unwrap().unwrap();
+    assert!(stored.is_active);
+    assert!(stored.is_staff);
 
     let forbidden = editor_call(
         port,
@@ -1511,7 +1517,9 @@ async fn html_admin_works_without_javascript() {
     .unwrap();
     assert!(searched.body.contains("Apfel"));
     assert!(searched.body.contains("Obst"));
-    assert!(searched.body.contains(&format!("title=\"{category_id}\"")));
+    assert!(searched
+        .body
+        .contains(&format!("html_categories&#x2F;{category_id}")));
     assert!(!searched.body.contains("Stapel 00"));
     let filtered = call(
         "GET",
@@ -1859,9 +1867,8 @@ async fn html_admin_works_without_javascript() {
     let header = titles.body.find("<thead").expect("table header");
     let head_end = titles.body[header..].find("</thead>").expect("header end");
     let head = &titles.body[header..header + head_end];
-    let title_col = head.find("Title").expect("title column");
-    let id_col = head.find("Id").expect("id column");
-    assert!(title_col < id_col);
+    assert!(head.contains("Title"));
+    assert!(!head.contains("Id"));
     let counts = call(
         "GET",
         "/admin/models/html_counts".into(),
@@ -1873,7 +1880,11 @@ async fn html_admin_works_without_javascript() {
     assert_eq!(counts.status, 200, "{}", counts.body);
     assert!(counts.body.contains("42"));
     assert!(counts.body.contains("Total"));
-    assert!(counts.body.contains("name=\"filter.active\""));
+    assert!(counts.body.contains("facet-active"));
+    assert!(
+        counts.body.contains("filter.active=true")
+            || counts.body.contains("filter.active&#x3D;true")
+    );
     assert!(counts.body.contains("name=\"filter.total\""));
     assert!(counts.body.contains("type=\"number\""));
     assert!(counts.body.contains(">Alle<"));
@@ -2298,8 +2309,84 @@ async fn html_admin_works_without_javascript() {
     )
     .await
     .unwrap();
-    assert_eq!(protected.status, 403, "{}", protected.body);
-    assert!(protected.body.contains("/admin/directory/users"));
+    assert_eq!(protected.status, 303, "{}", protected.body);
+    assert!(location(&protected.headers).starts_with("/admin/login"));
+    let signed_out = call("GET", "/admin".into(), None, cookie_header(&root_session))
+        .await
+        .unwrap();
+    assert_eq!(signed_out.status, 303);
+    assert!(location(&signed_out.headers).starts_with("/admin/login"));
+    let relogin = call("GET", "/admin/login".into(), None, String::new())
+        .await
+        .unwrap();
+    let relogin_csrf = cookie_value(&relogin.headers, "fexu_login_csrf");
+    let back_in = call(
+        "POST",
+        "/admin/login".into(),
+        Some(form(&[
+            ("csrf_token", &relogin_csrf),
+            ("email", "root@example.com"),
+            ("password", "replacement-horse-battery"),
+            ("next", "/admin/directory/users"),
+        ])),
+        format!("Cookie: fexu_login_csrf={relogin_csrf}\r\n"),
+    )
+    .await
+    .unwrap();
+    assert_eq!(back_in.status, 303, "{}", back_in.body);
+    let interim = cookie_value(&back_in.headers, "fexu_session");
+    let interim_page = call(
+        "GET",
+        location(&back_in.headers),
+        None,
+        cookie_header(&interim),
+    )
+    .await
+    .unwrap();
+    let interim_token = field_value(&interim_page.body, "csrf_token");
+    let restored = call(
+        "POST",
+        format!("/admin/directory/users/{}/password", root.id),
+        Some(form(&[
+            ("csrf_token", &interim_token),
+            ("password", "correct-horse-battery"),
+            ("password_confirm", "correct-horse-battery"),
+            ("confirm", "1"),
+        ])),
+        cookie_header(&interim),
+    )
+    .await
+    .unwrap();
+    assert_eq!(restored.status, 303, "{}", restored.body);
+    let root_login = call("GET", "/admin/login".into(), None, String::new())
+        .await
+        .unwrap();
+    let root_csrf_login = cookie_value(&root_login.headers, "fexu_login_csrf");
+    let root_in = call(
+        "POST",
+        "/admin/login".into(),
+        Some(form(&[
+            ("csrf_token", &root_csrf_login),
+            ("email", "root@example.com"),
+            ("password", "correct-horse-battery"),
+            ("next", "/admin/directory/users"),
+        ])),
+        format!("Cookie: fexu_login_csrf={root_csrf_login}\r\n"),
+    )
+    .await
+    .unwrap();
+    assert_eq!(root_in.status, 303, "{}", root_in.body);
+    let root_session = cookie_value(&root_in.headers, "fexu_session");
+    let users = call(
+        "GET",
+        "/admin/directory/users".into(),
+        None,
+        cookie_header(&root_session),
+    )
+    .await
+    .unwrap();
+    assert_eq!(users.status, 200, "{}", users.body);
+    let root_token = field_value(&users.body, "csrf_token");
     let self_off = call(
         "POST",
         format!("/admin/directory/users/{}/active", root.id),
@@ -2308,8 +2395,10 @@ async fn html_admin_works_without_javascript() {
     )
     .await
     .unwrap();
-    assert_eq!(self_off.status, 403);
-    assert!(self_off.body.contains("/admin/directory/users"));
+    assert_eq!(self_off.status, 422, "{}", self_off.body);
+    assert!(self_off
+        .body
+        .contains("Diese Aktion braucht eine Bestätigung."));
     let unconfirmed = call(
         "POST",
         format!("/admin/directory/users/{}/active", plain.id),
@@ -3238,7 +3327,16 @@ async fn admin_v018_drafts_inlines_bulk_and_audit() {
     let root_home = call("GET", "/admin".into(), None, cookie_header(&root_session))
         .await
         .unwrap();
-    let root_csrf = field_value(&root_home.body, "csrf_token");
+    assert_eq!(root_home.status, 303, "{}", root_home.body);
+    let root_landed = call(
+        "GET",
+        location(&root_home.headers),
+        None,
+        cookie_header(&root_session),
+    )
+    .await
+    .unwrap();
+    let root_csrf = field_value(&root_landed.body, "csrf_token");
     let staff_home = call("GET", "/admin".into(), None, cookie_header(&staff_session))
         .await
         .unwrap();
@@ -3833,12 +3931,12 @@ async fn admin_v018_drafts_inlines_bulk_and_audit() {
     .unwrap();
     assert_eq!(kept_page.status, 200, "{}", kept_page.body);
     assert!(
-        kept_page.body.contains("class=\"record-history\""),
+        !kept_page.body.contains("class=\"record-history\""),
         "{}",
         kept_page.body
     );
     assert!(
-        kept_page.body.contains("<time datetime=\""),
+        kept_page.body.contains("audit?model="),
         "{}",
         kept_page.body
     );
@@ -4085,11 +4183,48 @@ async fn admin_modeladmin_order_timeline_and_keyboard_markup() {
     let home = call("GET", "/admin".into(), None, cookie_header(&session))
         .await
         .unwrap();
+    assert_eq!(home.status, 303, "{}", home.body);
+    assert!(location(&home.headers).contains("/admin/boards/config"));
+    let home = call(
+        "GET",
+        location(&home.headers),
+        None,
+        cookie_header(&session),
+    )
+    .await
+    .unwrap();
+    assert_eq!(home.status, 200, "{}", home.body);
     assert!(home.body.contains("id=\"admin-nav\""));
     assert!(home.body.contains("class=\"nav-switch\""));
-    assert!(home.body.contains("model-card"));
-    assert!(home.body.contains("Liste öffnen"));
+    assert!(home.body.contains("class=\"nav-fold\""));
+    assert!(home.body.contains("Konfiguration"));
+    assert!(home.body.contains("class=\"account\""));
+    assert!(home.body.contains("Kontomenü"));
+    assert!(!home.body.contains("Letzte Vorgänge"));
+    assert!(home.body.contains("Noch kein Menü"));
+    assert!(!home.body.contains("model-card"));
     assert!(home.body.contains("href=\"#content\""));
+    let own_page = call(
+        "GET",
+        "/admin/account".into(),
+        None,
+        cookie_header(&session),
+    )
+    .await
+    .unwrap();
+    assert_eq!(own_page.status, 200, "{}", own_page.body);
+    assert!(!own_page.body.contains("id=\"pref-locale\""));
+    let settings = call(
+        "GET",
+        "/admin/settings".into(),
+        None,
+        cookie_header(&session),
+    )
+    .await
+    .unwrap();
+    assert_eq!(settings.status, 200, "{}", settings.body);
+    assert!(settings.body.contains("id=\"pref-locale\""));
+    assert!(settings.body.contains("id=\"pref-theme\""));
     let list = call(
         "GET",
         "/admin/models/html_products".into(),
@@ -4135,14 +4270,13 @@ async fn admin_modeladmin_order_timeline_and_keyboard_markup() {
     .await
     .unwrap();
     assert_eq!(editor.status, 200, "{}", editor.body);
-    assert!(editor.body.contains("class=\"timeline\""));
-    assert!(editor
+    assert!(!editor.body.contains("class=\"record-history\""));
+    assert!(!editor
         .body
         .contains("Nur Änderungen über die Administration"));
-    assert!(editor.body.contains("<time datetime=\""));
+    assert!(editor.body.contains("audit?model="), "{}", editor.body);
     assert!(editor.body.contains("Timeline-Apfel"));
     assert!(editor.body.contains("root@example.com"));
-    assert!(editor.body.contains("Angelegt"));
     let other = call(
         "POST",
         "/admin/models/html_products/new".into(),
@@ -4209,9 +4343,10 @@ async fn admin_modeladmin_order_timeline_and_keyboard_markup() {
     .unwrap();
     assert_eq!(staff_page.status, 200, "{}", staff_page.body);
     assert!(!staff_page.body.contains("root@example.com"));
-    assert!(staff_page
+    assert!(!staff_page
         .body
         .contains("Für diesen Datensatz ist noch kein Eintrag"));
+    assert!(staff_page.body.contains("audit?model="));
     server.abort();
 }
 

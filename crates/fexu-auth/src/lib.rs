@@ -47,5 +47,6 @@ pub use schema::{
     schema, ADMIN_AUDIT, ADMIN_DRAFTS,
 };
 pub use service::{
-    csrf_header_name, normalize_email, AuthService, AuthUser, IssuedSession, PublicUser,
+    clean_display_name, csrf_header_name, normalize_email, AuthService, AuthUser, IssuedSession,
+    PublicUser,
 };

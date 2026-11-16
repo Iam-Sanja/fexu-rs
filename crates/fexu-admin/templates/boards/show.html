@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block content %}
+<nav class="crumbs" aria-label="{{ i18n.breadcrumb }}"><a href="/admin">{{ i18n.dashboard }}</a> / <span>{{ board.name }}</span></nav>
+{% if superuser %}<p><a href="/admin/boards/{{ board.id }}/edit">{{ i18n.board_edit }}</a></p>{% endif %}
+{% if slicers | length > 0 %}
+<form class="board-slicers" method="get" action="/admin/boards/{{ board.id }}">
+{% for slicer in slicers %}
+<label>{{ slicer.label }}
+{% if slicer.options | length > 0 %}
+<select name="slice.{{ slicer.model }}.{{ slicer.field }}">
+<option value="">{{ i18n.all }}</option>
+{% for option in slicer.options %}
+<option value="{{ option.id }}" {% if option.selected %}selected{% endif %}>{{ option.label }}</option>
+{% endfor %}
+</select>
+{% elif slicer.kind == "number" %}
+<input name="slice.{{ slicer.model }}.{{ slicer.field }}" type="number" inputmode="numeric" value="{{ slicer.value }}">
+{% elif slicer.kind == "date" %}
+<input name="slice.{{ slicer.model }}.{{ slicer.field }}" type="date" value="{{ slicer.value }}">
+{% else %}
+<input name="slice.{{ slicer.model }}.{{ slicer.field }}" value="{{ slicer.value }}">
+{% endif %}
+</label>
+{% endfor %}
+<button type="submit">{{ i18n.filter }}</button>
+{% if sliced %}<a class="button ghost" href="/admin/boards/{{ board.id }}">{{ i18n.reset }}</a>{% endif %}
+</form>
+{% endif %}
+{% if blocks | length == 0 %}
+<p class="empty">{{ i18n.board_empty }}</p>
+{% endif %}
+{% if blocks | length > 0 %}
+<div class="board-canvas">
+{% for block in blocks %}{% include "board_block.html" %}{% endfor %}
+</div>
+{% endif %}
+{% endblock %}

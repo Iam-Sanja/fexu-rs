@@ -233,6 +233,9 @@ enum AdminCommand {
         /// Grants model permissions but does not grant staff or admin access.
         #[arg(long)]
         superuser: bool,
+        /// Display name. One field, not a split first and last name.
+        #[arg(long)]
+        name: Option<String>,
         #[arg(long)]
         database_url: Option<String>,
     },
@@ -1150,6 +1153,7 @@ fn run_admin(action: AdminCommand) -> Result<(), String> {
             email,
             staff,
             superuser,
+            name,
             database_url,
         } => {
             let email = match email {
@@ -1175,6 +1179,10 @@ fn run_admin(action: AdminCommand) -> Result<(), String> {
                 }
             };
             let url = resolve_database_url(database_url)?;
+            let display_name = name.unwrap_or_default();
+            if fexu_auth::clean_display_name(&display_name).is_err() {
+                return Err("The name is invalid. Use at most 80 characters.".to_owned());
+            }
             let runtime = tokio::runtime::Runtime::new().map_err(|error| error.to_string())?;
             let user = runtime.block_on(async {
                 let db = fexu_db::connect(&url)
@@ -1184,9 +1192,14 @@ fn run_admin(action: AdminCommand) -> Result<(), String> {
                     .await
                     .map_err(|error| error.to_string())?;
                 let auth = fexu_auth::AuthService::new(db, fexu_auth::AuthConfig::from_env());
-                auth.create_user(&email, &password, staff, superuser)
+                let user = auth
+                    .create_user(&email, &password, staff, superuser)
                     .await
-                    .map_err(auth_message)
+                    .map_err(auth_message)?;
+                auth.set_display_name(user.id, &display_name)
+                    .await
+                    .map_err(auth_message)?;
+                Ok::<_, String>(user)
             })?;
             println!(
                 "{} {} ({})",
@@ -1194,6 +1207,9 @@ fn run_admin(action: AdminCommand) -> Result<(), String> {
                 user.email,
                 user.id
             );
+            if !display_name.trim().is_empty() {
+                println!("{}", display_name.trim());
+            }
             println!("{}", crate::text::line("flag_active"));
             println!(
                 "{}",

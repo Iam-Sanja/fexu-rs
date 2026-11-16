@@ -10,6 +10,18 @@
 <div class="table-wrap" tabindex="0">
 <table>
 <caption class="sr-only">{{ inline.label }}</caption>
+{% if inline.wide %}
+<thead><tr>{% if inline.pictures %}<th scope="col" class="is-picture"><span class="sr-only">{{ i18n.image }}</span></th>{% endif %}{% for heading in inline.headings %}<th scope="col">{{ heading }}</th>{% endfor %}<th scope="col">{{ i18n.actions }}</th></tr></thead>
+<tbody>
+{% for row in inline.rows %}
+<tr>
+{% if inline.pictures %}<td class="is-picture">{% for cell in row.cells %}{% if cell.image %}<img class="list-image" src="{{ cell.image }}" alt="">{% endif %}{% endfor %}</td>{% endif %}
+{% for cell in row.cells %}<td>{% if cell.href %}<a href="{{ cell.href }}">{{ cell.text }}</a>{% else %}{{ cell.text }}{% endif %}</td>{% endfor %}
+<td><a class="button ghost" href="{{ row.href }}" target="_blank" rel="noopener">{{ i18n.inline_open }}</a></td>
+</tr>
+{% endfor %}
+</tbody>
+{% else %}
 <thead><tr><th scope="col">{{ i18n.record }}</th><th scope="col">{{ i18n.actions }}</th></tr></thead>
 <tbody>
 {% for row in inline.rows %}
@@ -19,6 +31,7 @@
 </tr>
 {% endfor %}
 </tbody>
+{% endif %}
 </table>
 </div>
 {% if inline.next %}<p class="pager"><a href="{{ inline.next }}">{{ i18n.next }}</a></p>{% endif %}

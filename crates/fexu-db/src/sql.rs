@@ -583,9 +583,13 @@ pub async fn date_buckets(
         .map_err(FexuError::database)?;
     let mut buckets = Vec::new();
     for row in rows.into_iter().take(100) {
-        let label = row
-            .try_get::<String>("", "bucket")
-            .map_err(FexuError::database)?;
+        let Some(label) = row
+            .try_get::<Option<String>>("", "bucket")
+            .map_err(FexuError::database)?
+            .filter(|label| !label.is_empty())
+        else {
+            continue;
+        };
         let count = row
             .try_get::<i64>("", "bucket_count")
             .or_else(|_| row.try_get::<i32>("", "bucket_count").map(i64::from))

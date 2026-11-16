@@ -32,17 +32,35 @@ pub struct ModelAdmin {
     hidden: Vec<&'static str>,
     fieldsets: Vec<FieldsetDecl>,
     fieldsets_set: bool,
+    related: Vec<RelatedTable>,
     actions: Vec<(&'static str, &'static str)>,
     per_page: Option<u16>,
     links: Vec<ManyLink>,
+    list_editable: Vec<&'static str>,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 struct FieldsetDecl {
     name: &'static str,
     description: &'static str,
     optional: bool,
-    fields: &'static [&'static str],
+    rows: Vec<Vec<&'static str>>,
+}
+
+/// Eine Feldgruppe in der Reihenfolge der Zeilen. Jede innere Liste steht in einer Zeile.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FormLayout {
+    pub name: &'static str,
+    pub rows: Vec<Vec<&'static str>>,
+}
+
+/// Nur-Lese-Tabelle von Datensätzen eines anderen Modells, die auf diesen Datensatz zeigen.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RelatedTable {
+    pub name: &'static str,
+    pub child_key: &'static str,
+    pub column: &'static str,
+    pub label: &'static str,
 }
 
 /// Geprüfte Many-to-Many-Angabe. Die HTML-Oberfläche schreibt sie über `replace_links`.
@@ -71,6 +89,8 @@ pub struct CheckedModelAdmin {
     key: &'static str,
     fields: Vec<AdminFieldMeta>,
     fieldsets: Option<Vec<AdminFieldset>>,
+    layouts: Vec<FormLayout>,
+    related: Vec<RelatedTable>,
     ordering: Option<&'static str>,
     ordering_replaced: bool,
     actions: Vec<(&'static str, &'static str)>,
@@ -78,6 +98,7 @@ pub struct CheckedModelAdmin {
     links: Vec<ManyLink>,
     list_order: Option<Vec<&'static str>>,
     filter_order: Option<Vec<&'static str>>,
+    list_editable: Vec<&'static str>,
 }
 
 impl ModelAdmin {
@@ -92,10 +113,18 @@ impl ModelAdmin {
             hidden: Vec::new(),
             fieldsets: Vec::new(),
             fieldsets_set: false,
+            related: Vec::new(),
             actions: Vec::new(),
             per_page: None,
             links: Vec::new(),
+            list_editable: Vec::new(),
         }
+    }
+
+    /// Felder, die in der Liste geändert und einzeln gespeichert werden können.
+    pub fn list_editable(mut self, fields: &'static [&'static str]) -> Self {
+        self.list_editable = fields.to_vec();
+        self
     }
 
     pub fn list_display(mut self, fields: &'static [&'static str]) -> Self {
@@ -141,7 +170,42 @@ impl ModelAdmin {
             name,
             description,
             optional,
-            fields,
+            rows: fields.iter().copied().map(|field| vec![field]).collect(),
+        });
+        self
+    }
+
+    /// Wie [`Self::fieldset`], aber jede innere Liste teilt sich eine Zeile. Eine Zeile trägt 1 bis 4 Felder.
+    pub fn fieldset_rows(
+        mut self,
+        name: &'static str,
+        description: &'static str,
+        optional: bool,
+        rows: &'static [&'static [&'static str]],
+    ) -> Self {
+        self.fieldsets_set = true;
+        self.fieldsets.push(FieldsetDecl {
+            name,
+            description,
+            optional,
+            rows: rows.iter().map(|row| row.to_vec()).collect(),
+        });
+        self
+    }
+
+    /// Verlinkte Datensätze eines anderen Admin-Modells. `column` ist dort der Fremdschlüssel auf dieses Modell.
+    pub fn related_table(
+        mut self,
+        name: &'static str,
+        child_key: &'static str,
+        column: &'static str,
+        label: &'static str,
+    ) -> Self {
+        self.related.push(RelatedTable {
+            name,
+            child_key,
+            column,
+            label,
         });
         self
     }
@@ -221,11 +285,21 @@ impl ModelAdmin {
         if let Some(names) = &self.filters {
             apply_flag(&mut fields, names, Flag::Filter)?;
         }
-        let fieldsets = if self.fieldsets_set {
-            Some(assign_fieldsets(&mut fields, &self.fieldsets)?)
+        let (fieldsets, layouts) = if self.fieldsets_set {
+            let sections = assign_fieldsets(&mut fields, &self.fieldsets)?;
+            let layouts = self
+                .fieldsets
+                .iter()
+                .map(|section| FormLayout {
+                    name: section.name,
+                    rows: section.rows.clone(),
+                })
+                .collect();
+            (Some(sections), layouts)
         } else {
-            None
+            (None, Vec::new())
         };
+        let related = checked_related(&self.related, columns)?;
         let (ordering, ordering_replaced) = match self.ordering {
             None => (meta.ordering, false),
             Some(value) => {
@@ -270,10 +344,46 @@ impl ModelAdmin {
             actions.push((*action, *code));
         }
         let links = checked_links(&self.links, columns)?;
+        let mut list_editable = Vec::new();
+        for name in &self.list_editable {
+            if !ident(name) || list_editable.contains(name) {
+                return Err(error(
+                    "admin.list_editable",
+                    format!("`{name}` is not a unique field name."),
+                ));
+            }
+            let field = fields.iter().find(|field| field.name == *name);
+            let column = columns.iter().find(|column| column.name == *name);
+            let allowed = field.is_some_and(|field| {
+                field.list_display && !field.hidden && !field.sensitive && !field.readonly
+            }) && column.is_some_and(|column| {
+                column.foreign_table.is_none()
+                    && !column.primary_key
+                    && matches!(
+                        column.kind,
+                        ColumnKind::Text
+                            | ColumnKind::BigInt
+                            | ColumnKind::Boolean
+                            | ColumnKind::Choice
+                            | ColumnKind::Date
+                            | ColumnKind::Time
+                            | ColumnKind::DateTime
+                    )
+            });
+            if !allowed {
+                return Err(error(
+                    "admin.list_editable",
+                    format!("`{name}` is not an editable list field."),
+                ));
+            }
+            list_editable.push(*name);
+        }
         Ok(CheckedModelAdmin {
             key: self.key,
             fields,
             fieldsets,
+            layouts,
+            related,
             ordering,
             ordering_replaced,
             actions,
@@ -281,6 +391,7 @@ impl ModelAdmin {
             links,
             list_order: self.list_display,
             filter_order: self.filters,
+            list_editable,
         })
     }
 }
@@ -296,6 +407,14 @@ impl CheckedModelAdmin {
 
     pub(crate) fn fieldsets(&self) -> Option<&[AdminFieldset]> {
         self.fieldsets.as_deref()
+    }
+
+    pub(crate) fn layouts(&self) -> &[FormLayout] {
+        &self.layouts
+    }
+
+    pub(crate) fn related(&self) -> &[RelatedTable] {
+        &self.related
     }
 
     pub(crate) fn ordering(&self) -> Option<&'static str> {
@@ -321,6 +440,10 @@ impl CheckedModelAdmin {
     /// Deklarierte Listenreihenfolge. `None` behält die Reihenfolge der Modellfelder.
     pub(crate) fn list_order(&self) -> Option<&[&'static str]> {
         self.list_order.as_deref()
+    }
+
+    pub(crate) fn list_editable(&self) -> &[&'static str] {
+        &self.list_editable
     }
 
     /// Deklarierte Filterreihenfolge. `None` behält die Reihenfolge der Modellfelder.
@@ -455,7 +578,7 @@ fn assign_fieldsets(
     let mut seen = Vec::new();
     let mut rendered = Vec::new();
     for section in sections {
-        if !ident(section.name) || section.description.len() > 200 {
+        if !fieldset_name(section.name) || section.description.len() > 200 {
             return Err(error(
                 "admin.fieldset",
                 format!("`{}` is not a valid fieldset.", section.name),
@@ -470,8 +593,24 @@ fn assign_fieldsets(
                 format!("`{}` is declared more than once.", section.name),
             ));
         }
-        require_known(fields, section.fields)?;
-        for name in section.fields {
+        if section.rows.is_empty() || section.rows.len() > 40 {
+            return Err(error(
+                "admin.fieldset",
+                format!("`{}` needs 1 to 40 rows.", section.name),
+            ));
+        }
+        let mut names = Vec::new();
+        for row in &section.rows {
+            if row.is_empty() || row.len() > 4 {
+                return Err(error(
+                    "admin.fieldset",
+                    format!("A row in `{}` holds 1 to 4 fields.", section.name),
+                ));
+            }
+            names.extend(row.iter().copied());
+        }
+        require_known(fields, &names)?;
+        for name in &names {
             if seen.contains(name) {
                 return Err(error(
                     "admin.fieldset",
@@ -546,6 +685,47 @@ fn permission_code(code: &str) -> bool {
         && ident(resource)
         && ident(action)
         && code.split('.').nth(2).is_none()
+}
+
+fn checked_related(
+    tables: &[RelatedTable],
+    columns: &[ColumnSpec],
+) -> Result<Vec<RelatedTable>, ConfigError> {
+    if tables.len() > 8 {
+        return Err(error(
+            "admin.relation",
+            "A model can declare at most 8 related tables.".into(),
+        ));
+    }
+    let mut checked = Vec::new();
+    for table in tables {
+        if !ident(table.name)
+            || !ident(table.child_key)
+            || !ident(table.column)
+            || table.label.is_empty()
+            || table.label.len() > 80
+            || columns.iter().any(|column| column.name == table.name)
+            || checked
+                .iter()
+                .any(|existing: &RelatedTable| existing.name == table.name)
+        {
+            return Err(error(
+                "admin.relation",
+                format!("`{}` is not a valid related table.", table.name),
+            ));
+        }
+        checked.push(*table);
+    }
+    Ok(checked)
+}
+
+fn fieldset_name(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 80
+        && value == value.trim()
+        && value
+            .chars()
+            .all(|char| !char.is_control() && char != '<' && char != '>' && char != '"')
 }
 
 fn ident(value: &str) -> bool {
@@ -670,6 +850,24 @@ mod tests {
             .check(&meta(), &columns())
             .unwrap();
         assert_eq!(checked.fieldsets().unwrap().len(), 1);
+        assert_eq!(
+            checked.layouts()[0].rows,
+            vec![vec!["id"], vec!["title"], vec!["body"]]
+        );
+        let paired = ModelAdmin::new("notes")
+            .fieldset_rows("Notiz", "", false, &[&["id", "title"], &["body"]])
+            .check(&meta(), &columns())
+            .unwrap();
+        assert_eq!(paired.layouts()[0].rows[0], ["id", "title"]);
+        let wide = ModelAdmin::new("notes")
+            .fieldset_rows(
+                "Notiz",
+                "",
+                false,
+                &[&["id", "title", "body", "title", "id"]],
+            )
+            .check(&meta(), &columns());
+        assert_eq!(wide.unwrap_err().code, "admin.fieldset");
         let missing = ModelAdmin::new("notes")
             .fieldset("main", "Main", false, &["title"])
             .check(&meta(), &columns());

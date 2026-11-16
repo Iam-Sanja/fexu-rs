@@ -3,7 +3,7 @@
 <nav class="crumbs" aria-label="{{ i18n.breadcrumb }}"><a href="/admin">{{ i18n.dashboard }}</a> / <a href="{{ list_path }}">{{ model_label }}</a></nav>
 <div class="record-layout">
 <div class="record-main">
-<form class="card" method="post" action="{{ action }}" {% if existing %}data-track-dirty="record"{% endif %}>
+<form class="card" method="post" action="{{ action }}" {% if uploads %}enctype="multipart/form-data"{% endif %} {% if existing %}data-track-dirty="record"{% endif %}>
 <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
 {% if draft %}<input type="hidden" name="_draft" value="{{ draft }}">{% endif %}
 {% if error_fields %}
@@ -23,21 +23,33 @@
 <details class="form-section">
 <summary>{{ section.name }}</summary>
 {% if section.description %}<p class="hint">{{ section.description }}</p>{% endif %}
-{% for field in section.fields %}
+{% for row in section.rows %}
+<div class="field-row cols-{{ row.fields | length }}">
+{% for field in row.fields %}
 {% include "field.html" %}
+{% endfor %}
+</div>
 {% endfor %}
 </details>
 {% elif section.name %}
 <fieldset class="form-section">
 <legend>{{ section.name }}</legend>
 {% if section.description %}<p class="hint">{{ section.description }}</p>{% endif %}
-{% for field in section.fields %}
+{% for row in section.rows %}
+<div class="field-row cols-{{ row.fields | length }}">
+{% for field in row.fields %}
 {% include "field.html" %}
+{% endfor %}
+</div>
 {% endfor %}
 </fieldset>
 {% else %}
-{% for field in section.fields %}
+{% for row in section.rows %}
+<div class="field-row cols-{{ row.fields | length }}">
+{% for field in row.fields %}
 {% include "field.html" %}
+{% endfor %}
+</div>
 {% endfor %}
 {% endif %}
 {% endfor %}
@@ -99,6 +111,5 @@
 </form>
 {% include "inlines.html" %}
 </div>
-{% include "history_aside.html" %}
 </div>
 {% endblock %}

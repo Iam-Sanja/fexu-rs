@@ -3,7 +3,7 @@
 use crate::pages::{PageError, Site};
 use crate::urls::{UrlError, UrlSet};
 use crate::App;
-use fexu_admin::{AdminAction, AdminFilter, AdminView, AdminWidget};
+use fexu_admin::{AdminAction, AdminFilter, AdminView, AdminWidget, CheckedModelAdmin};
 use fexu_db::ModelRepository;
 use fexu_jobs::JobRegistry;
 use fexu_migrations::{package_order, same_migration_contract, PackageMigration, ProjectConfig};
@@ -235,6 +235,16 @@ impl<'a> Registration<'a> {
     pub fn admin_filter(&mut self, filter: AdminFilter) -> Result<(), AppError> {
         let registry = self.app.admin.take().unwrap_or_default();
         self.app.admin = Some(registry.filter(filter)?);
+        Ok(())
+    }
+
+    pub fn admin_configure(&mut self, checked: CheckedModelAdmin) -> Result<(), AppError> {
+        let registry = self.app.admin.take().unwrap_or_default();
+        self.app.admin = Some(
+            registry
+                .with_app(self.name, self.label)
+                .configure(checked)?,
+        );
         Ok(())
     }
 

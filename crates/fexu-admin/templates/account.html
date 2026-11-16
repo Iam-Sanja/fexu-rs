@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block content %}
+<nav class="crumbs" aria-label="{{ i18n.breadcrumb }}"><a href="/admin">{{ i18n.dashboard }}</a> / <span>{{ i18n.account }}</span></nav>
+<form class="settings" method="post" action="/admin/account">
+<input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+<section class="card">
+<div class="field">
+<label for="profile-name">{{ i18n.name }}</label>
+<p class="hint" id="profile-name-hint">{{ i18n.hint_name }}</p>
+<input id="profile-name" name="name" maxlength="80" autocomplete="name" value="{{ display_name }}" aria-describedby="profile-name-hint">
+</div>
+<div class="field">
+<label for="profile-email">{{ i18n.email }} <span aria-hidden="true">*</span></label>
+<input id="profile-email" name="email" type="email" required autocomplete="email" value="{{ user_email }}" {% if profile_error %}aria-invalid="true"{% endif %}>
+{% if profile_error %}<p class="field-error" role="alert">{{ profile_error }}</p>{% endif %}
+</div>
+<div class="actions">
+<button type="submit">{{ i18n.save }}</button>
+<a class="button ghost" href="/admin/account/password">{{ i18n.set_password }}</a>
+</div>
+</section>
+</form>
+{% endblock %}

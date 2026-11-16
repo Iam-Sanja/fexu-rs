@@ -6,7 +6,7 @@
 <div class="field">
 <label for="role-name">{{ i18n.role }} <span aria-hidden="true">*</span> <span class="hint">{{ i18n.required }}</span></label>
 <p class="hint" id="role-name-hint">{{ i18n.hint_role_name }}</p>
-<input id="role-name" name="name" required aria-describedby="role-name-hint" pattern="[A-Za-z0-9_.]+" autofocus>
+<input id="role-name" name="name" required maxlength="80" aria-describedby="role-name-hint" autofocus>
 </div>
 <div class="actions">
 <button type="submit">{{ i18n.save }}</button>

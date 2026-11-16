@@ -9,9 +9,7 @@ use crate::http::{
 };
 use crate::localization::{bulk_notice, catalog, normalize, notice, validation_text};
 use crate::registry::{redact, sensitive, AdminRegistry, ManagedModel};
-use crate::relations::{
-    current_members, lookup_page, posted_members, replace_links, scoped_membership,
-};
+use crate::relations::{current_members, lookup_page, posted_members, scoped_membership};
 use crate::rendering::render;
 use axum::body::Bytes;
 use axum::extract::{Extension, Path, Query, RawQuery, State};
@@ -38,6 +36,38 @@ pub fn routes(router: Router<AppState>, registry: AdminRegistry) -> Router<AppSt
             .route("/admin/login", get(login_form).post(login_submit))
             .route("/admin/logout", post(logout))
             .route("/admin/preferences", post(preferences))
+            .route("/admin/account", get(account).post(account_save))
+            .route(
+                "/admin/account/password",
+                get(account_password).post(account_password_save),
+            )
+            .route("/admin/settings", get(settings_page).post(settings_save))
+            .route("/admin/brand/favicon", get(brand_favicon))
+            .route("/admin/brand/apple-touch", get(brand_apple))
+            .route("/admin/search", get(admin_search))
+            .route("/admin/boards/config", get(board_config))
+            .route("/admin/boards", post(board_create))
+            .route("/admin/boards/{id}", get(board_show))
+            .route("/admin/boards/{id}/edit", get(board_edit))
+            .route("/admin/boards/{id}/choose", post(board_choose))
+            .route("/admin/boards/{id}/delete", post(board_delete))
+            .route("/admin/boards/{id}/home", post(board_home))
+            .route("/admin/boards/{id}/move", post(board_move))
+            .route("/admin/boards/{id}/preview", post(widget_preview))
+            .route("/admin/boards/{id}/widgets", post(widget_create))
+            .route("/admin/boards/{id}/widgets/{widget}", post(widget_update))
+            .route(
+                "/admin/boards/{id}/widgets/{widget}/move",
+                post(widget_move),
+            )
+            .route(
+                "/admin/boards/{id}/widgets/{widget}/place",
+                post(widget_place),
+            )
+            .route(
+                "/admin/boards/{id}/widgets/{widget}/delete",
+                post(widget_delete),
+            )
             .route("/admin/audit", get(audit_page))
             .route("/admin/models", get(model_index))
             .route("/admin/models/{model}", get(model_list))
@@ -73,6 +103,8 @@ pub fn routes(router: Router<AppState>, registry: AdminRegistry) -> Router<AppSt
                 "/admin/models/{model}/{id}/delete",
                 get(model_delete).post(model_remove),
             )
+            .route("/admin/models/{model}/{id}/file/{field}", get(record_file))
+            .route("/admin/models/{model}/{id}/row", post(row_save))
             .route("/admin/directory/users", get(users))
             .route(
                 "/admin/directory/users/new",
@@ -418,6 +450,28 @@ async fn dashboard(
         )
         .await;
     };
+    let listed = match crate::boards::list_boards(&state.db).await {
+        Ok(rows) => rows,
+        Err(_) => {
+            return error_page(
+                &state,
+                &headers,
+                &registry,
+                &locale,
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "board_read_error",
+                true,
+                &user.email,
+            )
+            .await;
+        }
+    };
+    if let Some(board) = listed.iter().find(|board| board.home).or(listed.first()) {
+        return redirect(&format!("/admin/boards/{}", board.id));
+    }
+    if user.is_superuser {
+        return redirect("/admin/boards/config");
+    }
     let csrf = session_csrf(state.auth.as_ref().unwrap(), &headers).await;
     page_as(
         &state,
@@ -426,9 +480,9 @@ async fn dashboard(
         "dashboard.html",
         &locale,
         theme_of(&headers),
-        catalog(&locale)["dashboard"]
+        catalog(&locale)["dashboards"]
             .as_str()
-            .unwrap_or("Dashboard"),
+            .unwrap_or("Dashboards"),
         true,
         user.is_superuser,
         &user.email,
@@ -439,10 +493,3826 @@ async fn dashboard(
             query.get("notice").map(String::as_str).unwrap_or(""),
         ),
         "",
-        json!({ "user_email": user.email }),
+        json!({}),
     )
     .await
 }
+
+async fn account(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Extension(registry): Extension<AdminRegistry>,
+    Query(query): Query<HashMap<String, String>>,
+) -> Response {
+    let locale = locale_of(
+        &headers,
+        &registry.branding().default_locale,
+        &registry.branding().fallback_locale,
+    );
+    let user = match require_get(&state, &headers, &registry, "/admin/account").await {
+        Ok(user) => user,
+        Err(response) => return response,
+    };
+    let Some(auth) = state.auth.as_ref() else {
+        return error_page(
+            &state,
+            &headers,
+            &registry,
+            &locale,
+            StatusCode::FORBIDDEN,
+            "forbidden",
+            true,
+            &user.email,
+        )
+        .await;
+    };
+    let csrf = session_csrf(auth, &headers).await;
+    let display_name = auth.display_name(user.id).await.unwrap_or_default();
+    page_as(
+        &state,
+        &user,
+        &registry,
+        "account.html",
+        &locale,
+        theme_of(&headers),
+        catalog(&locale)["account"].as_str().unwrap_or("Account"),
+        true,
+        user.is_superuser,
+        &user.email,
+        &csrf,
+        "/admin/account",
+        &flash(
+            &locale,
+            query.get("notice").map(String::as_str).unwrap_or(""),
+        ),
+        "",
+        json!({
+            "user_email": user.email,
+            "display_name": display_name,
+            "profile_error": ""
+        }),
+    )
+    .await
+}
+
+async fn account_save(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Extension(registry): Extension<AdminRegistry>,
+    body: Bytes,
+) -> Response {
+    let locale = locale_of(
+        &headers,
+        &registry.branding().default_locale,
+        &registry.branding().fallback_locale,
+    );
+    let user = match require_post(&state, &headers, &body).await {
+        Ok(user) => user,
+        Err(_) => {
+            return error_page(
+                &state,
+                &headers,
+                &registry,
+                &locale,
+                StatusCode::FORBIDDEN,
+                "csrf",
+                true,
+                "",
+            )
+            .await
+        }
+    };
+    let Some(auth) = state.auth.as_ref() else {
+        return error_page(
+            &state,
+            &headers,
+            &registry,
+            &locale,
+            StatusCode::FORBIDDEN,
+            "forbidden",
+            true,
+            &user.email,
+        )
+        .await;
+    };
+    let form = parse_form(&body);
+    let name = form.get("name").map(String::as_str).unwrap_or("");
+    let email = form
+        .get("email")
+        .map(String::as_str)
+        .unwrap_or(user.email.as_str());
+    let profile_error = if fexu_auth::clean_display_name(name).is_err()
+        || fexu_auth::normalize_email(email).is_err()
+    {
+        catalog(&locale)
+            .get("profile_invalid")
+            .and_then(Value::as_str)
+            .unwrap_or("The profile is invalid.")
+            .to_owned()
+    } else {
+        String::new()
+    };
+    if !profile_error.is_empty() {
+        return account_page(
+            PageCtx {
+                state: &state,
+                headers: &headers,
+                registry: &registry,
+                locale: &locale,
+                user: &user,
+            },
+            AccountForm {
+                notice: "",
+                error: &profile_error,
+                name,
+                email,
+            },
+        )
+        .await;
+    }
+    if auth.set_display_name(user.id, name).await.is_err() {
+        return account_page(
+            PageCtx {
+                state: &state,
+                headers: &headers,
+                registry: &registry,
+                locale: &locale,
+                user: &user,
+            },
+            AccountForm {
+                notice: "",
+                error: catalog(&locale)
+                    .get("profile_invalid")
+                    .and_then(Value::as_str)
+                    .unwrap_or("The profile is invalid."),
+                name,
+                email,
+            },
+        )
+        .await;
+    }
+    if auth.update_own_email(user.id, email).await.is_err() {
+        return account_page(
+            PageCtx {
+                state: &state,
+                headers: &headers,
+                registry: &registry,
+                locale: &locale,
+                user: &user,
+            },
+            AccountForm {
+                notice: "",
+                error: catalog(&locale)
+                    .get("email_taken")
+                    .and_then(Value::as_str)
+                    .unwrap_or("That email is already registered."),
+                name,
+                email,
+            },
+        )
+        .await;
+    }
+    redirect("/admin/account?notice=updated")
+}
+
+struct PageCtx<'a> {
+    state: &'a AppState,
+    headers: &'a HeaderMap,
+    registry: &'a AdminRegistry,
+    locale: &'a str,
+    user: &'a AuthUser,
+}
+
+fn screen<'a>(
+    state: &'a AppState,
+    headers: &'a HeaderMap,
+    registry: &'a AdminRegistry,
+    locale: &'a str,
+    user: &'a AuthUser,
+) -> PageCtx<'a> {
+    PageCtx {
+        state,
+        headers,
+        registry,
+        locale,
+        user,
+    }
+}
+
+struct AccountForm<'a> {
+    notice: &'a str,
+    error: &'a str,
+    name: &'a str,
+    email: &'a str,
+}
+
+async fn account_page(page: PageCtx<'_>, form: AccountForm<'_>) -> Response {
+    let PageCtx {
+        state,
+        headers,
+        registry,
+        user,
+        locale,
+    } = page;
+    let AccountForm {
+        notice,
+        error: profile_error,
+        name,
+        email,
+    } = form;
+    let csrf = if let Some(auth) = state.auth.as_ref() {
+        session_csrf(auth, headers).await
+    } else {
+        String::new()
+    };
+    let mut response = page_as(
+        state,
+        user,
+        registry,
+        "account.html",
+        locale,
+        theme_of(headers),
+        catalog(locale)["account"].as_str().unwrap_or("Account"),
+        true,
+        user.is_superuser,
+        email,
+        &csrf,
+        "/admin/account",
+        notice,
+        "",
+        json!({
+            "user_email": email,
+            "display_name": name,
+            "profile_error": profile_error
+        }),
+    )
+    .await;
+    if !profile_error.is_empty() {
+        *response.status_mut() = StatusCode::UNPROCESSABLE_ENTITY;
+    }
+    response
+}
+
+async fn account_password(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Extension(registry): Extension<AdminRegistry>,
+) -> Response {
+    let locale = locale_of(
+        &headers,
+        &registry.branding().default_locale,
+        &registry.branding().fallback_locale,
+    );
+    let user = match require_get(&state, &headers, &registry, "/admin/account/password").await {
+        Ok(user) => user,
+        Err(response) => return response,
+    };
+    password_page(&state, &headers, &registry, &user, &locale, "").await
+}
+
+async fn account_password_save(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Extension(registry): Extension<AdminRegistry>,
+    body: Bytes,
+) -> Response {
+    let locale = locale_of(
+        &headers,
+        &registry.branding().default_locale,
+        &registry.branding().fallback_locale,
+    );
+    let user = match require_post(&state, &headers, &body).await {
+        Ok(user) => user,
+        Err(_) => {
+            return error_page(
+                &state,
+                &headers,
+                &registry,
+                &locale,
+                StatusCode::FORBIDDEN,
+                "csrf",
+                true,
+                "",
+            )
+            .await
+        }
+    };
+    let Some(auth) = state.auth.as_ref() else {
+        return error_page(
+            &state,
+            &headers,
+            &registry,
+            &locale,
+            StatusCode::FORBIDDEN,
+            "forbidden",
+            true,
+            &user.email,
+        )
+        .await;
+    };
+    let form = parse_form(&body);
+    let Some((current, password)) = posted_password_change(&form) else {
+        return password_page(
+            &state,
+            &headers,
+            &registry,
+            &user,
+            &locale,
+            catalog(&locale)
+                .get("password_mismatch")
+                .and_then(Value::as_str)
+                .unwrap_or("The passwords do not match."),
+        )
+        .await;
+    };
+    match auth.change_password(&user, current, password).await {
+        Ok(cleared) => {
+            let mut response = redirect("/admin/login");
+            append_cookie(&mut response, &cleared);
+            response
+        }
+        Err(AuthError::InvalidCredentials) => {
+            password_page(
+                &state,
+                &headers,
+                &registry,
+                &user,
+                &locale,
+                catalog(&locale)
+                    .get("password_current_invalid")
+                    .and_then(Value::as_str)
+                    .unwrap_or("The current password is wrong."),
+            )
+            .await
+        }
+        Err(_) => {
+            password_page(
+                &state,
+                &headers,
+                &registry,
+                &user,
+                &locale,
+                catalog(&locale)
+                    .get("password_invalid")
+                    .and_then(Value::as_str)
+                    .unwrap_or("The password must contain 12 to 128 characters."),
+            )
+            .await
+        }
+    }
+}
+
+fn posted_password_change(form: &HashMap<String, String>) -> Option<(&str, &str)> {
+    let current = form
+        .get("current_password")
+        .map(String::as_str)
+        .filter(|value| !value.is_empty())?;
+    let password = form
+        .get("password")
+        .map(String::as_str)
+        .filter(|value| !value.is_empty())?;
+    let confirm = form.get("password_confirm").map(String::as_str)?;
+    (password == confirm).then_some((current, password))
+}
+
+async fn password_page(
+    state: &AppState,
+    headers: &HeaderMap,
+    registry: &AdminRegistry,
+    user: &AuthUser,
+    locale: &str,
+    password_error: &str,
+) -> Response {
+    let csrf = if let Some(auth) = state.auth.as_ref() {
+        session_csrf(auth, headers).await
+    } else {
+        String::new()
+    };
+    let mut response = page_as(
+        state,
+        user,
+        registry,
+        "password.html",
+        locale,
+        theme_of(headers),
+        catalog(locale)["set_password"]
+            .as_str()
+            .unwrap_or("Set a new password"),
+        true,
+        user.is_superuser,
+        &user.email,
+        &csrf,
+        "/admin/account/password",
+        "",
+        "",
+        json!({ "password_error": password_error }),
+    )
+    .await;
+    if !password_error.is_empty() {
+        *response.status_mut() = StatusCode::UNPROCESSABLE_ENTITY;
+    }
+    response
+}
+
+async fn settings_page(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Extension(registry): Extension<AdminRegistry>,
+    Query(query): Query<HashMap<String, String>>,
+) -> Response {
+    crate::project::ensure(&registry, &state.db).await;
+    let locale = locale_of(
+        &headers,
+        &registry.branding().default_locale,
+        &registry.branding().fallback_locale,
+    );
+    let user = match require_get(&state, &headers, &registry, "/admin/settings").await {
+        Ok(user) => user,
+        Err(response) => return response,
+    };
+    let csrf = if let Some(auth) = state.auth.as_ref() {
+        session_csrf(auth, &headers).await
+    } else {
+        String::new()
+    };
+    page_as(
+        &state,
+        &user,
+        &registry,
+        "settings.html",
+        &locale,
+        theme_of(&headers),
+        catalog(&locale)["settings"].as_str().unwrap_or("Settings"),
+        true,
+        user.is_superuser,
+        &user.email,
+        &csrf,
+        "/admin/settings",
+        &flash(
+            &locale,
+            query.get("notice").map(String::as_str).unwrap_or(""),
+        ),
+        "",
+        json!({ "project_editor": user.is_superuser, "project_error": "" }),
+    )
+    .await
+}
+
+struct SettingsPost {
+    fields: HashMap<String, String>,
+    favicon: Vec<u8>,
+    apple: Vec<u8>,
+}
+
+fn settings_post(headers: &HeaderMap, body: &Bytes) -> Result<SettingsPost, ()> {
+    let content_type = headers
+        .get(header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or("");
+    if !content_type
+        .to_ascii_lowercase()
+        .starts_with("multipart/form-data")
+    {
+        return Ok(SettingsPost {
+            fields: parse_form(body),
+            favicon: Vec::new(),
+            apple: Vec::new(),
+        });
+    }
+    let parts = fexu_storage::read_multipart(content_type, body).map_err(|_| ())?;
+    let mut fields = HashMap::new();
+    let mut favicon = Vec::new();
+    let mut apple = Vec::new();
+    for part in parts {
+        if part.filename.is_some() && part.name == "favicon" {
+            favicon = part.bytes;
+            continue;
+        }
+        if part.filename.is_some() && part.name == "apple_touch_icon" {
+            apple = part.bytes;
+            continue;
+        }
+        if part.filename.is_none() {
+            if let Ok(text) = String::from_utf8(part.bytes) {
+                fields.insert(part.name, text);
+            }
+        }
+    }
+    Ok(SettingsPost {
+        fields,
+        favicon,
+        apple,
+    })
+}
+
+async fn project_rejected(
+    state: &AppState,
+    headers: &HeaderMap,
+    registry: &AdminRegistry,
+    user: &AuthUser,
+    locale: &str,
+    theme: &str,
+    fields: &[(&str, &str)],
+) -> Response {
+    let csrf = if let Some(auth) = state.auth.as_ref() {
+        session_csrf(auth, headers).await
+    } else {
+        String::new()
+    };
+    let mut extra = json!({
+        "project_editor": true,
+        "project_error": catalog(locale).get("project_invalid").and_then(Value::as_str).unwrap_or("The project details are invalid.")
+    });
+    if let Some(object) = extra.as_object_mut() {
+        for (key, value) in fields {
+            let name = match *key {
+                "primary_color" => "project_color",
+                "default_locale" => "project_locale",
+                "fallback_locale" => "project_fallback",
+                "currency" => "project_currency",
+                other => other,
+            };
+            object.insert((*name).to_owned(), json!(value));
+        }
+    }
+    let mut response = page_as(
+        state,
+        user,
+        registry,
+        "settings.html",
+        locale,
+        theme,
+        catalog(locale)["settings"].as_str().unwrap_or("Settings"),
+        true,
+        user.is_superuser,
+        &user.email,
+        &csrf,
+        "/admin/settings",
+        "",
+        "",
+        extra,
+    )
+    .await;
+    *response.status_mut() = StatusCode::UNPROCESSABLE_ENTITY;
+    let config = state.auth.as_ref().map(|auth| auth.config());
+    append_cookie(
+        &mut response,
+        &preference_cookie("fexu_locale", locale, config),
+    );
+    append_cookie(
+        &mut response,
+        &preference_cookie("fexu_theme", theme, config),
+    );
+    response
+}
+
+async fn brand_favicon(State(state): State<AppState>) -> Response {
+    brand_icon(&state, true).await
+}
+
+async fn brand_apple(State(state): State<AppState>) -> Response {
+    brand_icon(&state, false).await
+}
+
+async fn brand_icon(state: &AppState, favicon: bool) -> Response {
+    let file = match crate::project::load(&state.db).await {
+        Ok(Some(record)) => {
+            if favicon {
+                record.favicon_file
+            } else {
+                record.apple_file
+            }
+        }
+        _ => None,
+    };
+    let Some((kind, bytes)) = file else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    let content_type = match kind.as_str() {
+        "image/png" => "image/png",
+        "image/jpeg" => "image/jpeg",
+        "image/gif" => "image/gif",
+        "image/webp" => "image/webp",
+        "image/x-icon" => "image/x-icon",
+        _ => return StatusCode::NOT_FOUND.into_response(),
+    };
+    let mut response = Response::new(axum::body::Body::from(bytes));
+    *response.status_mut() = StatusCode::OK;
+    response
+        .headers_mut()
+        .insert(header::CONTENT_TYPE, HeaderValue::from_static(content_type));
+    response.headers_mut().insert(
+        header::CACHE_CONTROL,
+        HeaderValue::from_static("public, max-age=86400"),
+    );
+    response.headers_mut().insert(
+        header::X_CONTENT_TYPE_OPTIONS,
+        HeaderValue::from_static("nosniff"),
+    );
+    response
+}
+
+async fn settings_save(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Extension(registry): Extension<AdminRegistry>,
+    body: Bytes,
+) -> Response {
+    crate::project::ensure(&registry, &state.db).await;
+    let locale = locale_of(
+        &headers,
+        &registry.branding().default_locale,
+        &registry.branding().fallback_locale,
+    );
+    let user = match require_post(&state, &headers, &body).await {
+        Ok(user) => user,
+        Err(()) => {
+            return error_page(
+                &state,
+                &headers,
+                &registry,
+                &locale,
+                StatusCode::FORBIDDEN,
+                "csrf",
+                true,
+                "",
+            )
+            .await
+        }
+    };
+    let posted = match settings_post(&headers, &body) {
+        Ok(posted) => posted,
+        Err(()) => {
+            let theme = theme_of(&headers);
+            return project_rejected(&state, &headers, &registry, &user, &locale, &theme, &[])
+                .await;
+        }
+    };
+    let form = &posted.fields;
+    let chosen = match form.get("locale").map(String::as_str).unwrap_or("") {
+        "de" => "de",
+        "en" => "en",
+        _ => locale.as_str(),
+    };
+    let current_theme = theme_of(&headers);
+    let theme = match form.get("theme").map(String::as_str).unwrap_or("") {
+        "light" => "light",
+        "dark" => "dark",
+        "system" => "system",
+        _ => current_theme.as_str(),
+    };
+    let config = state.auth.as_ref().map(|auth| auth.config());
+    if user.is_superuser {
+        let fields = [
+            (
+                "site_title",
+                form.get("site_title").map(String::as_str).unwrap_or(""),
+            ),
+            (
+                "site_header",
+                form.get("site_header").map(String::as_str).unwrap_or(""),
+            ),
+            (
+                "app_name",
+                form.get("app_name").map(String::as_str).unwrap_or(""),
+            ),
+            (
+                "primary_color",
+                form.get("primary_color").map(String::as_str).unwrap_or(""),
+            ),
+            (
+                "default_locale",
+                form.get("default_locale").map(String::as_str).unwrap_or(""),
+            ),
+            (
+                "fallback_locale",
+                form.get("fallback_locale")
+                    .map(String::as_str)
+                    .unwrap_or(""),
+            ),
+            (
+                "currency",
+                form.get("currency").map(String::as_str).unwrap_or(""),
+            ),
+        ];
+        let Some(mut record) = crate::project::parse(&fields) else {
+            return project_rejected(&state, &headers, &registry, &user, chosen, theme, &fields)
+                .await;
+        };
+        let existing = crate::project::load(&state.db).await.ok().flatten();
+        let (old_favicon, old_favicon_file, old_apple, old_apple_file) = match existing {
+            Some(existing) => (
+                existing.icons.favicon,
+                existing.favicon_file,
+                existing.icons.apple_touch_icon,
+                existing.apple_file,
+            ),
+            None => (String::new(), None, String::new(), None),
+        };
+        let Some(favicon_choice) = crate::project::choose_icon(
+            form.get("favicon_clear").map(String::as_str) == Some("1"),
+            &posted.favicon,
+        ) else {
+            return project_rejected(&state, &headers, &registry, &user, chosen, theme, &fields)
+                .await;
+        };
+        let Some(apple_choice) = crate::project::choose_icon(
+            form.get("apple_clear").map(String::as_str) == Some("1"),
+            &posted.apple,
+        ) else {
+            return project_rejected(&state, &headers, &registry, &user, chosen, theme, &fields)
+                .await;
+        };
+        let (href, file) =
+            crate::project::apply_icon(&old_favicon, old_favicon_file, favicon_choice, "favicon");
+        record.icons.favicon = href;
+        record.favicon_file = file;
+        let (href, file) =
+            crate::project::apply_icon(&old_apple, old_apple_file, apple_choice, "apple-touch");
+        record.icons.apple_touch_icon = href;
+        record.apple_file = file;
+        if crate::project::save(&state.db, &record).await.is_err() {
+            return error_page(
+                &state,
+                &headers,
+                &registry,
+                chosen,
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "forbidden",
+                true,
+                &user.email,
+            )
+            .await;
+        }
+        registry.apply_project(record.branding, record.icons);
+        registry.mark_project_loaded();
+    }
+    let mut response = redirect("/admin/settings?notice=updated");
+    append_cookie(
+        &mut response,
+        &preference_cookie("fexu_locale", chosen, config),
+    );
+    append_cookie(
+        &mut response,
+        &preference_cookie("fexu_theme", theme, config),
+    );
+    response
+}
+
+async fn admin_search(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Extension(registry): Extension<AdminRegistry>,
+    Query(params): Query<HashMap<String, String>>,
+) -> Response {
+    let locale = locale_of(
+        &headers,
+        &registry.branding().default_locale,
+        &registry.branding().fallback_locale,
+    );
+    let user = match require_get(&state, &headers, &registry, "/admin/search").await {
+        Ok(user) => user,
+        Err(response) => return response,
+    };
+    let query = params
+        .get("q")
+        .map(|value| value.trim().to_owned())
+        .unwrap_or_default();
+    if query.chars().count() > 200 {
+        return error_page(
+            &state,
+            &headers,
+            &registry,
+            &locale,
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "forbidden",
+            true,
+            &user.email,
+        )
+        .await;
+    }
+    let csrf = session_csrf(state.auth.as_ref().unwrap(), &headers).await;
+    let groups = if query.is_empty() {
+        Vec::new()
+    } else {
+        match search_groups(&state, &headers, &registry, &user, &locale, &query).await {
+            Ok(groups) => groups,
+            Err(response) => return *response,
+        }
+    };
+    page_as(
+        &state,
+        &user,
+        &registry,
+        "search.html",
+        &locale,
+        theme_of(&headers),
+        &text(&locale, "search_title"),
+        true,
+        user.is_superuser,
+        &user.email,
+        &csrf,
+        "/admin/search",
+        "",
+        "",
+        json!({ "query": query, "groups": groups }),
+    )
+    .await
+}
+
+async fn search_groups(
+    state: &AppState,
+    headers: &HeaderMap,
+    registry: &AdminRegistry,
+    user: &AuthUser,
+    locale: &str,
+    query: &str,
+) -> Result<Vec<Value>, Box<Response>> {
+    let needle = query.to_lowercase();
+    let Some(auth) = state.auth.as_ref() else {
+        return Err(Box::new(
+            error_page(
+                state,
+                headers,
+                registry,
+                locale,
+                StatusCode::FORBIDDEN,
+                "forbidden",
+                true,
+                &user.email,
+            )
+            .await,
+        ));
+    };
+    let mut groups = Vec::new();
+    let mut pages = Vec::new();
+    let boards = match crate::boards::list_boards(&state.db).await {
+        Ok(rows) => rows,
+        Err(_) => {
+            return Err(Box::new(
+                error_page(
+                    state,
+                    headers,
+                    registry,
+                    locale,
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "board_read_error",
+                    true,
+                    &user.email,
+                )
+                .await,
+            ));
+        }
+    };
+    for board in boards {
+        if board.name.to_lowercase().contains(&needle) {
+            pages.push(json!({
+                "text": board.name,
+                "href": format!("/admin/boards/{}", board.id)
+            }));
+        }
+    }
+    for (key, href) in [
+        ("history", "/admin/audit"),
+        ("users", "/admin/directory/users"),
+        ("roles", "/admin/directory/roles"),
+    ] {
+        if key != "history" && !user.is_superuser {
+            continue;
+        }
+        let label = text(locale, key);
+        if label.to_lowercase().contains(&needle) {
+            pages.push(json!({ "text": label, "href": href }));
+        }
+    }
+    for view in registry.views() {
+        if !view.in_navigation() {
+            continue;
+        }
+        let title = view.title(locale);
+        if !title.to_lowercase().contains(&needle) {
+            continue;
+        }
+        let allowed = match auth.holds(user, view.permission_code()).await {
+            Ok(allowed) => allowed,
+            Err(_) => {
+                return Err(Box::new(
+                    error_page(
+                        state,
+                        headers,
+                        registry,
+                        locale,
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        "forbidden",
+                        true,
+                        &user.email,
+                    )
+                    .await,
+                ));
+            }
+        };
+        if allowed {
+            pages.push(json!({
+                "text": title,
+                "href": format!("/admin/pages/{}", view.key())
+            }));
+        }
+    }
+    if !pages.is_empty() {
+        groups.push(json!({
+            "label": text(locale, "search_pages"),
+            "href": "",
+            "hits": pages,
+            "more": false
+        }));
+    }
+    if user.is_superuser {
+        let people = match auth.list_users().await {
+            Ok(rows) => rows,
+            Err(_) => {
+                return Err(Box::new(
+                    error_page(
+                        state,
+                        headers,
+                        registry,
+                        locale,
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        "forbidden",
+                        true,
+                        &user.email,
+                    )
+                    .await,
+                ));
+            }
+        };
+        let mut hits = Vec::new();
+        for person in people {
+            if person.email.to_lowercase().contains(&needle) {
+                hits.push(json!({
+                    "text": person.email,
+                    "href": format!("/admin/directory/users/{}", person.id)
+                }));
+            }
+        }
+        let more = hits.len() > 5;
+        hits.truncate(5);
+        if !hits.is_empty() {
+            groups.push(json!({
+                "label": text(locale, "users"),
+                "href": format!("/admin/directory/users?q={}", url_encode(query)),
+                "hits": hits,
+                "more": more
+            }));
+        }
+        let roles = match auth.list_roles().await {
+            Ok(rows) => rows,
+            Err(_) => {
+                return Err(Box::new(
+                    error_page(
+                        state,
+                        headers,
+                        registry,
+                        locale,
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        "forbidden",
+                        true,
+                        &user.email,
+                    )
+                    .await,
+                ));
+            }
+        };
+        let mut hits = Vec::new();
+        for (id, name) in roles {
+            if name.to_lowercase().contains(&needle) {
+                hits.push(json!({
+                    "text": name,
+                    "href": format!("/admin/directory/roles/{id}")
+                }));
+            }
+        }
+        let more = hits.len() > 5;
+        hits.truncate(5);
+        if !hits.is_empty() {
+            groups.push(json!({
+                "label": text(locale, "roles"),
+                "href": "/admin/directory/roles",
+                "hits": hits,
+                "more": more
+            }));
+        }
+    }
+    for model in registry.models() {
+        if list_blocked(model.as_ref()) {
+            continue;
+        }
+        match permit(auth, user, model.meta(), "read").await {
+            Ok(()) => {}
+            Err(FexuError::Forbidden | FexuError::Denied(_) | FexuError::Unauthorized(_)) => {
+                continue
+            }
+            Err(_) => {
+                return Err(Box::new(
+                    error_page(
+                        state,
+                        headers,
+                        registry,
+                        locale,
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        "forbidden",
+                        true,
+                        &user.email,
+                    )
+                    .await,
+                ));
+            }
+        }
+        let key = model.meta().key;
+        let app_key = registry.model_app(key).unwrap_or("");
+        let app_label = registry
+            .app_catalog()
+            .iter()
+            .find(|(name, _)| name == app_key)
+            .map(|(_, label)| label.as_str())
+            .unwrap_or("");
+        let named = model.meta().label.to_lowercase().contains(&needle)
+            || (!app_label.is_empty() && app_label.to_lowercase().contains(&needle));
+        let fields = registry.field_slice(model.meta());
+        let search_columns: Vec<&str> = fields
+            .iter()
+            .filter(|field| field.searchable && !field.hidden && !sensitive(field.name))
+            .map(|field| field.name)
+            .collect();
+        let href = if search_columns.is_empty() {
+            format!("/admin/models/{key}")
+        } else {
+            format!("/admin/models/{key}?q={}", url_encode(query))
+        };
+        if search_columns.is_empty() {
+            if named {
+                groups.push(json!({
+                    "label": model.meta().label,
+                    "href": href,
+                    "hits": [],
+                    "more": false
+                }));
+            }
+            continue;
+        }
+        let (sort, descending) =
+            resolved_sort(fields, registry.ordering_of(model.meta()), &HashMap::new())
+                .unwrap_or_else(|_| ("id".to_owned(), false));
+        let scope = access_scope(model.as_ref(), user, false);
+        let listed = model
+            .page(
+                &state.db,
+                &search_columns,
+                Some(query),
+                &sort,
+                descending,
+                &[],
+                &[],
+                0,
+                5,
+                &scope,
+            )
+            .await;
+        let (rows, _, total) = match listed {
+            Ok(value) => value,
+            Err(_) => {
+                return Err(Box::new(
+                    error_page(
+                        state,
+                        headers,
+                        registry,
+                        locale,
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        "forbidden",
+                        true,
+                        &user.email,
+                    )
+                    .await,
+                ));
+            }
+        };
+        if rows.is_empty() && !named {
+            continue;
+        }
+        let relations = match relation_names(registry, state, user, model.columns(), &rows).await {
+            Ok(relations) => relations,
+            Err(_) => {
+                return Err(Box::new(
+                    error_page(
+                        state,
+                        headers,
+                        registry,
+                        locale,
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        "forbidden",
+                        true,
+                        &user.email,
+                    )
+                    .await,
+                ));
+            }
+        };
+        let links = link_names(
+            fields,
+            model.columns(),
+            registry.list_order_of(model.meta()),
+        );
+        let label_field = links.first().copied().unwrap_or("id");
+        let currency = registry.branding().currency;
+        let mut hits = Vec::new();
+        for row in &rows {
+            let Some(id) = row.get("id").and_then(Value::as_str) else {
+                continue;
+            };
+            let mut lead = false;
+            let cell = present_cell(
+                locale,
+                currency.as_str(),
+                model.columns(),
+                label_field,
+                row.get(label_field).unwrap_or(&Value::Null),
+                &relations,
+                user.is_superuser,
+                &mut lead,
+            );
+            let text = cell
+                .get("text")
+                .and_then(Value::as_str)
+                .filter(|value| !value.is_empty() && *value != "—")
+                .unwrap_or(id);
+            hits.push(json!({
+                "text": text,
+                "href": format!("/admin/models/{key}/{id}")
+            }));
+        }
+        groups.push(json!({
+            "label": model.meta().label,
+            "href": href,
+            "hits": hits,
+            "more": total > 5
+        }));
+    }
+    Ok(groups)
+}
+
+async fn board_config(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Extension(registry): Extension<AdminRegistry>,
+) -> Response {
+    let locale = locale_of(
+        &headers,
+        &registry.branding().default_locale,
+        &registry.branding().fallback_locale,
+    );
+    let user = match require_get(&state, &headers, &registry, "/admin/boards/config").await {
+        Ok(user) => user,
+        Err(response) => return response,
+    };
+    if !user.is_superuser {
+        return error_page(
+            &state,
+            &headers,
+            &registry,
+            &locale,
+            StatusCode::FORBIDDEN,
+            "forbidden",
+            true,
+            &user.email,
+        )
+        .await;
+    }
+    let listed = match crate::boards::list_boards(&state.db).await {
+        Ok(rows) => rows,
+        Err(_) => {
+            return error_page(
+                &state,
+                &headers,
+                &registry,
+                &locale,
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "board_read_error",
+                true,
+                &user.email,
+            )
+            .await;
+        }
+    };
+    let boards = board_rows(listed);
+    let Some(auth) = state.auth.as_ref() else {
+        return error_page(
+            &state,
+            &headers,
+            &registry,
+            &locale,
+            StatusCode::FORBIDDEN,
+            "forbidden",
+            true,
+            &user.email,
+        )
+        .await;
+    };
+    let csrf = session_csrf(auth, &headers).await;
+    page_as(
+        &state,
+        &user,
+        &registry,
+        "board_config.html",
+        &locale,
+        theme_of(&headers),
+        &text(&locale, "board_config"),
+        true,
+        user.is_superuser,
+        &user.email,
+        &csrf,
+        "/admin/boards/config",
+        "",
+        "",
+        json!({ "boards": boards }),
+    )
+    .await
+}
+
+async fn board_create(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Extension(registry): Extension<AdminRegistry>,
+    body: Bytes,
+) -> Response {
+    let locale = locale_of(
+        &headers,
+        &registry.branding().default_locale,
+        &registry.branding().fallback_locale,
+    );
+    let user = match require_post(&state, &headers, &body).await {
+        Ok(user) => user,
+        Err(()) => {
+            return error_page(
+                &state,
+                &headers,
+                &registry,
+                &locale,
+                StatusCode::FORBIDDEN,
+                "csrf",
+                true,
+                "",
+            )
+            .await;
+        }
+    };
+    if !user.is_superuser {
+        return error_page(
+            &state,
+            &headers,
+            &registry,
+            &locale,
+            StatusCode::FORBIDDEN,
+            "forbidden",
+            true,
+            &user.email,
+        )
+        .await;
+    }
+    let form = parse_form(&body);
+    match crate::boards::create_board(
+        &state.db,
+        form.get("name").map(String::as_str).unwrap_or(""),
+    )
+    .await
+    {
+        Ok(id) => redirect(&format!("/admin/boards/{id}/edit")),
+        Err(Ok(reject)) => {
+            let Ok(rows) = crate::boards::list_boards(&state.db).await else {
+                return error_page(
+                    &state,
+                    &headers,
+                    &registry,
+                    &locale,
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "board_read_error",
+                    true,
+                    &user.email,
+                )
+                .await;
+            };
+            let boards = board_rows(rows);
+            board_alert(BoardAlert {
+                page: screen(&state, &headers, &registry, &locale, &user),
+                path: "/admin/boards/config",
+                template: "board_config.html",
+                title: &text(&locale, "board_config"),
+                alert_key: board_reject_key(reject),
+                extra: json!({ "boards": boards }),
+            })
+            .await
+        }
+        Err(Err(_)) => {
+            error_page(
+                &state,
+                &headers,
+                &registry,
+                &locale,
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "board_read_error",
+                true,
+                &user.email,
+            )
+            .await
+        }
+    }
+}
+
+async fn board_show(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Extension(registry): Extension<AdminRegistry>,
+    Path(id): Path<String>,
+    Query(params): Query<HashMap<String, String>>,
+) -> Response {
+    let locale = locale_of(
+        &headers,
+        &registry.branding().default_locale,
+        &registry.branding().fallback_locale,
+    );
+    let user = match require_get(&state, &headers, &registry, "/admin/boards").await {
+        Ok(user) => user,
+        Err(response) => return response,
+    };
+    let Some(id) = parse_uuid(&id) else {
+        return error_page(
+            &state,
+            &headers,
+            &registry,
+            &locale,
+            StatusCode::NOT_FOUND,
+            "not_found",
+            true,
+            &user.email,
+        )
+        .await;
+    };
+    let loaded = match crate::boards::load(&state.db, id).await {
+        Ok(Some(loaded)) => loaded,
+        Ok(None) => {
+            return error_page(
+                &state,
+                &headers,
+                &registry,
+                &locale,
+                StatusCode::NOT_FOUND,
+                "not_found",
+                true,
+                &user.email,
+            )
+            .await;
+        }
+        Err(_) => {
+            return error_page(
+                &state,
+                &headers,
+                &registry,
+                &locale,
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "board_read_error",
+                true,
+                &user.email,
+            )
+            .await;
+        }
+    };
+    let (applied, slicers, sliced) = match board_slices(
+        &state, &headers, &user, &registry, &locale, &loaded.1, &params,
+    )
+    .await
+    {
+        Ok(value) => value,
+        Err(response) => return *response,
+    };
+    let blocks = render_blocks(&state, &user, &registry, &locale, &loaded.1, &applied).await;
+    let Some(auth) = state.auth.as_ref() else {
+        return error_page(
+            &state,
+            &headers,
+            &registry,
+            &locale,
+            StatusCode::FORBIDDEN,
+            "forbidden",
+            true,
+            &user.email,
+        )
+        .await;
+    };
+    let csrf = session_csrf(auth, &headers).await;
+    page_as(
+        &state,
+        &user,
+        &registry,
+        "board_show.html",
+        &locale,
+        theme_of(&headers),
+        &loaded.0.name,
+        true,
+        user.is_superuser,
+        &user.email,
+        &csrf,
+        &format!("/admin/boards/{id}"),
+        "",
+        "",
+        json!({
+            "board": { "id": id.to_string(), "name": loaded.0.name },
+            "blocks": blocks,
+            "slicers": slicers,
+            "sliced": sliced
+        }),
+    )
+    .await
+}
+
+async fn board_edit(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Extension(registry): Extension<AdminRegistry>,
+    Path(id): Path<String>,
+    Query(query): Query<HashMap<String, String>>,
+) -> Response {
+    let locale = locale_of(
+        &headers,
+        &registry.branding().default_locale,
+        &registry.branding().fallback_locale,
+    );
+    let user = match require_get(&state, &headers, &registry, "/admin/boards/config").await {
+        Ok(user) => user,
+        Err(response) => return response,
+    };
+    if !user.is_superuser {
+        return error_page(
+            &state,
+            &headers,
+            &registry,
+            &locale,
+            StatusCode::FORBIDDEN,
+            "forbidden",
+            true,
+            &user.email,
+        )
+        .await;
+    }
+    let Some(id) = parse_uuid(&id) else {
+        return error_page(
+            &state,
+            &headers,
+            &registry,
+            &locale,
+            StatusCode::NOT_FOUND,
+            "not_found",
+            true,
+            &user.email,
+        )
+        .await;
+    };
+    render_board_edit(BoardEdit {
+        page: screen(&state, &headers, &registry, &locale, &user),
+        id,
+        model_key: query.get("model").map(String::as_str),
+        widget_id: query.get("widget").map(String::as_str),
+        alert_key: "",
+        preview: None,
+        form_state: None,
+    })
+    .await
+}
+
+async fn board_choose(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Extension(registry): Extension<AdminRegistry>,
+    Path(id): Path<String>,
+    body: Bytes,
+) -> Response {
+    let locale = locale_of(
+        &headers,
+        &registry.branding().default_locale,
+        &registry.branding().fallback_locale,
+    );
+    let user = match require_post(&state, &headers, &body).await {
+        Ok(user) => user,
+        Err(()) => {
+            return error_page(
+                &state,
+                &headers,
+                &registry,
+                &locale,
+                StatusCode::FORBIDDEN,
+                "csrf",
+                true,
+                "",
+            )
+            .await;
+        }
+    };
+    if !user.is_superuser {
+        return error_page(
+            &state,
+            &headers,
+            &registry,
+            &locale,
+            StatusCode::FORBIDDEN,
+            "forbidden",
+            true,
+            &user.email,
+        )
+        .await;
+    }
+    let Some(id) = parse_uuid(&id) else {
+        return error_page(
+            &state,
+            &headers,
+            &registry,
+            &locale,
+            StatusCode::NOT_FOUND,
+            "not_found",
+            true,
+            &user.email,
+        )
+        .await;
+    };
+    let form = parse_form(&body);
+    let model = form.get("model").map(String::as_str).unwrap_or("");
+    if registry.find(model).is_none() || !identifier(model) {
+        return render_board_edit(BoardEdit {
+            page: screen(&state, &headers, &registry, &locale, &user),
+            id,
+            model_key: None,
+            widget_id: None,
+            alert_key: "board_bad_model",
+            preview: None,
+            form_state: None,
+        })
+        .await;
+    }
+    redirect(&format!(
+        "/admin/boards/{id}/edit?model={}",
+        url_encode(model)
+    ))
+}
+
+async fn board_delete(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Extension(registry): Extension<AdminRegistry>,
+    Path(id): Path<String>,
+    body: Bytes,
+) -> Response {
+    let locale = locale_of(
+        &headers,
+        &registry.branding().default_locale,
+        &registry.branding().fallback_locale,
+    );
+    let user = match posted_superuser(&state, &headers, &registry, &locale, &body).await {
+        Ok(user) => user,
+        Err(response) => return *response,
+    };
+    let Some(id) = parse_uuid(&id) else {
+        return error_page(
+            &state,
+            &headers,
+            &registry,
+            &locale,
+            StatusCode::NOT_FOUND,
+            "not_found",
+            true,
+            &user.email,
+        )
+        .await;
+    };
+    if crate::boards::delete_board(&state.db, id).await.is_err() {
+        return error_page(
+            &state,
+            &headers,
+            &registry,
+            &locale,
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "board_read_error",
+            true,
+            &user.email,
+        )
+        .await;
+    }
+    redirect("/admin/boards/config")
+}
+
+async fn widget_create(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Extension(registry): Extension<AdminRegistry>,
+    Path(id): Path<String>,
+    body: Bytes,
+) -> Response {
+    let locale = locale_of(
+        &headers,
+        &registry.branding().default_locale,
+        &registry.branding().fallback_locale,
+    );
+    let user = match posted_superuser(&state, &headers, &registry, &locale, &body).await {
+        Ok(user) => user,
+        Err(response) => return *response,
+    };
+    let Some(id) = parse_uuid(&id) else {
+        return error_page(
+            &state,
+            &headers,
+            &registry,
+            &locale,
+            StatusCode::NOT_FOUND,
+            "not_found",
+            true,
+            &user.email,
+        )
+        .await;
+    };
+    let form = parse_form(&body);
+    let model_key = form.get("model").map(String::as_str).unwrap_or("");
+    let Some(model) = registry.find(model_key) else {
+        return render_board_edit(BoardEdit {
+            page: screen(&state, &headers, &registry, &locale, &user),
+            id,
+            model_key: None,
+            widget_id: None,
+            alert_key: "board_bad_model",
+            preview: None,
+            form_state: None,
+        })
+        .await;
+    };
+    commit_widget(WidgetCommit {
+        page: screen(&state, &headers, &registry, &locale, &user),
+        id,
+        widget_id: None,
+        model: &**model,
+        form: &form,
+    })
+    .await
+}
+
+async fn widget_update(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Extension(registry): Extension<AdminRegistry>,
+    Path((id, widget)): Path<(String, String)>,
+    body: Bytes,
+) -> Response {
+    let locale = locale_of(
+        &headers,
+        &registry.branding().default_locale,
+        &registry.branding().fallback_locale,
+    );
+    let user = match posted_superuser(&state, &headers, &registry, &locale, &body).await {
+        Ok(user) => user,
+        Err(response) => return *response,
+    };
+    let Some(id) = parse_uuid(&id) else {
+        return error_page(
+            &state,
+            &headers,
+            &registry,
+            &locale,
+            StatusCode::NOT_FOUND,
+            "not_found",
+            true,
+            &user.email,
+        )
+        .await;
+    };
+    let Some(widget_id) = parse_uuid(&widget) else {
+        return error_page(
+            &state,
+            &headers,
+            &registry,
+            &locale,
+            StatusCode::NOT_FOUND,
+            "not_found",
+            true,
+            &user.email,
+        )
+        .await;
+    };
+    let loaded = match crate::boards::load(&state.db, id).await {
+        Ok(Some(loaded)) => loaded,
+        Ok(None) => {
+            return error_page(
+                &state,
+                &headers,
+                &registry,
+                &locale,
+                StatusCode::NOT_FOUND,
+                "not_found",
+                true,
+                &user.email,
+            )
+            .await
+        }
+        Err(_) => {
+            return error_page(
+                &state,
+                &headers,
+                &registry,
+                &locale,
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "board_read_error",
+                true,
+                &user.email,
+            )
+            .await
+        }
+    };
+    let Some(existing) = loaded.1.iter().find(|item| item.id == widget_id) else {
+        return error_page(
+            &state,
+            &headers,
+            &registry,
+            &locale,
+            StatusCode::NOT_FOUND,
+            "not_found",
+            true,
+            &user.email,
+        )
+        .await;
+    };
+    let Some(model) = registry.find(&existing.model_key) else {
+        return render_board_edit(BoardEdit {
+            page: screen(&state, &headers, &registry, &locale, &user),
+            id,
+            model_key: None,
+            widget_id: Some(widget.as_str()),
+            alert_key: "board_bad_model",
+            preview: None,
+            form_state: None,
+        })
+        .await;
+    };
+    commit_widget(WidgetCommit {
+        page: screen(&state, &headers, &registry, &locale, &user),
+        id,
+        widget_id: Some(widget_id),
+        model: &**model,
+        form: &parse_form(&body),
+    })
+    .await
+}
+
+async fn widget_move(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Extension(registry): Extension<AdminRegistry>,
+    Path((id, widget)): Path<(String, String)>,
+    body: Bytes,
+) -> Response {
+    let locale = locale_of(
+        &headers,
+        &registry.branding().default_locale,
+        &registry.branding().fallback_locale,
+    );
+    let user = match posted_superuser(&state, &headers, &registry, &locale, &body).await {
+        Ok(user) => user,
+        Err(response) => return *response,
+    };
+    let Some(id) = parse_uuid(&id) else {
+        return error_page(
+            &state,
+            &headers,
+            &registry,
+            &locale,
+            StatusCode::NOT_FOUND,
+            "not_found",
+            true,
+            &user.email,
+        )
+        .await;
+    };
+    let Some(widget) = parse_uuid(&widget) else {
+        return error_page(
+            &state,
+            &headers,
+            &registry,
+            &locale,
+            StatusCode::NOT_FOUND,
+            "not_found",
+            true,
+            &user.email,
+        )
+        .await;
+    };
+    let up = parse_form(&body).get("direction").map(String::as_str) == Some("up");
+    if crate::boards::move_widget(&state.db, id, widget, up)
+        .await
+        .is_err()
+    {
+        return error_page(
+            &state,
+            &headers,
+            &registry,
+            &locale,
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "board_read_error",
+            true,
+            &user.email,
+        )
+        .await;
+    }
+    redirect(&format!("/admin/boards/{id}/edit"))
+}
+
+async fn board_home(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Extension(registry): Extension<AdminRegistry>,
+    Path(id): Path<String>,
+    body: Bytes,
+) -> Response {
+    let locale = locale_of(
+        &headers,
+        &registry.branding().default_locale,
+        &registry.branding().fallback_locale,
+    );
+    let user = match posted_superuser(&state, &headers, &registry, &locale, &body).await {
+        Ok(user) => user,
+        Err(response) => return *response,
+    };
+    let Some(id) = parse_uuid(&id) else {
+        return error_page(
+            &state,
+            &headers,
+            &registry,
+            &locale,
+            StatusCode::NOT_FOUND,
+            "not_found",
+            true,
+            &user.email,
+        )
+        .await;
+    };
+    let form = parse_form(&body);
+    let enabled = form.get("home").map(String::as_str) == Some("1");
+    if crate::boards::set_home(&state.db, id, enabled)
+        .await
+        .is_err()
+    {
+        return error_page(
+            &state,
+            &headers,
+            &registry,
+            &locale,
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "board_read_error",
+            true,
+            &user.email,
+        )
+        .await;
+    }
+    let next = if form.get("next").map(String::as_str) == Some("config") {
+        "/admin/boards/config".to_owned()
+    } else {
+        format!("/admin/boards/{id}/edit")
+    };
+    redirect(&next)
+}
+
+async fn board_move(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Extension(registry): Extension<AdminRegistry>,
+    Path(id): Path<String>,
+    body: Bytes,
+) -> Response {
+    let locale = locale_of(
+        &headers,
+        &registry.branding().default_locale,
+        &registry.branding().fallback_locale,
+    );
+    let user = match posted_superuser(&state, &headers, &registry, &locale, &body).await {
+        Ok(user) => user,
+        Err(response) => return *response,
+    };
+    let Some(id) = parse_uuid(&id) else {
+        return error_page(
+            &state,
+            &headers,
+            &registry,
+            &locale,
+            StatusCode::NOT_FOUND,
+            "not_found",
+            true,
+            &user.email,
+        )
+        .await;
+    };
+    let up = parse_form(&body).get("direction").map(String::as_str) == Some("up");
+    if crate::boards::move_board(&state.db, id, up).await.is_err() {
+        return error_page(
+            &state,
+            &headers,
+            &registry,
+            &locale,
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "board_read_error",
+            true,
+            &user.email,
+        )
+        .await;
+    }
+    redirect("/admin/boards/config")
+}
+
+fn board_rows(rows: Vec<crate::boards::Board>) -> Vec<Value> {
+    let total = rows.len();
+    rows.into_iter()
+        .enumerate()
+        .map(|(index, board)| {
+            json!({
+                "id": board.id.to_string(),
+                "name": board.name,
+                "home": board.home,
+                "first": index == 0,
+                "last": index + 1 == total,
+                "position": index + 1,
+            })
+        })
+        .collect()
+}
+
+struct WidgetCommit<'a> {
+    page: PageCtx<'a>,
+    id: uuid::Uuid,
+    widget_id: Option<uuid::Uuid>,
+    model: &'a dyn ManagedModel,
+    form: &'a HashMap<String, String>,
+}
+
+async fn commit_widget(commit: WidgetCommit<'_>) -> Response {
+    let WidgetCommit {
+        page,
+        id,
+        widget_id,
+        model,
+        form,
+    } = commit;
+    let PageCtx {
+        state,
+        headers,
+        registry,
+        locale,
+        user,
+    } = page;
+    let model_key = model.meta().key;
+    let draft = match widget_draft(model, form) {
+        Ok(draft) => draft,
+        Err(key) => {
+            let widget_key = widget_id.map(|value| value.to_string());
+            return render_board_edit(BoardEdit {
+                page: screen(state, headers, registry, locale, user),
+                id,
+                model_key: Some(model_key),
+                widget_id: widget_key.as_deref(),
+                alert_key: key,
+                preview: None,
+                form_state: None,
+            })
+            .await;
+        }
+    };
+    let stored = crate::boards::NewWidget {
+        kind: &draft.kind,
+        model_key,
+        fields: &draft.fields,
+        group_field: &draft.group_field,
+        series_field: &draft.series_field,
+        measure: &draft.measure,
+        trend_field: &draft.trend_field,
+        span: draft.span,
+        title: &draft.title,
+        group_is_date: crate::boards::group_is_date(model.columns(), &draft.group_field),
+        trend_is_date: crate::boards::group_is_date(model.columns(), &draft.trend_field),
+    };
+    let saved = if let Some(widget_id) = widget_id {
+        crate::boards::update_widget(&state.db, id, widget_id, stored, posted_cell(form)).await
+    } else {
+        crate::boards::add_widget(&state.db, id, stored).await
+    };
+    match saved {
+        Ok(()) => redirect(&format!("/admin/boards/{id}/edit")),
+        Err(Ok(reject)) => {
+            let widget_key = widget_id.map(|value| value.to_string());
+            board_editor(BoardEdit {
+                page: screen(state, headers, registry, locale, user),
+                id,
+                model_key: Some(model_key),
+                widget_id: widget_key.as_deref(),
+                alert_key: board_reject_key(reject),
+                preview: None,
+                form_state: Some(posted_widget(form)),
+            })
+            .await
+        }
+        Err(Err(_)) => {
+            error_page(
+                state,
+                headers,
+                registry,
+                locale,
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "board_read_error",
+                true,
+                &user.email,
+            )
+            .await
+        }
+    }
+}
+
+struct WidgetDraft {
+    kind: String,
+    fields: Vec<String>,
+    group_field: String,
+    series_field: String,
+    measure: String,
+    trend_field: String,
+    span: i64,
+    title: String,
+}
+
+fn widget_draft(
+    model: &dyn ManagedModel,
+    form: &HashMap<String, String>,
+) -> Result<WidgetDraft, &'static str> {
+    let kind = form
+        .get("kind")
+        .map(String::as_str)
+        .unwrap_or("")
+        .to_owned();
+    let fields = selected_fields(model.meta(), form);
+    if fields
+        .iter()
+        .any(|field| field_meta(model.meta(), field).map(audit::concealed) != Some(false))
+    {
+        return Err("board_bad_model");
+    }
+    let read = |name: &str| form.get(name).map(String::as_str).unwrap_or("").to_owned();
+    let group_field = read("group_field");
+    let series_field = read("series_field");
+    let measure = read("measure");
+    let trend_field = read("trend_field");
+    let usable = |name: &str| {
+        !name.is_empty() && field_meta(model.meta(), name).map(audit::concealed) == Some(false)
+    };
+    if matches!(kind.as_str(), "bar" | "line" | "pie" | "tree" | "stack") && !usable(&group_field) {
+        return Err("board_group_required");
+    }
+    if kind == "stack" && (!usable(&series_field) || series_field == group_field) {
+        return Err("board_group_required");
+    }
+    if !measure.is_empty()
+        && model
+            .columns()
+            .iter()
+            .find(|column| column.name == measure)
+            .is_none_or(|column| column.kind != ColumnKind::BigInt)
+    {
+        return Err("board_fields_required");
+    }
+    if kind == "line" && !crate::boards::group_is_date(model.columns(), &group_field) {
+        return Err("board_line_date");
+    }
+    if kind == "card"
+        && !trend_field.is_empty()
+        && !crate::boards::group_is_date(model.columns(), &trend_field)
+    {
+        return Err("board_line_date");
+    }
+    Ok(WidgetDraft {
+        kind,
+        fields: fields.iter().map(|field| (*field).to_owned()).collect(),
+        group_field,
+        series_field,
+        measure,
+        trend_field,
+        span: if form.get("span").map(String::as_str) == Some("6") {
+            6
+        } else {
+            12
+        },
+        title: read("title"),
+    })
+}
+
+async fn widget_delete(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Extension(registry): Extension<AdminRegistry>,
+    Path((id, widget)): Path<(String, String)>,
+    body: Bytes,
+) -> Response {
+    let locale = locale_of(
+        &headers,
+        &registry.branding().default_locale,
+        &registry.branding().fallback_locale,
+    );
+    let user = match posted_superuser(&state, &headers, &registry, &locale, &body).await {
+        Ok(user) => user,
+        Err(response) => return *response,
+    };
+    let Some(id) = parse_uuid(&id) else {
+        return error_page(
+            &state,
+            &headers,
+            &registry,
+            &locale,
+            StatusCode::NOT_FOUND,
+            "not_found",
+            true,
+            &user.email,
+        )
+        .await;
+    };
+    let Some(widget) = parse_uuid(&widget) else {
+        return error_page(
+            &state,
+            &headers,
+            &registry,
+            &locale,
+            StatusCode::NOT_FOUND,
+            "not_found",
+            true,
+            &user.email,
+        )
+        .await;
+    };
+    if crate::boards::delete_widget(&state.db, id, widget)
+        .await
+        .is_err()
+    {
+        return error_page(
+            &state,
+            &headers,
+            &registry,
+            &locale,
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "board_read_error",
+            true,
+            &user.email,
+        )
+        .await;
+    }
+    redirect(&format!("/admin/boards/{id}/edit"))
+}
+
+async fn widget_place(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Extension(registry): Extension<AdminRegistry>,
+    Path((id, widget)): Path<(String, String)>,
+    body: Bytes,
+) -> Response {
+    let locale = locale_of(
+        &headers,
+        &registry.branding().default_locale,
+        &registry.branding().fallback_locale,
+    );
+    let user = match posted_superuser(&state, &headers, &registry, &locale, &body).await {
+        Ok(user) => user,
+        Err(response) => return *response,
+    };
+    let fragment = headers.get("x-place").and_then(|value| value.to_str().ok()) == Some("fragment");
+    let Some(id) = parse_uuid(&id) else {
+        return error_page(
+            &state,
+            &headers,
+            &registry,
+            &locale,
+            StatusCode::NOT_FOUND,
+            "not_found",
+            true,
+            &user.email,
+        )
+        .await;
+    };
+    let Some(widget) = parse_uuid(&widget) else {
+        return error_page(
+            &state,
+            &headers,
+            &registry,
+            &locale,
+            StatusCode::NOT_FOUND,
+            "not_found",
+            true,
+            &user.email,
+        )
+        .await;
+    };
+    let form = parse_form(&body);
+    let Some((x, y, w, h)) = posted_cell(&form) else {
+        return if fragment {
+            plain(StatusCode::BAD_REQUEST, "Request rejected")
+        } else {
+            redirect(&format!("/admin/boards/{id}/edit"))
+        };
+    };
+    let placed = match crate::boards::place_widget(&state.db, id, widget, x, y, w, h).await {
+        Ok(placed) => placed,
+        Err(_) => {
+            return error_page(
+                &state,
+                &headers,
+                &registry,
+                &locale,
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "board_read_error",
+                true,
+                &user.email,
+            )
+            .await;
+        }
+    };
+    if fragment {
+        return if placed {
+            StatusCode::NO_CONTENT.into_response()
+        } else {
+            plain(StatusCode::CONFLICT, "occupied")
+        };
+    }
+    redirect(&format!("/admin/boards/{id}/edit"))
+}
+
+async fn widget_preview(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Extension(registry): Extension<AdminRegistry>,
+    Path(id): Path<String>,
+    body: Bytes,
+) -> Response {
+    let locale = locale_of(
+        &headers,
+        &registry.branding().default_locale,
+        &registry.branding().fallback_locale,
+    );
+    let user = match posted_superuser(&state, &headers, &registry, &locale, &body).await {
+        Ok(user) => user,
+        Err(response) => return *response,
+    };
+    let fragment = headers
+        .get("x-preview")
+        .and_then(|value| value.to_str().ok())
+        == Some("fragment");
+    let Some(id) = parse_uuid(&id) else {
+        return error_page(
+            &state,
+            &headers,
+            &registry,
+            &locale,
+            StatusCode::NOT_FOUND,
+            "not_found",
+            true,
+            &user.email,
+        )
+        .await;
+    };
+    let form = parse_form(&body);
+    let posted = posted_widget(&form);
+    let widget_id = form.get("widget").and_then(|value| parse_uuid(value));
+    let stored_model = if let Some(widget_id) = widget_id {
+        crate::boards::load(&state.db, id)
+            .await
+            .ok()
+            .flatten()
+            .and_then(|(_, widgets)| {
+                widgets
+                    .into_iter()
+                    .find(|widget| widget.id == widget_id)
+                    .map(|widget| widget.model_key)
+            })
+    } else {
+        None
+    };
+    let model_key = stored_model.unwrap_or_else(|| form.get("model").cloned().unwrap_or_default());
+    let note = |key: &str| preview_note(&locale, key);
+    let Some(model) = registry.find(&model_key) else {
+        return if fragment {
+            note("board_bad_model")
+        } else {
+            board_editor(BoardEdit {
+                page: screen(&state, &headers, &registry, &locale, &user),
+                id,
+                model_key: Some(model_key.as_str()),
+                widget_id: form.get("widget").map(String::as_str),
+                alert_key: "board_bad_model",
+                preview: None,
+                form_state: Some(posted),
+            })
+            .await
+        };
+    };
+    let draft = match widget_draft(&**model, &form) {
+        Ok(draft) => draft,
+        Err(key) => {
+            return if fragment {
+                note(key)
+            } else {
+                board_editor(BoardEdit {
+                    page: screen(&state, &headers, &registry, &locale, &user),
+                    id,
+                    model_key: Some(model_key.as_str()),
+                    widget_id: form.get("widget").map(String::as_str),
+                    alert_key: key,
+                    preview: None,
+                    form_state: Some(posted.clone()),
+                })
+                .await
+            };
+        }
+    };
+    let preview = match crate::boards::materialize(crate::boards::NewWidget {
+        kind: &draft.kind,
+        model_key: model.meta().key,
+        fields: &draft.fields,
+        group_field: &draft.group_field,
+        series_field: &draft.series_field,
+        measure: &draft.measure,
+        trend_field: &draft.trend_field,
+        span: draft.span,
+        title: &draft.title,
+        group_is_date: crate::boards::group_is_date(model.columns(), &draft.group_field),
+        trend_is_date: crate::boards::group_is_date(model.columns(), &draft.trend_field),
+    }) {
+        Ok(widget) => widget,
+        Err(reject) => {
+            let key = board_reject_key(reject);
+            return if fragment {
+                note(key)
+            } else {
+                board_editor(BoardEdit {
+                    page: screen(&state, &headers, &registry, &locale, &user),
+                    id,
+                    model_key: Some(model_key.as_str()),
+                    widget_id: form.get("widget").map(String::as_str),
+                    alert_key: key,
+                    preview: None,
+                    form_state: Some(posted.clone()),
+                })
+                .await
+            };
+        }
+    };
+    let filters = HashMap::<String, Vec<(&'static str, DbValue)>>::new();
+    let block = render_block(&state, &user, &registry, &locale, &preview, &filters).await;
+    if fragment {
+        return preview_fragment(&locale, &block);
+    }
+    board_editor(BoardEdit {
+        page: screen(&state, &headers, &registry, &locale, &user),
+        id,
+        model_key: Some(model_key.as_str()),
+        widget_id: form.get("widget").map(String::as_str),
+        alert_key: "",
+        preview: Some(block),
+        form_state: Some(posted),
+    })
+    .await
+}
+
+fn posted_widget(form: &HashMap<String, String>) -> Value {
+    let fields: Vec<_> = form
+        .keys()
+        .filter(|key| key.starts_with("field."))
+        .map(|key| key.trim_start_matches("field.").to_owned())
+        .collect();
+    json!({
+        "title": form.get("title").cloned().unwrap_or_default(),
+        "kind": form.get("kind").cloned().unwrap_or_else(|| "table".to_owned()),
+        "fields": fields,
+        "group_field": form.get("group_field").cloned().unwrap_or_default(),
+        "series_field": form.get("series_field").cloned().unwrap_or_default(),
+        "measure": form.get("measure").cloned().unwrap_or_default(),
+        "trend_field": form.get("trend_field").cloned().unwrap_or_default(),
+        "span": if form.get("span").map(String::as_str) == Some("6") { 6 } else { 12 },
+        "x": posted_number(form, "grid_x"),
+        "y": posted_number(form, "grid_y"),
+        "w": posted_number(form, "grid_w"),
+        "h": posted_number(form, "grid_h")
+    })
+}
+
+fn posted_number(form: &HashMap<String, String>, name: &str) -> i64 {
+    form.get(name)
+        .and_then(|value| value.parse::<i64>().ok())
+        .unwrap_or(0)
+}
+
+fn posted_cell(form: &HashMap<String, String>) -> Option<(i64, i64, i64, i64)> {
+    let read = |name: &str| form.get(name)?.parse::<i64>().ok();
+    Some((
+        read("grid_x")?,
+        read("grid_y")?,
+        read("grid_w")?,
+        read("grid_h")?,
+    ))
+}
+
+fn preview_note(locale: &str, key: &str) -> Response {
+    let message = text(locale, key)
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;");
+    Html(format!(r#"<p class="alert" role="alert">{message}</p>"#)).into_response()
+}
+
+fn preview_fragment(locale: &str, block: &Value) -> Response {
+    match render(
+        "board_block.html",
+        json!({ "block": block, "i18n": catalog(locale) }),
+        &[],
+    ) {
+        Ok(body) => Html(body).into_response(),
+        Err(error) => {
+            tracing::error!(%error, "admin template failed");
+            plain(StatusCode::INTERNAL_SERVER_ERROR, "Request rejected")
+        }
+    }
+}
+
+struct BoardEdit<'a> {
+    page: PageCtx<'a>,
+    id: uuid::Uuid,
+    model_key: Option<&'a str>,
+    widget_id: Option<&'a str>,
+    alert_key: &'a str,
+    preview: Option<Value>,
+    form_state: Option<Value>,
+}
+
+async fn render_board_edit(edit: BoardEdit<'_>) -> Response {
+    board_editor(edit).await
+}
+
+async fn board_editor(edit: BoardEdit<'_>) -> Response {
+    let BoardEdit {
+        page,
+        id,
+        model_key,
+        widget_id,
+        alert_key,
+        preview,
+        form_state,
+    } = edit;
+    let PageCtx {
+        state,
+        headers,
+        registry,
+        locale,
+        user,
+    } = page;
+    let loaded = match crate::boards::load(&state.db, id).await {
+        Ok(Some(loaded)) => loaded,
+        Ok(None) => {
+            return error_page(
+                state,
+                headers,
+                registry,
+                locale,
+                StatusCode::NOT_FOUND,
+                "not_found",
+                true,
+                &user.email,
+            )
+            .await;
+        }
+        Err(_) => {
+            return error_page(
+                state,
+                headers,
+                registry,
+                locale,
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "board_read_error",
+                true,
+                &user.email,
+            )
+            .await;
+        }
+    };
+    let widgets: Vec<_> = loaded
+        .1
+        .iter()
+        .enumerate()
+        .map(|(index, widget)| {
+            let model_label = registry
+                .find(&widget.model_key)
+                .map(|model| model.meta().label)
+                .unwrap_or(widget.model_key.as_str());
+            json!({
+                "id": widget.id.to_string(),
+                "title": widget.title,
+                "kind": widget.kind,
+                "kind_label": text(locale, kind_label(&widget.kind)),
+                "model_label": model_label,
+                "detail": widget_detail(registry, widget),
+                "first": index == 0,
+                "last": index + 1 == loaded.1.len(),
+            })
+        })
+        .collect();
+    let editing = widget_id.and_then(parse_uuid).and_then(|value| {
+        loaded
+            .1
+            .iter()
+            .find(|widget| widget.id == value)
+            .map(|widget| {
+                let model_label = registry
+                    .find(&widget.model_key)
+                    .map(|model| model.meta().label)
+                    .unwrap_or(widget.model_key.as_str());
+                json!({
+                    "id": widget.id.to_string(),
+                    "title": widget.title,
+                    "kind": widget.kind,
+                    "model_key": widget.model_key,
+                    "model_label": model_label,
+                    "fields": widget.fields,
+                    "group_field": widget.group_field,
+                    "series_field": widget.series_field,
+                    "measure": widget.measure,
+                    "trend_field": widget.trend_field,
+                    "span": widget.span,
+                    "x": widget.x,
+                    "y": widget.y,
+                    "w": widget.w,
+                    "h": widget.h,
+                })
+            })
+    });
+    let models = model_choices(state, user, registry).await;
+    let chosen = if editing.is_some() {
+        None
+    } else {
+        model_key.and_then(|key| chosen_model(registry, key))
+    };
+    let editor = editing
+        .as_ref()
+        .and_then(|widget| widget["model_key"].as_str())
+        .and_then(|key| chosen_model(registry, key))
+        .or(chosen);
+    let Some(auth) = state.auth.as_ref() else {
+        return error_page(
+            state,
+            headers,
+            registry,
+            locale,
+            StatusCode::FORBIDDEN,
+            "forbidden",
+            true,
+            &user.email,
+        )
+        .await;
+    };
+    let csrf = session_csrf(auth, headers).await;
+    let alert = if alert_key.is_empty() {
+        String::new()
+    } else {
+        text(locale, alert_key)
+    };
+    let filters = HashMap::<String, Vec<(&'static str, DbValue)>>::new();
+    let layout = render_blocks(state, user, registry, locale, &loaded.1, &filters).await;
+    let preview = match preview {
+        Some(value) => Some(value),
+        None if alert_key.is_empty() => {
+            match widget_id
+                .and_then(parse_uuid)
+                .and_then(|value| loaded.1.iter().find(|item| item.id == value))
+            {
+                Some(widget) => {
+                    Some(render_block(state, user, registry, locale, widget, &filters).await)
+                }
+                None => None,
+            }
+        }
+        None => None,
+    };
+    let form_widget = form_state.or_else(|| editing.clone());
+    page_as(
+        state,
+        user,
+        registry,
+        "board_edit.html",
+        locale,
+        theme_of(headers),
+        &loaded.0.name,
+        true,
+        user.is_superuser,
+        &user.email,
+        &csrf,
+        &format!("/admin/boards/{id}/edit"),
+        "",
+        &alert,
+        json!({
+            "board": { "id": id.to_string(), "name": loaded.0.name, "home": loaded.0.home },
+            "widgets": widgets,
+            "layout": layout,
+            "arranging": true,
+            "models": models,
+            "chosen": editor,
+            "editing": editing,
+            "form_widget": form_widget,
+            "preview": preview
+        }),
+    )
+    .await
+}
+
+struct BoardAlert<'a> {
+    page: PageCtx<'a>,
+    path: &'a str,
+    template: &'a str,
+    title: &'a str,
+    alert_key: &'a str,
+    extra: Value,
+}
+
+async fn board_alert(alert: BoardAlert<'_>) -> Response {
+    let BoardAlert {
+        page,
+        path,
+        template,
+        title,
+        alert_key,
+        extra,
+    } = alert;
+    let PageCtx {
+        state,
+        headers,
+        registry,
+        locale,
+        user,
+    } = page;
+    let Some(auth) = state.auth.as_ref() else {
+        return error_page(
+            state,
+            headers,
+            registry,
+            locale,
+            StatusCode::FORBIDDEN,
+            "forbidden",
+            true,
+            &user.email,
+        )
+        .await;
+    };
+    let csrf = session_csrf(auth, headers).await;
+    page_as(
+        state,
+        user,
+        registry,
+        template,
+        locale,
+        theme_of(headers),
+        title,
+        true,
+        user.is_superuser,
+        &user.email,
+        &csrf,
+        path,
+        "",
+        &text(locale, alert_key),
+        extra,
+    )
+    .await
+}
+
+async fn posted_superuser(
+    state: &AppState,
+    headers: &HeaderMap,
+    registry: &AdminRegistry,
+    locale: &str,
+    body: &Bytes,
+) -> Result<AuthUser, Box<Response>> {
+    let user = match require_post(state, headers, body).await {
+        Ok(user) => user,
+        Err(()) => {
+            return Err(Box::new(
+                error_page(
+                    state,
+                    headers,
+                    registry,
+                    locale,
+                    StatusCode::FORBIDDEN,
+                    "csrf",
+                    true,
+                    "",
+                )
+                .await,
+            ));
+        }
+    };
+    if !user.is_superuser {
+        return Err(Box::new(
+            error_page(
+                state,
+                headers,
+                registry,
+                locale,
+                StatusCode::FORBIDDEN,
+                "forbidden",
+                true,
+                &user.email,
+            )
+            .await,
+        ));
+    }
+    Ok(user)
+}
+
+async fn model_choices(state: &AppState, user: &AuthUser, registry: &AdminRegistry) -> Vec<Value> {
+    let Some(auth) = state.auth.as_ref() else {
+        return Vec::new();
+    };
+    let mut models = Vec::new();
+    for model in registry.models() {
+        if crate::http::list_blocked(model.as_ref()) {
+            continue;
+        }
+        if crate::http::permit(auth, user, model.meta(), "read")
+            .await
+            .is_err()
+        {
+            continue;
+        }
+        let app = registry
+            .model_app(model.meta().key)
+            .unwrap_or("")
+            .to_owned();
+        models.push(json!({
+            "key": model.meta().key,
+            "label": model.meta().label,
+            "app": app,
+        }));
+    }
+    models
+}
+
+fn chosen_model(registry: &AdminRegistry, key: &str) -> Option<Value> {
+    let model = registry.find(key)?;
+    let fields: Vec<_> = model
+        .meta()
+        .fields
+        .iter()
+        .filter(|field| !audit::concealed(field))
+        .map(|field| {
+            json!({
+                "name": field.name,
+                "label": field.label,
+                "date": crate::boards::group_is_date(model.columns(), field.name),
+                "number": model.columns().iter().any(|column| column.name == field.name && column.kind == ColumnKind::BigInt)
+            })
+        })
+        .collect();
+    let app = registry.model_app(key).unwrap_or("").to_owned();
+    Some(json!({
+        "key": key,
+        "label": model.meta().label,
+        "app": app,
+        "fields": fields
+    }))
+}
+
+fn selected_fields<'a>(
+    meta: &'a fexu_core::AdminModelMeta,
+    form: &HashMap<String, String>,
+) -> Vec<&'a str> {
+    meta.fields
+        .iter()
+        .filter(|field| {
+            form.get(&format!("field.{}", field.name))
+                .is_some_and(|value| value == "1")
+        })
+        .map(|field| field.name)
+        .collect()
+}
+
+fn field_meta<'a>(
+    meta: &'a fexu_core::AdminModelMeta,
+    name: &str,
+) -> Option<&'a fexu_core::AdminFieldMeta> {
+    meta.fields.iter().find(|field| field.name == name)
+}
+
+async fn board_slices(
+    state: &AppState,
+    headers: &HeaderMap,
+    user: &AuthUser,
+    registry: &AdminRegistry,
+    locale: &str,
+    widgets: &[crate::boards::Widget],
+    params: &HashMap<String, String>,
+) -> Result<
+    (
+        HashMap<String, Vec<(&'static str, DbValue)>>,
+        Vec<Value>,
+        bool,
+    ),
+    Box<Response>,
+> {
+    let mut seen = Vec::new();
+    let mut raw_by_model: HashMap<String, String> = HashMap::new();
+    let mut sliced = false;
+    for widget in widgets {
+        let Some(model) = registry.find(&widget.model_key) else {
+            continue;
+        };
+        let mut names: Vec<&str> = widget.fields.iter().map(String::as_str).collect();
+        if !widget.group_field.is_empty() {
+            names.push(widget.group_field.as_str());
+        }
+        if !widget.measure.is_empty() {
+            names.push(widget.measure.as_str());
+        }
+        if !widget.series_field.is_empty() {
+            names.push(widget.series_field.as_str());
+        }
+        if !widget.trend_field.is_empty() {
+            names.push(widget.trend_field.as_str());
+        }
+        for name in names {
+            let key = (widget.model_key.as_str(), name);
+            if seen.contains(&key) {
+                continue;
+            }
+            let Some(field) = field_meta(model.meta(), name) else {
+                continue;
+            };
+            if !field.filterable || audit::concealed(field) {
+                continue;
+            }
+            seen.push(key);
+            let value = params
+                .get(&format!("slice.{}.{}", widget.model_key, name))
+                .map(String::as_str)
+                .unwrap_or("");
+            if value.is_empty() {
+                continue;
+            }
+            sliced = true;
+            let entry = raw_by_model.entry(widget.model_key.clone()).or_default();
+            if !entry.is_empty() {
+                entry.push('&');
+            }
+            entry.push_str(&format!("filter.{name}={value}"));
+        }
+    }
+    let mut applied = HashMap::new();
+    for (model_key, raw) in &raw_by_model {
+        let Some(model) = registry.find(model_key) else {
+            continue;
+        };
+        match crate::http::filters_from(
+            raw,
+            model.columns(),
+            registry,
+            model.meta(),
+            registry.filters(),
+        ) {
+            Ok(filters) => {
+                applied.insert(model_key.clone(), filters);
+            }
+            Err(_) => {
+                return Err(Box::new(
+                    error_page(
+                        state,
+                        headers,
+                        registry,
+                        locale,
+                        StatusCode::UNPROCESSABLE_ENTITY,
+                        "forbidden",
+                        true,
+                        &user.email,
+                    )
+                    .await,
+                ));
+            }
+        }
+    }
+    let mut slicers = Vec::new();
+    for (model_key, name) in seen {
+        let Some(model) = registry.find(model_key) else {
+            continue;
+        };
+        let Some(field) = field_meta(model.meta(), name) else {
+            continue;
+        };
+        let Some(column) = model.columns().iter().find(|column| column.name == name) else {
+            continue;
+        };
+        let value = params
+            .get(&format!("slice.{model_key}.{name}"))
+            .cloned()
+            .unwrap_or_default();
+        let (kind, options) = if column.foreign_table.is_some() {
+            let (options, _) = relation_options(registry, state, user, column, &value).await;
+            ("uuid", options)
+        } else if column.kind == ColumnKind::Boolean {
+            (
+                "boolean",
+                json!([
+                    {"id": "true", "label": text(locale, "yes"), "selected": value == "true"},
+                    {"id": "false", "label": text(locale, "no"), "selected": value == "false"}
+                ]),
+            )
+        } else if column.kind == ColumnKind::Choice {
+            (
+                "choice",
+                Value::Array(
+                    column
+                        .choices
+                        .iter()
+                        .map(|choice| {
+                            json!({
+                                "id": choice.value,
+                                "label": if locale == "de" { choice.label_de } else { choice.label_en },
+                                "selected": value == choice.value
+                            })
+                        })
+                        .collect(),
+                ),
+            )
+        } else if column.kind == ColumnKind::BigInt {
+            ("number", json!([]))
+        } else if column.kind == ColumnKind::Date {
+            ("date", json!([]))
+        } else {
+            ("text", json!([]))
+        };
+        slicers.push(json!({
+            "model": model_key,
+            "field": name,
+            "label": format!("{} · {}", model.meta().label, field.label),
+            "value": value,
+            "kind": kind,
+            "options": options
+        }));
+    }
+    Ok((applied, slicers, sliced))
+}
+
+async fn render_blocks(
+    state: &AppState,
+    user: &AuthUser,
+    registry: &AdminRegistry,
+    locale: &str,
+    widgets: &[crate::boards::Widget],
+    filters: &HashMap<String, Vec<(&'static str, DbValue)>>,
+) -> Vec<Value> {
+    let mut blocks = Vec::new();
+    for widget in widgets {
+        blocks.push(render_block(state, user, registry, locale, widget, filters).await);
+    }
+    blocks
+}
+
+async fn render_block(
+    state: &AppState,
+    user: &AuthUser,
+    registry: &AdminRegistry,
+    locale: &str,
+    widget: &crate::boards::Widget,
+    filters: &HashMap<String, Vec<(&'static str, DbValue)>>,
+) -> Value {
+    stamp_block(
+        widget,
+        render_block_body(state, user, registry, locale, widget, filters).await,
+    )
+}
+
+fn stamp_block(widget: &crate::boards::Widget, mut block: Value) -> Value {
+    if let Some(object) = block.as_object_mut() {
+        object.insert("id".to_owned(), json!(widget.id.to_string()));
+        object.insert("x".to_owned(), json!(widget.x));
+        object.insert("y".to_owned(), json!(widget.y));
+        object.insert("w".to_owned(), json!(widget.w));
+        object.insert("h".to_owned(), json!(widget.h));
+    }
+    block
+}
+
+async fn render_block_body(
+    state: &AppState,
+    user: &AuthUser,
+    registry: &AdminRegistry,
+    locale: &str,
+    widget: &crate::boards::Widget,
+    filters: &HashMap<String, Vec<(&'static str, DbValue)>>,
+) -> Value {
+    let Some(model) = registry.find(&widget.model_key) else {
+        return block_error(widget, locale, "board_missing");
+    };
+    let Some(auth) = state.auth.as_ref() else {
+        return block_error(widget, locale, "board_locked");
+    };
+    if crate::http::permit(auth, user, model.meta(), "read")
+        .await
+        .is_err()
+    {
+        return block_error(widget, locale, "board_locked");
+    }
+    let scope = crate::http::access_scope(model.as_ref(), user, false);
+    let model_filters = filters
+        .get(&widget.model_key)
+        .map(Vec::as_slice)
+        .unwrap_or(&[]);
+    if widget.kind == "table" {
+        let fields: Vec<_> = widget
+            .fields
+            .iter()
+            .filter_map(|name| field_meta(model.meta(), name))
+            .filter(|field| !audit::concealed(field))
+            .collect();
+        if fields.is_empty() {
+            return block_error(widget, locale, "board_missing");
+        }
+        let listed = model
+            .page(
+                &state.db,
+                &[],
+                None,
+                "id",
+                false,
+                model_filters,
+                &[],
+                0,
+                24,
+                &scope,
+            )
+            .await;
+        let Ok((rows, _, _)) = listed else {
+            return block_error(widget, locale, "board_read_error");
+        };
+        let foreign: Vec<ColumnSpec> = model
+            .columns()
+            .iter()
+            .copied()
+            .filter(|column| {
+                column.foreign_table.is_some()
+                    && fields.iter().any(|field| field.name == column.name)
+            })
+            .collect();
+        let relations = if foreign.is_empty() {
+            HashMap::new()
+        } else {
+            match relation_names(registry, state, user, &foreign, &rows).await {
+                Ok(relations) => relations,
+                Err(_) => return block_error(widget, locale, "board_read_error"),
+            }
+        };
+        let columns: Vec<_> = fields.iter().map(|field| field.label).collect();
+        let rendered: Vec<Value> = rows
+            .iter()
+            .map(|row| {
+                let mut lead = false;
+                let cells: Vec<String> = fields
+                    .iter()
+                    .map(|field| {
+                        present_cell(
+                            locale,
+                            registry.branding().currency.as_str(),
+                            model.columns(),
+                            field.name,
+                            row.get(field.name).unwrap_or(&Value::Null),
+                            &relations,
+                            user.is_superuser,
+                            &mut lead,
+                        )["text"]
+                            .as_str()
+                            .unwrap_or("")
+                            .to_owned()
+                    })
+                    .collect();
+                let href = row
+                    .get("id")
+                    .and_then(Value::as_str)
+                    .filter(|id| Uuid::parse_str(id).is_ok())
+                    .map(|id| format!("/admin/models/{}/{}", widget.model_key, id))
+                    .unwrap_or_default();
+                json!({ "href": href, "cells": cells })
+            })
+            .collect();
+        return json!({
+            "title": widget.title,
+            "kind": "table",
+            "span": 12,
+            "model_key": widget.model_key,
+            "columns": columns,
+            "rows": rendered,
+            "error": "",
+            "note": ""
+        });
+    }
+    if widget.kind == "card" {
+        return render_card(state, user, model.as_ref(), widget, locale, model_filters).await;
+    }
+    if widget.kind == "stack" {
+        return render_stack(
+            registry,
+            state,
+            user,
+            model.as_ref(),
+            widget,
+            locale,
+            model_filters,
+        )
+        .await;
+    }
+    let group = field_meta(model.meta(), &widget.group_field);
+    if group.map(audit::concealed) != Some(false) {
+        return block_error(widget, locale, "board_missing");
+    }
+    let grouped = crate::boards::grouped(
+        crate::boards::AggregateQuery {
+            db: &state.db,
+            table: model.descriptor().table,
+            columns: model.columns(),
+            scope: &scope,
+            filters: model_filters,
+        },
+        &widget.group_field,
+        &widget.measure,
+        widget.kind == "line",
+    )
+    .await;
+    let Ok((points, truncated)) = grouped else {
+        return block_error(widget, locale, "board_read_error");
+    };
+    let column = model
+        .columns()
+        .iter()
+        .find(|column| column.name == widget.group_field);
+    let mut labeled: Vec<(String, i64)> = points
+        .iter()
+        .map(|point| (point.label.clone(), point.amount))
+        .collect();
+    if let Some(column) = column {
+        if column.kind == ColumnKind::Choice {
+            for (label, _) in &mut labeled {
+                if label != "—" {
+                    *label = fexu_core::choice_label(column.choices, locale, label);
+                }
+            }
+        } else if column.foreign_table.is_some() {
+            let rows: Vec<Value> = labeled
+                .iter()
+                .filter(|(label, _)| label != "—")
+                .map(|(label, _)| json!({ widget.group_field.clone(): label }))
+                .collect();
+            if let Ok(relations) = relation_names(registry, state, user, &[*column], &rows).await {
+                let table = column.foreign_table.unwrap_or("");
+                for (label, _) in &mut labeled {
+                    if let Some(name) = relations
+                        .get(table)
+                        .and_then(|entry| entry.labels.get(label.as_str()))
+                    {
+                        *label = name.clone();
+                    }
+                }
+            }
+        }
+    }
+    if widget.kind == "tree" {
+        return tree_block(widget, locale, &labeled, truncated);
+    }
+    let max = labeled
+        .iter()
+        .map(|point| point.1)
+        .max()
+        .unwrap_or(1)
+        .max(1);
+    let total: i64 = labeled.iter().map(|point| point.1).sum();
+    let plot_top = 28.0;
+    let plot_bottom = 228.0;
+    let plot_left = 48.0;
+    let plot_right = 624.0;
+    let plot_span = plot_bottom - plot_top;
+    let y_of = |amount: i64| plot_bottom - (amount as f64 / max as f64) * plot_span;
+    let ticks: Vec<i64> = if max <= 5 {
+        (0..=max).collect()
+    } else {
+        vec![0, max / 2, max]
+    };
+    let grid: Vec<Value> = ticks
+        .iter()
+        .map(|tick| {
+            json!({
+                "y": format!("{:.1}", y_of(*tick)),
+                "label": tick.to_string()
+            })
+        })
+        .collect();
+    let slot = if labeled.is_empty() {
+        1.0
+    } else {
+        (plot_right - plot_left) / labeled.len() as f64
+    };
+    let mut slices = Vec::new();
+    let mut bars = Vec::new();
+    let mut dots = Vec::new();
+    let mut point_list = String::new();
+    let mut cursor = 0.0_f64;
+    let ring = 2.0 * std::f64::consts::PI * 70.0;
+    for (index, (label, amount)) in labeled.iter().enumerate() {
+        let color = CHART_COLORS[index % CHART_COLORS.len()];
+        let share = if total == 0 {
+            0.0
+        } else {
+            *amount as f64 / total as f64 * 100.0
+        };
+        let bar_w = (slot * 0.62).clamp(8.0, 72.0);
+        let bar_x = plot_left + slot * index as f64 + (slot - bar_w) / 2.0;
+        let bar_y = y_of(*amount);
+        let bar_h = (plot_bottom - bar_y).max(if *amount > 0 { 2.0 } else { 0.0 });
+        let center = bar_x + bar_w / 2.0;
+        let x = if labeled.len() <= 1 {
+            (plot_left + plot_right) / 2.0
+        } else {
+            plot_left + index as f64 * (plot_right - plot_left) / (labeled.len() - 1) as f64
+        };
+        let y = y_of(*amount);
+        if !point_list.is_empty() {
+            point_list.push(' ');
+        }
+        point_list.push_str(&format!("{x:.1},{y:.1}"));
+        let dash = share / 100.0 * ring;
+        slices.push(json!({
+            "label": label,
+            "amount": amount,
+            "share": format!("{share:.0}"),
+            "color": color,
+            "dash": format!("{dash:.2} {:.2}", ring - dash),
+            "offset": format!("{:.2}", -cursor / 100.0 * ring)
+        }));
+        bars.push(json!({
+            "x": format!("{bar_x:.1}"),
+            "y": format!("{bar_y:.1}"),
+            "w": format!("{bar_w:.1}"),
+            "h": format!("{bar_h:.1}"),
+            "cx": format!("{center:.1}"),
+            "value_y": format!("{:.1}", (bar_y - 8.0).max(14.0)),
+            "label": clip_chart_label(label, 24),
+            "amount": amount,
+            "color": color
+        }));
+        dots.push(json!({ "x": format!("{x:.1}"), "y": format!("{y:.1}"), "amount": amount }));
+        cursor += share;
+    }
+    let area = if labeled.is_empty() {
+        String::new()
+    } else {
+        let first_x = dots
+            .first()
+            .and_then(|dot| dot["x"].as_str())
+            .unwrap_or("48");
+        let last_x = dots
+            .last()
+            .and_then(|dot| dot["x"].as_str())
+            .unwrap_or("624");
+        format!("{first_x},{plot_bottom:.1} {point_list} {last_x},{plot_bottom:.1}")
+    };
+    let note = if truncated {
+        text(
+            locale,
+            if widget.kind == "line" {
+                "board_line_limit"
+            } else {
+                "board_chart_limit"
+            },
+        )
+    } else {
+        String::new()
+    };
+    json!({
+        "title": widget.title,
+        "kind": widget.kind,
+        "span": if widget.span == 6 { 6 } else { 12 },
+        "model_key": widget.model_key,
+        "slices": slices,
+        "bars": bars,
+        "grid": grid,
+        "points": point_list,
+        "area": area,
+        "dots": dots,
+        "tilt": labeled.iter().any(|(label, _)| label.chars().count() > 12),
+        "total": total,
+        "first": labeled.first().map(|point| point.0.clone()).unwrap_or_default(),
+        "last": labeled.last().map(|point| point.0.clone()).unwrap_or_default(),
+        "error": "",
+        "note": note
+    })
+}
+
+async fn render_card(
+    state: &AppState,
+    user: &AuthUser,
+    model: &dyn ManagedModel,
+    widget: &crate::boards::Widget,
+    locale: &str,
+    filters: &[(&str, DbValue)],
+) -> Value {
+    let scope = crate::http::access_scope(model, user, false);
+    let total = match crate::boards::scalar(
+        &state.db,
+        model.descriptor().table,
+        model.columns(),
+        &scope,
+        &widget.measure,
+        filters,
+    )
+    .await
+    {
+        Ok(total) => total,
+        Err(_) => return block_error(widget, locale, "board_read_error"),
+    };
+    let mut spark = String::new();
+    let mut delta = String::new();
+    let mut direction = "";
+    if !widget.trend_field.is_empty() {
+        let grouped = crate::boards::grouped(
+            crate::boards::AggregateQuery {
+                db: &state.db,
+                table: model.descriptor().table,
+                columns: model.columns(),
+                scope: &scope,
+                filters,
+            },
+            &widget.trend_field,
+            &widget.measure,
+            true,
+        )
+        .await;
+        let Ok((points, _)) = grouped else {
+            return block_error(widget, locale, "board_read_error");
+        };
+        if points.len() >= 2 {
+            let previous = points[points.len() - 2].amount;
+            let latest = points[points.len() - 1].amount;
+            let diff = latest - previous;
+            direction = if diff > 0 {
+                "up"
+            } else if diff < 0 {
+                "down"
+            } else {
+                "flat"
+            };
+            delta = if previous != 0 {
+                let percent = (diff as f64 / previous as f64 * 100.0).round() as i64;
+                format!("{diff:+} · {percent:+}%")
+            } else {
+                format!("{diff:+}")
+            };
+        }
+        let max = points
+            .iter()
+            .map(|point| point.amount)
+            .max()
+            .unwrap_or(1)
+            .max(1);
+        for (index, point) in points.iter().enumerate() {
+            let x = if points.len() <= 1 {
+                60.0
+            } else {
+                index as f64 * 120.0 / (points.len() - 1) as f64
+            };
+            let y = 32.0 - point.amount as f64 / max as f64 * 28.0;
+            if !spark.is_empty() {
+                spark.push(' ');
+            }
+            spark.push_str(&format!("{x:.1},{y:.1}"));
+        }
+    }
+    json!({
+        "title": widget.title,
+        "kind": "card",
+        "span": 4,
+        "model_key": widget.model_key,
+        "model_label": model.meta().label,
+        "total": total,
+        "delta": delta,
+        "direction": direction,
+        "spark": spark,
+        "error": "",
+        "note": ""
+    })
+}
+
+async fn render_stack(
+    registry: &AdminRegistry,
+    state: &AppState,
+    user: &AuthUser,
+    model: &dyn ManagedModel,
+    widget: &crate::boards::Widget,
+    locale: &str,
+    filters: &[(&str, DbValue)],
+) -> Value {
+    if field_meta(model.meta(), &widget.group_field).map(audit::concealed) != Some(false)
+        || field_meta(model.meta(), &widget.series_field).map(audit::concealed) != Some(false)
+    {
+        return block_error(widget, locale, "board_missing");
+    }
+    let scope = crate::http::access_scope(model, user, false);
+    let stacked = crate::boards::stacked(
+        crate::boards::AggregateQuery {
+            db: &state.db,
+            table: model.descriptor().table,
+            columns: model.columns(),
+            scope: &scope,
+            filters,
+        },
+        &widget.group_field,
+        &widget.series_field,
+        &widget.measure,
+    )
+    .await;
+    let Ok(points) = stacked else {
+        return block_error(widget, locale, "board_read_error");
+    };
+    let mut group_raw = Vec::new();
+    let mut series_raw = Vec::new();
+    for point in &points {
+        if !group_raw.contains(&point.group) {
+            group_raw.push(point.group.clone());
+        }
+        if !series_raw.contains(&point.series) {
+            series_raw.push(point.series.clone());
+        }
+    }
+    let mut group_names = group_raw.clone();
+    let mut series_names = series_raw.clone();
+    name_axis(
+        registry,
+        state,
+        user,
+        locale,
+        model,
+        &widget.group_field,
+        &mut group_names,
+    )
+    .await;
+    name_axis(
+        registry,
+        state,
+        user,
+        locale,
+        model,
+        &widget.series_field,
+        &mut series_names,
+    )
+    .await;
+    let group_map: HashMap<_, _> = group_raw.into_iter().zip(group_names).collect();
+    let series_map: HashMap<_, _> = series_raw.into_iter().zip(series_names).collect();
+    let named: Vec<(String, String, i64)> = points
+        .into_iter()
+        .map(|point| {
+            (
+                group_map.get(&point.group).cloned().unwrap_or(point.group),
+                series_map
+                    .get(&point.series)
+                    .cloned()
+                    .unwrap_or(point.series),
+                point.amount,
+            )
+        })
+        .collect();
+    let mut group_order: Vec<(String, i64)> = Vec::new();
+    let mut series_order: Vec<(String, i64)> = Vec::new();
+    for (group, series_name, amount) in &named {
+        if let Some(found) = group_order.iter_mut().find(|item| item.0 == *group) {
+            found.1 += amount;
+        } else {
+            group_order.push((group.clone(), *amount));
+        }
+        if let Some(found) = series_order.iter_mut().find(|item| item.0 == *series_name) {
+            found.1 += amount;
+        } else {
+            series_order.push((series_name.clone(), *amount));
+        }
+    }
+    group_order.sort_by_key(|item| std::cmp::Reverse(item.1));
+    series_order.sort_by_key(|item| std::cmp::Reverse(item.1));
+    let truncated = group_order.len() > 12 || series_order.len() > 6;
+    group_order.truncate(12);
+    series_order.truncate(6);
+    let max = group_order
+        .iter()
+        .map(|item| item.1)
+        .max()
+        .unwrap_or(1)
+        .max(1);
+    let legend: Vec<_> = series_order
+        .iter()
+        .enumerate()
+        .map(|(index, (label, _))| {
+            json!({ "label": label, "color": CHART_COLORS[index % CHART_COLORS.len()] })
+        })
+        .collect();
+    let mut rows = Vec::new();
+    for (index, (group, total)) in group_order.iter().enumerate() {
+        let mut cursor = 150.0;
+        let mut segments = Vec::new();
+        for (series_index, (series_name, _)) in series_order.iter().enumerate() {
+            let amount = named
+                .iter()
+                .find(|item| item.0 == *group && item.1 == *series_name)
+                .map(|item| item.2)
+                .unwrap_or(0);
+            if amount <= 0 {
+                continue;
+            }
+            let width = amount as f64 / max as f64 * 450.0;
+            segments.push(json!({
+                "x": format!("{cursor:.1}"),
+                "w": format!("{width:.1}"),
+                "amount": amount,
+                "color": CHART_COLORS[series_index % CHART_COLORS.len()]
+            }));
+            cursor += width;
+        }
+        rows.push(json!({
+            "label": clip_chart_label(group, 18),
+            "y": 24 + index * 28,
+            "total": total,
+            "segments": segments
+        }));
+    }
+    let height = 36 + group_order.len() * 28 + 28;
+    let ticks = if max <= 5 {
+        vec![0, max]
+    } else {
+        vec![0, max / 2, max]
+    };
+    let axis: Vec<_> = ticks
+        .iter()
+        .map(|tick| {
+            json!({
+                "x": format!("{:.1}", 150.0 + *tick as f64 / max as f64 * 450.0),
+                "label": tick.to_string()
+            })
+        })
+        .collect();
+    json!({
+        "title": widget.title,
+        "kind": "stack",
+        "span": if widget.span == 6 { 6 } else { 12 },
+        "model_key": widget.model_key,
+        "rows": rows,
+        "legend": legend,
+        "axis": axis,
+        "height": height,
+        "error": "",
+        "note": if truncated { text(locale, "board_chart_limit") } else { String::new() }
+    })
+}
+
+async fn name_axis(
+    registry: &AdminRegistry,
+    state: &AppState,
+    user: &AuthUser,
+    locale: &str,
+    model: &dyn ManagedModel,
+    field: &str,
+    labels: &mut [String],
+) {
+    let Some(column) = model.columns().iter().find(|column| column.name == field) else {
+        return;
+    };
+    if column.kind == ColumnKind::Choice {
+        for label in labels.iter_mut() {
+            if label != "—" {
+                *label = fexu_core::choice_label(column.choices, locale, label);
+            }
+        }
+        return;
+    }
+    let Some(table) = column.foreign_table else {
+        return;
+    };
+    let rows: Vec<Value> = labels
+        .iter()
+        .filter(|label| label.as_str() != "—")
+        .map(|label| json!({ field: label }))
+        .collect();
+    if let Ok(relations) = relation_names(registry, state, user, &[*column], &rows).await {
+        for label in labels.iter_mut() {
+            if let Some(name) = relations
+                .get(table)
+                .and_then(|entry| entry.labels.get(label.as_str()))
+            {
+                *label = name.clone();
+            }
+        }
+    }
+}
+
+fn tree_block(
+    widget: &crate::boards::Widget,
+    locale: &str,
+    labeled: &[(String, i64)],
+    truncated: bool,
+) -> Value {
+    let mut tiles = Vec::new();
+    let positive: Vec<_> = labeled
+        .iter()
+        .filter(|(_, amount)| *amount > 0)
+        .enumerate()
+        .map(|(index, (label, amount))| {
+            (
+                label.clone(),
+                *amount,
+                CHART_COLORS[index % CHART_COLORS.len()],
+            )
+        })
+        .collect();
+    layout_tiles(&positive, 8.0, 8.0, 624.0, 304.0, &mut tiles);
+    json!({
+        "title": widget.title,
+        "kind": "tree",
+        "span": if widget.span == 6 { 6 } else { 12 },
+        "model_key": widget.model_key,
+        "tiles": tiles,
+        "error": "",
+        "note": if truncated { text(locale, "board_chart_limit") } else { String::new() }
+    })
+}
+
+fn layout_tiles(
+    items: &[(String, i64, &str)],
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+    tiles: &mut Vec<Value>,
+) {
+    if items.is_empty() || width < 1.0 || height < 1.0 {
+        return;
+    }
+    let total: f64 = items.iter().map(|item| item.1 as f64).sum();
+    if total <= 0.0 {
+        return;
+    }
+    if items.len() == 1 {
+        tiles.push(json!({
+            "x": format!("{x:.1}"),
+            "y": format!("{y:.1}"),
+            "w": format!("{width:.1}"),
+            "h": format!("{height:.1}"),
+            "color": items[0].2,
+            "label": clip_chart_label(&items[0].0, 22),
+            "full": items[0].0,
+            "amount": items[0].1,
+            "lx": format!("{:.1}", x + 10.0),
+            "ly": format!("{:.1}", y + 22.0),
+            "vy": format!("{:.1}", y + 40.0),
+            "text": width >= 72.0 && height >= 36.0
+        }));
+        return;
+    }
+    let mut split = 1;
+    let mut consumed = 0.0;
+    for (index, item) in items.iter().enumerate() {
+        consumed += item.1 as f64;
+        split = index + 1;
+        if consumed >= total / 2.0 {
+            break;
+        }
+    }
+    split = split.clamp(1, items.len() - 1);
+    let (left, right) = items.split_at(split);
+    let left_sum: f64 = left.iter().map(|item| item.1 as f64).sum();
+    let share = left_sum / total;
+    if width >= height {
+        let left_width = (width * share).clamp(1.0, width - 1.0);
+        layout_tiles(left, x, y, left_width, height, tiles);
+        layout_tiles(right, x + left_width, y, width - left_width, height, tiles);
+    } else {
+        let left_height = (height * share).clamp(1.0, height - 1.0);
+        layout_tiles(left, x, y, width, left_height, tiles);
+        layout_tiles(
+            right,
+            x,
+            y + left_height,
+            width,
+            height - left_height,
+            tiles,
+        );
+    }
+}
+
+fn widget_detail(registry: &AdminRegistry, widget: &crate::boards::Widget) -> String {
+    let Some(model) = registry.find(&widget.model_key) else {
+        return String::new();
+    };
+    let label = |name: &str| -> String {
+        field_meta(model.meta(), name)
+            .map(|field| field.label.to_string())
+            .unwrap_or_else(|| name.to_string())
+    };
+    if widget.kind == "table" {
+        return widget
+            .fields
+            .iter()
+            .map(|name| label(name))
+            .collect::<Vec<_>>()
+            .join(", ");
+    }
+    let mut parts = Vec::new();
+    for name in [
+        widget.group_field.as_str(),
+        widget.series_field.as_str(),
+        widget.measure.as_str(),
+        widget.trend_field.as_str(),
+    ] {
+        if !name.is_empty() {
+            parts.push(label(name));
+        }
+    }
+    parts.join(" · ")
+}
+
+fn clip_chart_label(label: &str, limit: usize) -> String {
+    let chars: Vec<char> = label.chars().collect();
+    if chars.len() <= limit {
+        label.to_owned()
+    } else {
+        format!("{}…", chars.into_iter().take(limit - 1).collect::<String>())
+    }
+}
+
+fn block_error(widget: &crate::boards::Widget, locale: &str, key: &str) -> Value {
+    json!({
+        "title": widget.title,
+        "kind": widget.kind,
+        "span": 12,
+        "model_key": widget.model_key,
+        "error": text(locale, key),
+        "note": "",
+        "rows": [],
+        "columns": [],
+        "slices": []
+    })
+}
+
+fn kind_label(kind: &str) -> &'static str {
+    match kind {
+        "table" => "board_table",
+        "bar" => "board_bar",
+        "line" => "board_line",
+        "pie" => "board_pie",
+        "stack" => "board_stack",
+        "tree" => "board_tree",
+        "card" => "board_card",
+        _ => "board_kind",
+    }
+}
+
+fn board_reject_key(reject: crate::boards::BoardReject) -> &'static str {
+    match reject {
+        crate::boards::BoardReject::Name => "board_name_invalid",
+        crate::boards::BoardReject::Title => "board_title_invalid",
+        crate::boards::BoardReject::Limit => "board_limit",
+        crate::boards::BoardReject::WidgetLimit => "board_widget_limit",
+        crate::boards::BoardReject::Fields => "board_fields_required",
+        crate::boards::BoardReject::Group => "board_group_required",
+        crate::boards::BoardReject::LineDate => "board_line_date",
+        crate::boards::BoardReject::Kind => "board_bad_kind",
+        crate::boards::BoardReject::Model => "board_bad_model",
+        crate::boards::BoardReject::Place => "board_place_busy",
+    }
+}
+
+fn text(locale: &str, key: &str) -> String {
+    catalog(locale)
+        .get(key)
+        .and_then(Value::as_str)
+        .unwrap_or(key)
+        .to_owned()
+}
+
+fn parse_uuid(value: &str) -> Option<uuid::Uuid> {
+    if is_uuid(value) {
+        uuid::Uuid::parse_str(value).ok()
+    } else {
+        None
+    }
+}
+
+const CHART_COLORS: &[&str] = &[
+    "#6d28d9", "#0f766e", "#b45309", "#1d4ed8", "#9f1239", "#0369a1", "#7c3aed", "#15803d",
+    "#c2410c", "#4338ca", "#0e7490", "#a16207",
+];
 
 async fn model_index(
     State(state): State<AppState>,
@@ -487,7 +4357,7 @@ async fn model_index(
         "/admin/models",
         "",
         "",
-        json!({ "user_email": user.email }),
+        overview_extra(&state, &user, &locale).await,
     )
     .await
 }
@@ -710,6 +4580,38 @@ async fn model_list(
             .await
         }
     };
+    let image_fields: Vec<&str> = registry
+        .widgets()
+        .iter()
+        .filter(|widget| {
+            widget.model_key == model_key
+                && matches!(widget.kind, crate::widgets::WidgetKind::Image)
+        })
+        .map(|widget| widget.field)
+        .collect();
+    let row_ids: Vec<Uuid> = rows
+        .iter()
+        .filter_map(|row| {
+            row.get("id")
+                .and_then(Value::as_str)
+                .and_then(|value| Uuid::parse_str(value).ok())
+        })
+        .collect();
+    let mut images = HashMap::new();
+    for field in &image_fields {
+        if let Ok(found) = crate::files::stored_ids(&state.db, &model_key, field, &row_ids).await {
+            images.insert(*field, found);
+        }
+    }
+    let list_edit: Vec<&str> =
+        if permit(state.auth.as_ref().unwrap(), &user, model.meta(), "update")
+            .await
+            .is_ok()
+        {
+            registry.list_editable_of(model.meta()).to_vec()
+        } else {
+            Vec::new()
+        };
     let rendered_rows: Vec<Value> = rows
         .iter()
         .map(|row| {
@@ -730,6 +4632,26 @@ async fn model_list(
                     );
                     if links.contains(&name) {
                         cell["link"] = json!(true);
+                    }
+                    cell["name"] = json!(name);
+                    if list_edit.contains(&name) {
+                        if let Some(column) =
+                            model.columns().iter().find(|column| column.name == name)
+                        {
+                            cell["edit"] =
+                                list_editor(&locale, column, row.get(name).unwrap_or(&Value::Null));
+                        }
+                    }
+                    if let (Some(found), Some(id)) = (
+                        images.get(name),
+                        row.get("id")
+                            .and_then(Value::as_str)
+                            .and_then(|value| Uuid::parse_str(value).ok()),
+                    ) {
+                        if found.contains(&id) {
+                            cell["image"] =
+                                json!(format!("/admin/models/{model_key}/{id}/file/{name}"));
+                        }
                     }
                     cell
                 })
@@ -796,6 +4718,33 @@ async fn model_list(
             params.get("notice").map(String::as_str).unwrap_or(""),
         )
     };
+    let typed_keys: Vec<String> = filters
+        .iter()
+        .filter(|item| item.get("facet").and_then(Value::as_bool) != Some(true))
+        .filter_map(|item| item.get("name").and_then(Value::as_str))
+        .map(|name| format!("filter.{name}"))
+        .collect();
+    let mut kept_pairs: Vec<_> = params
+        .iter()
+        .filter(|(key, value)| {
+            !value.is_empty() && !matches!(key.as_str(), "page" | "notice" | "changed")
+        })
+        .map(|(key, value)| (key.clone(), value.clone()))
+        .collect();
+    kept_pairs.sort();
+    let kept: Vec<Value> = kept_pairs
+        .into_iter()
+        .map(|(name, value)| {
+            json!({
+                "name": name,
+                "value": value,
+                "typed": typed_keys.iter().any(|key| key == &name)
+            })
+        })
+        .collect();
+    let has_value_filters = filters
+        .iter()
+        .any(|item| item.get("facet").and_then(Value::as_bool) != Some(true));
     page_as(
         &state,
         &user,
@@ -820,12 +4769,16 @@ async fn model_list(
             "sort": if params.contains_key("sort") { sort.clone() } else { String::new() },
             "dir": if params.contains_key("dir") { if descending { "desc" } else { "asc" }.to_owned() } else { String::new() },
             "filters": filters,
+            "has_value_filters": has_value_filters,
+            "kept": kept,
             "filtering": filtering,
             "hierarchy": navigation.view,
             "can_create": permit(state.auth.as_ref().unwrap(), &user, model.meta(), "create").await.is_ok(),
             "can_update": can_update,
             "can_delete": can_delete,
             "columns": columns,
+            "pictures": !image_fields.is_empty(),
+            "editable": !list_edit.is_empty(),
             "rows": rendered_rows,
             "total": total,
             "shown": rows.len(),
@@ -848,6 +4801,9 @@ async fn model_new(
     if params.contains_key("draft") {
         values.insert("_draft".to_owned(), json!(params.get("draft")));
         values.insert("_use_draft".to_owned(), json!(true));
+    }
+    if params.get("popup").is_some_and(|value| value == "1") {
+        values.insert("_popup".to_owned(), json!(true));
     }
     if let Some(model) = registry.find(&model_key) {
         let mut picks = Map::new();
@@ -960,6 +4916,9 @@ async fn model_detail(
         && read_visible(&state, &user, model.as_ref(), id, "update")
             .await
             .is_some();
+    if query.contains_key("view") {
+        return redirect(&format!("/admin/models/{model_key}/{id}"));
+    }
     if can_update {
         return record_form(
             State(state),
@@ -1020,6 +4979,8 @@ async fn model_detail(
             "fields": fields,
             "can_update": false,
             "can_delete": can_delete,
+            "popup": query.get("popup").is_some_and(|value| value == "1"),
+            "nav": !query.get("popup").is_some_and(|value| value == "1"),
             "inlines": inline_sections(&state, &registry, &user, model.as_ref(), id, &query, false, &locale).await
         }),
     )
@@ -1062,6 +5023,9 @@ async fn record_form(
         .await;
     };
     record.insert("_inline_query".to_owned(), json!(params));
+    if params.get("popup").is_some_and(|value| value == "1") {
+        record.insert("_popup".to_owned(), json!(true));
+    }
     if params.contains_key("draft") {
         record.insert(
             "_draft".to_owned(),
@@ -1100,6 +5064,150 @@ async fn record_form(
     .await
 }
 
+fn list_editor(locale: &str, column: &ColumnSpec, value: &Value) -> Value {
+    let text = match value {
+        Value::String(text) => text.clone(),
+        Value::Number(number) => number.to_string(),
+        Value::Bool(flag) => {
+            if *flag {
+                "true".to_owned()
+            } else {
+                "false".to_owned()
+            }
+        }
+        _ => String::new(),
+    };
+    let input = match column.kind {
+        ColumnKind::Boolean => "checkbox",
+        ColumnKind::BigInt => "number",
+        ColumnKind::Date => "date",
+        ColumnKind::Time => "time",
+        ColumnKind::DateTime => "datetime-local",
+        ColumnKind::Choice => "select",
+        _ => "text",
+    };
+    let shown = if column.kind == ColumnKind::DateTime {
+        text.replace(' ', "T")
+    } else {
+        text
+    };
+    let options: Vec<Value> = column
+        .choices
+        .iter()
+        .map(|choice| {
+            json!({
+                "value": choice.value,
+                "label": if locale == "de" { choice.label_de } else { choice.label_en },
+                "selected": choice.value == shown
+            })
+        })
+        .collect();
+    json!({
+        "input": input,
+        "value": shown,
+        "checked": shown == "true" || shown == "1",
+        "options": options
+    })
+}
+
+fn row_json(status: StatusCode, body: Value) -> Response {
+    let mut response = Response::new(axum::body::Body::from(body.to_string()));
+    *response.status_mut() = status;
+    response.headers_mut().insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static("application/json; charset=utf-8"),
+    );
+    response.headers_mut().insert(
+        header::X_CONTENT_TYPE_OPTIONS,
+        HeaderValue::from_static("nosniff"),
+    );
+    response
+}
+
+async fn row_save(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Extension(registry): Extension<AdminRegistry>,
+    Path((model_key, id)): Path<(String, Uuid)>,
+    body: Bytes,
+) -> Response {
+    let locale = locale_of(
+        &headers,
+        &registry.branding().default_locale,
+        &registry.branding().fallback_locale,
+    );
+    let user = match require_post(&state, &headers, &body).await {
+        Ok(user) => user,
+        Err(()) => {
+            return row_json(
+                StatusCode::FORBIDDEN,
+                json!({ "ok": false, "error": catalog(&locale).get("csrf").and_then(Value::as_str).unwrap_or("Forbidden") }),
+            )
+        }
+    };
+    let Some(model) = registry.find(&model_key) else {
+        return row_json(StatusCode::NOT_FOUND, json!({ "ok": false }));
+    };
+    let allowed = registry.list_editable_of(model.meta());
+    if allowed.is_empty()
+        || gate(&state, &registry, &user, model.as_ref(), "update")
+            .await
+            .is_err()
+    {
+        return row_json(StatusCode::NOT_FOUND, json!({ "ok": false }));
+    }
+    let Some(current) = read_visible(&state, &user, model.as_ref(), id, "update").await else {
+        return row_json(StatusCode::NOT_FOUND, json!({ "ok": false }));
+    };
+    let Some(current_object) = current.as_object() else {
+        return row_json(StatusCode::UNPROCESSABLE_ENTITY, json!({ "ok": false }));
+    };
+    let mut object = Map::new();
+    for field in model.meta().fields {
+        if field.name == "id" {
+            continue;
+        }
+        if let Some(value) = current_object.get(field.name) {
+            object.insert(field.name.to_owned(), value.clone());
+        }
+    }
+    let form = match row_form(&body) {
+        Ok(form) => form,
+        Err(()) => {
+            return row_json(
+                StatusCode::UNPROCESSABLE_ENTITY,
+                json!({ "ok": false, "error": catalog(&locale).get("forbidden").and_then(Value::as_str).unwrap_or("Rejected") }),
+            )
+        }
+    };
+    if apply_row_fields(&mut object, model.columns(), allowed, &form).is_err() {
+        return row_json(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            json!({ "ok": false, "error": catalog(&locale).get("forbidden").and_then(Value::as_str).unwrap_or("Rejected") }),
+        );
+    }
+    match model
+        .update(
+            &state.db,
+            id,
+            Value::Object(object),
+            &access_scope(model.as_ref(), &user, true),
+            &user,
+        )
+        .await
+    {
+        Ok(_) => row_json(StatusCode::OK, json!({ "ok": true })),
+        Err(FexuError::Validation(message)) => row_json(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            json!({ "ok": false, "error": validation_text(&locale, &message) }),
+        ),
+        Err(_) => row_json(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            json!({ "ok": false, "error": catalog(&locale).get("forbidden").and_then(Value::as_str).unwrap_or("Rejected") }),
+        ),
+    }
+}
+
 async fn model_update(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -1115,6 +5223,7 @@ async fn model_delete(
     headers: HeaderMap,
     Extension(registry): Extension<AdminRegistry>,
     Path((model_key, id)): Path<(String, Uuid)>,
+    Query(query): Query<HashMap<String, String>>,
 ) -> Response {
     let locale = locale_of(
         &headers,
@@ -1202,7 +5311,9 @@ async fn model_delete(
             "label": if named.is_empty() { id.to_string() } else { named },
             "record_id": id.to_string(),
             "model_label": model.meta().label,
-            "list_path": format!("/admin/models/{model_key}")
+            "list_path": format!("/admin/models/{model_key}"),
+            "popup": query.get("popup").is_some_and(|value| value == "1"),
+            "nav": !query.get("popup").is_some_and(|value| value == "1")
         }),
     )
     .await
@@ -1271,6 +5382,7 @@ async fn model_remove(
     let scope = access_scope(model.as_ref(), &user, true);
     match model.remove(&state.db, id, &scope, &user).await {
         Ok(fexu_db::DeleteOutcome::Deleted) => {
+            let _ = crate::files::delete_record(&state.db, &model_key, id).await;
             redirect(&format!("/admin/models/{model_key}?notice=deleted"))
         }
         _ => {
@@ -1300,8 +5412,7 @@ async fn users(
         &registry.branding().default_locale,
         &registry.branding().fallback_locale,
     );
-    let user = match require_directory(&state, &headers, &registry, "/admin/directory/users").await
-    {
+    let user = match require_roles(&state, &headers, &registry, "/admin/directory/users").await {
         Ok(user) => user,
         Err(response) => return response,
     };
@@ -1325,15 +5436,22 @@ async fn users(
     for (id, name) in links {
         roles.entry(id).or_default().push(name);
     }
+    let display_names = auth
+        .display_names()
+        .await
+        .unwrap_or_default()
+        .into_iter()
+        .collect::<HashMap<Uuid, String>>();
     let query = params.get("q").cloned().unwrap_or_default();
+    let needle = query.to_ascii_lowercase();
     let mut rows: Vec<_> = listed
         .into_iter()
         .filter(|candidate| {
             query.is_empty()
-                || candidate
-                    .email
-                    .to_ascii_lowercase()
-                    .contains(&query.to_ascii_lowercase())
+                || candidate.email.to_ascii_lowercase().contains(&needle)
+                || display_names
+                    .get(&candidate.id)
+                    .is_some_and(|name| name.to_ascii_lowercase().contains(&needle))
         })
         .collect();
     let descending = params.get("dir").map(String::as_str) == Some("desc");
@@ -1359,12 +5477,14 @@ async fn users(
             json!({
                 "id": candidate.id,
                 "email": candidate.email,
+                "name": display_names.get(&candidate.id).cloned().unwrap_or_default(),
                 "is_active": candidate.is_active,
                 "is_staff": candidate.is_staff,
                 "is_superuser": candidate.is_superuser,
                 "roles": names.join(", "),
-                "can_edit": !candidate.is_superuser,
-                "mutable": !candidate.is_superuser && candidate.id != user.id
+                "can_edit": user.is_superuser,
+                "can_assign": true,
+                "mutable": user.is_superuser && !candidate.is_superuser && candidate.id != user.id
             })
         })
         .collect();
@@ -1390,6 +5510,7 @@ async fn users(
         "",
         json!({
             "users": users,
+            "can_add": user.is_superuser,
             "query": query,
             "total": total,
             "shown": shown,
@@ -1441,8 +5562,7 @@ async fn roles(
         &registry.branding().default_locale,
         &registry.branding().fallback_locale,
     );
-    let user = match require_directory(&state, &headers, &registry, "/admin/directory/roles").await
-    {
+    let user = match require_roles(&state, &headers, &registry, "/admin/directory/roles").await {
         Ok(user) => user,
         Err(response) => return response,
     };
@@ -1494,11 +5614,11 @@ async fn role_new(
         &registry.branding().default_locale,
         &registry.branding().fallback_locale,
     );
-    let user =
-        match require_directory(&state, &headers, &registry, "/admin/directory/roles/new").await {
-            Ok(user) => user,
-            Err(response) => return response,
-        };
+    let user = match require_roles(&state, &headers, &registry, "/admin/directory/roles/new").await
+    {
+        Ok(user) => user,
+        Err(response) => return response,
+    };
     let csrf = session_csrf(state.auth.as_ref().unwrap(), &headers).await;
     page_as(
         &state,
@@ -1533,12 +5653,12 @@ async fn role_create(
         &registry.branding().default_locale,
         &registry.branding().fallback_locale,
     );
-    let user = match require_directory_post(&state, &headers, &registry, &body).await {
+    let user = match require_roles_post(&state, &headers, &registry, &body).await {
         Ok(user) => user,
         Err(response) => return response,
     };
     let name = parse_form(&body).get("name").cloned().unwrap_or_default();
-    if !identifier(&name) {
+    if !role_label_ok(&name) {
         return error_page(
             &state,
             &headers,
@@ -1605,12 +5725,11 @@ async fn role_permissions_page(
         &registry.branding().default_locale,
         &registry.branding().fallback_locale,
     );
-    let user = match require_directory(&state, &headers, &registry, "/admin/directory/permissions")
-        .await
-    {
-        Ok(user) => user,
-        Err(response) => return response,
-    };
+    let user =
+        match require_roles(&state, &headers, &registry, "/admin/directory/permissions").await {
+            Ok(user) => user,
+            Err(response) => return response,
+        };
     let auth = state.auth.as_ref().unwrap();
     let listed = auth.list_roles().await.unwrap_or_default();
     let mut roles = Vec::new();
@@ -1626,7 +5745,33 @@ async fn role_permissions_page(
             }
         }
         let permissions = auth.list_role_permissions(&name).await.unwrap_or_default();
-        roles.push(json!({ "id": id, "name": name, "permissions": permissions }));
+        let catalog = permission_catalog(&registry, &locale);
+        let mut known = std::collections::BTreeSet::new();
+        let rows: Vec<Value> = catalog
+            .iter()
+            .map(|row| {
+                let key = row
+                    .get("key")
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+                    .to_owned();
+                let mut row = row.clone();
+                for action in ["create", "read", "update", "delete"] {
+                    let code = format!("{key}.{action}");
+                    known.insert(code.clone());
+                    let granted = permissions.iter().any(|item| item == &code);
+                    if let Some(object) = row.as_object_mut() {
+                        object.insert(action.to_owned(), json!(granted));
+                    }
+                }
+                row
+            })
+            .collect();
+        let extra: Vec<&String> = permissions
+            .iter()
+            .filter(|code| !known.contains(*code))
+            .collect();
+        roles.push(json!({ "id": id, "name": name, "permissions": permissions, "rows": rows, "extra": extra }));
     }
     if record_id.is_some() && roles.is_empty() {
         return error_page(
@@ -1694,13 +5839,28 @@ async fn permission_change(
         &registry.branding().default_locale,
         &registry.branding().fallback_locale,
     );
-    let user = match require_directory_post(&state, &headers, &registry, &body).await {
+    let user = match require_roles_post(&state, &headers, &registry, &body).await {
         Ok(user) => user,
         Err(response) => return response,
     };
     let form = parse_form(&body);
+    let auth = state.auth.as_ref().unwrap();
+    let listed = auth.list_roles().await.unwrap_or_default();
+    let role = if let Ok(id) = uuid::Uuid::parse_str(&role) {
+        listed
+            .iter()
+            .find(|(role_id, _)| role_id == &id)
+            .map(|(_, name)| name.clone())
+            .unwrap_or_default()
+    } else {
+        role
+    };
+    if form.get("matrix").map(String::as_str) == Some("1") {
+        return save_permission_matrix(&state, &headers, &registry, &locale, &user, &role, &form)
+            .await;
+    }
     let code = form.get("code").cloned().unwrap_or_default();
-    if !identifier(&role)
+    if !role_label_ok(&role)
         || !identifier(&code)
         || !matches!(
             form.get("action").map(String::as_str),
@@ -1775,14 +5935,14 @@ async fn assignment(
         &registry.branding().default_locale,
         &registry.branding().fallback_locale,
     );
-    let user = match require_directory_post(&state, &headers, &registry, &body).await {
+    let user = match require_roles_post(&state, &headers, &registry, &body).await {
         Ok(user) => user,
         Err(response) => return response,
     };
     let form = parse_form(&body);
     let email = form.get("email").cloned().unwrap_or_default();
     let role = form.get("role").cloned().unwrap_or_default();
-    if !identifier(&role) {
+    if !role_label_ok(&role) {
         return error_page(
             &state,
             &headers,
@@ -2168,13 +6328,20 @@ fn validation_field(fields: &[fexu_core::AdminFieldMeta], message: &str) -> Stri
     matched
 }
 
-fn posted_link_values(body: &Bytes) -> Map<String, Value> {
+fn posted_link_values(repeated: &HashMap<String, Vec<String>>) -> Map<String, Value> {
     let mut posted = Map::new();
-    for name in repeated(body, "m2m_present") {
-        if posted.contains_key(&name) {
+    let Some(names) = repeated.get("m2m_present") else {
+        return posted;
+    };
+    for name in names {
+        if posted.contains_key(name) {
             continue;
         }
-        posted.insert(name.clone(), json!(repeated(body, &format!("m2m.{name}"))));
+        let values = repeated
+            .get(&format!("m2m.{name}"))
+            .cloned()
+            .unwrap_or_default();
+        posted.insert(name.clone(), json!(values));
     }
     posted
 }
@@ -2192,20 +6359,25 @@ async fn plan_memberships(
     user: &AuthUser,
     model: &dyn ManagedModel,
     parent: Option<Uuid>,
-    body: &Bytes,
+    repeated: &HashMap<String, Vec<String>>,
 ) -> Result<Vec<PlannedLink>, (String, &'static str)> {
     let links = registry.links_of(model.meta());
     if links.is_empty() {
         return Ok(Vec::new());
     }
-    let present = repeated(body, "m2m_present");
+    let present = repeated.get("m2m_present").cloned().unwrap_or_default();
     let mut planned = Vec::new();
     for link in links {
         if !present.iter().any(|name| name == link.name) {
             continue;
         }
-        let requested = posted_members(&repeated(body, &format!("m2m.{}", link.name)))
-            .map_err(|code| (link.name.to_owned(), code))?;
+        let requested = posted_members(
+            repeated
+                .get(&format!("m2m.{}", link.name))
+                .map(Vec::as_slice)
+                .unwrap_or(&[]),
+        )
+        .map_err(|code| (link.name.to_owned(), code))?;
         let current = match parent {
             Some(parent) => current_members(&state.db, link.relation(), parent)
                 .await
@@ -2265,22 +6437,6 @@ async fn visible_member_ids(
         }
     }
     visible
-}
-
-async fn commit_memberships(
-    state: &AppState,
-    planned: &[PlannedLink],
-    parent: Uuid,
-) -> Result<(), (String, &'static str)> {
-    for item in planned {
-        if !item.changed {
-            continue;
-        }
-        replace_links(&state.db, item.link, parent, &item.next)
-            .await
-            .map_err(|_| (item.name.clone(), "admin.relation"))?;
-    }
-    Ok(())
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -2523,6 +6679,10 @@ async fn form_page(
         .await;
     }
     let mut values = values;
+    let popup = values
+        .remove("_popup")
+        .and_then(|value| value.as_bool())
+        .unwrap_or(false);
     let inline_query: HashMap<String, String> = values
         .remove("_inline_query")
         .and_then(|value| serde_json::from_value(value).ok())
@@ -2541,7 +6701,11 @@ async fn form_page(
         .map(str::to_owned);
     let csrf = session_csrf(state.auth.as_ref().unwrap(), headers).await;
     let fields = input_fields(&locale, registry, state, &user, model.as_ref(), &values).await;
-    let sections = form_sections(registry.fieldsets_of(model.meta()), &fields);
+    let sections = form_sections(
+        registry.fieldsets_of(model.meta()),
+        &fields,
+        registry.form_layout(model.meta().key),
+    );
     let memberships = membership_widgets(
         state,
         registry,
@@ -2654,13 +6818,275 @@ async fn form_page(
             "inline_groups": inline_groups,
             "memberships": memberships,
             "error_fields": error_fields,
-            "basis": basis
+            "basis": basis,
+            "popup": popup,
+            "nav": !popup,
+            "uploads": registry.widgets().iter().any(|widget| {
+                widget.model_key == model_key
+                    && matches!(widget.kind, crate::widgets::WidgetKind::Image)
+            })
         }),
     )
     .await;
     if !feedback.alert.is_empty() {
         *response.status_mut() = StatusCode::UNPROCESSABLE_ENTITY;
     }
+    response
+}
+
+struct ModelUpload {
+    filename: String,
+    bytes: Vec<u8>,
+}
+
+struct PostedModel {
+    fields: HashMap<String, String>,
+    repeated: HashMap<String, Vec<String>>,
+    uploads: Vec<(String, ModelUpload)>,
+}
+
+fn read_model_body(headers: &HeaderMap, body: &Bytes) -> Result<PostedModel, ()> {
+    let content_type = headers
+        .get(header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or("");
+    if !content_type
+        .to_ascii_lowercase()
+        .starts_with("multipart/form-data")
+    {
+        let mut fields = HashMap::new();
+        let mut repeated = HashMap::new();
+        for pair in String::from_utf8_lossy(body).split('&') {
+            if pair.is_empty() {
+                continue;
+            }
+            let (key, value) = pair.split_once('=').unwrap_or((pair, ""));
+            store_text(&mut fields, &mut repeated, decode(key), decode(value))?;
+        }
+        return Ok(PostedModel {
+            fields,
+            repeated,
+            uploads: Vec::new(),
+        });
+    }
+    let parts = fexu_storage::read_multipart_repeated(content_type, body).map_err(|_| ())?;
+    let mut fields = HashMap::new();
+    let mut repeated = HashMap::new();
+    let mut uploads = Vec::new();
+    let mut file_names = std::collections::HashSet::new();
+    for part in parts {
+        if let Some(field) = part.name.strip_prefix("file.") {
+            if field.is_empty() || !file_names.insert(field.to_owned()) {
+                return Err(());
+            }
+            if let Some(filename) = part.filename.filter(|name| !name.is_empty()) {
+                if !part.bytes.is_empty() {
+                    uploads.push((
+                        field.to_owned(),
+                        ModelUpload {
+                            filename,
+                            bytes: part.bytes,
+                        },
+                    ));
+                }
+            }
+            continue;
+        }
+        if part.filename.is_some() {
+            return Err(());
+        }
+        let text = String::from_utf8(part.bytes).map_err(|_| ())?;
+        store_text(&mut fields, &mut repeated, part.name, text)?;
+    }
+    Ok(PostedModel {
+        fields,
+        repeated,
+        uploads,
+    })
+}
+
+fn store_text(
+    fields: &mut HashMap<String, String>,
+    repeated: &mut HashMap<String, Vec<String>>,
+    name: String,
+    text: String,
+) -> Result<(), ()> {
+    if name == "m2m_present" || name.starts_with("m2m.") {
+        if !text.is_empty() {
+            repeated.entry(name).or_default().push(text);
+        }
+        return Ok(());
+    }
+    match fields.get(&name).map(String::as_str) {
+        None => {
+            fields.insert(name, text);
+            Ok(())
+        }
+        Some("false") if text == "true" => {
+            fields.insert(name, text);
+            Ok(())
+        }
+        _ => Err(()),
+    }
+}
+
+fn apply_image_uploads(
+    registry: &AdminRegistry,
+    model_key: &str,
+    object: &mut Map<String, Value>,
+    raw: &mut Map<String, Value>,
+    uploads: &[(String, ModelUpload)],
+) -> Result<(), String> {
+    for (field, upload) in uploads {
+        let allowed = registry.widgets().iter().any(|widget| {
+            widget.model_key == model_key
+                && widget.field == field
+                && matches!(widget.kind, crate::widgets::WidgetKind::Image)
+        });
+        if !allowed || crate::files::image_type(&upload.bytes).is_none() {
+            return Err(format!("field:{field}: value is not an image"));
+        }
+        let name = fexu_storage::sanitize_name(&upload.filename);
+        if name.is_empty() || name.chars().count() > 200 {
+            return Err(format!("field:{field}: value is not an image"));
+        }
+        object.insert(field.clone(), json!(name));
+        raw.insert(field.clone(), json!(name));
+    }
+    Ok(())
+}
+
+async fn commit_model(
+    db: &fexu_db::driver::DatabaseConnection,
+    user: &AuthUser,
+    model: &dyn ManagedModel,
+    id: Option<Uuid>,
+    object: Map<String, Value>,
+    tail: &crate::compose::SaveTail<'_>,
+) -> Result<Uuid, FexuError> {
+    let tx = db.begin().await.map_err(FexuError::database)?;
+    let saved = async {
+        let scope = access_scope(model, user, true);
+        let saved = if let Some(id) = id {
+            let before = model.read_in(&tx, id, &scope).await?;
+            let after = model
+                .update_in(&tx, id, Value::Object(object), &scope, user)
+                .await?;
+            audit_saved(&tx, user, model, "update", before.as_ref(), &after).await?;
+            id
+        } else {
+            let after = model.create_in(&tx, Value::Object(object), user).await?;
+            let saved = after
+                .get("id")
+                .and_then(Value::as_str)
+                .and_then(|value| Uuid::parse_str(value).ok())
+                .ok_or(FexuError::NotFound)?;
+            audit_saved(&tx, user, model, "create", None, &after).await?;
+            saved
+        };
+        crate::compose::write_tail(&tx, model.meta().key, saved, tail).await?;
+        Ok(saved)
+    }
+    .await;
+    fexu_db::conclude(tx, saved, FexuError::database).await
+}
+
+async fn audit_saved(
+    tx: &fexu_db::driver::DatabaseTransaction,
+    user: &AuthUser,
+    model: &dyn ManagedModel,
+    action: &str,
+    before: Option<&Value>,
+    after: &Value,
+) -> Result<(), FexuError> {
+    audit::insert(
+        tx,
+        &Event {
+            actor_id: user.id,
+            model_key: model.meta().key.to_owned(),
+            record_id: after
+                .get("id")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_owned(),
+            action: action.to_owned(),
+            outcome: "ok".to_owned(),
+            summary: audit::change_summary(model.meta(), before, Some(after)),
+            operation_id: None,
+        },
+    )
+    .await
+}
+
+async fn record_file(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Extension(registry): Extension<AdminRegistry>,
+    Path((model_key, id, field)): Path<(String, Uuid, String)>,
+) -> Response {
+    let locale = locale_of(
+        &headers,
+        &registry.branding().default_locale,
+        &registry.branding().fallback_locale,
+    );
+    let user = match require_get(
+        &state,
+        &headers,
+        &registry,
+        &format!("/admin/models/{model_key}/{id}"),
+    )
+    .await
+    {
+        Ok(user) => user,
+        Err(response) => return response,
+    };
+    let allowed = registry.widgets().iter().any(|widget| {
+        widget.model_key == model_key
+            && widget.field == field
+            && matches!(widget.kind, crate::widgets::WidgetKind::Image)
+    });
+    let Some(model) = registry.find(&model_key) else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    if !allowed
+        || gate(&state, &registry, &user, model.as_ref(), "read")
+            .await
+            .is_err()
+        || read_visible(&state, &user, model.as_ref(), id, "read")
+            .await
+            .is_none()
+    {
+        let _ = locale;
+        return StatusCode::NOT_FOUND.into_response();
+    }
+    let Some((kind, bytes)) = crate::files::load(&state.db, &model_key, id, &field)
+        .await
+        .ok()
+        .flatten()
+    else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    let content_type = match kind.as_str() {
+        "image/png" => "image/png",
+        "image/jpeg" => "image/jpeg",
+        "image/gif" => "image/gif",
+        "image/webp" => "image/webp",
+        "image/x-icon" => "image/x-icon",
+        _ => return StatusCode::NOT_FOUND.into_response(),
+    };
+    let mut response = Response::new(axum::body::Body::from(bytes));
+    *response.status_mut() = StatusCode::OK;
+    response
+        .headers_mut()
+        .insert(header::CONTENT_TYPE, HeaderValue::from_static(content_type));
+    response.headers_mut().insert(
+        header::CACHE_CONTROL,
+        HeaderValue::from_static("private, max-age=3600"),
+    );
+    response.headers_mut().insert(
+        header::X_CONTENT_TYPE_OPTIONS,
+        HeaderValue::from_static("nosniff"),
+    );
     response
 }
 
@@ -2723,9 +7149,47 @@ async fn save_form(
         )
         .await;
     }
-    let form = parse_form(body);
+    let PostedModel {
+        fields: form,
+        repeated,
+        uploads,
+    } = match read_model_body(headers, body) {
+        Ok(parsed) => parsed,
+        Err(()) => {
+            return error_page(
+                state,
+                headers,
+                registry,
+                &locale,
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "forbidden",
+                true,
+                &user.email,
+            )
+            .await
+        }
+    };
     let (mut object, mut raw) = payload(model.meta(), model.columns(), &form);
-    let posted_links = posted_link_values(body);
+    if let Err(message) =
+        apply_image_uploads(registry, model.meta().key, &mut object, &mut raw, &uploads)
+    {
+        let text = validation_text(&locale, &message);
+        raw.insert("__error".into(), json!({ "field": validation_field(registry.field_slice(model.meta()), &message), "text": text }));
+        return form_page(
+            state,
+            headers,
+            registry,
+            model_key,
+            id,
+            raw,
+            FormFeedback {
+                notice: "",
+                alert: &text,
+            },
+        )
+        .await;
+    }
+    let posted_links = posted_link_values(&repeated);
     if !posted_links.is_empty() {
         raw.insert("_m2m".into(), Value::Object(posted_links));
     }
@@ -2825,28 +7289,73 @@ async fn save_form(
         )
         .await;
     }
-    let planned = match plan_memberships(state, registry, &user, model.as_ref(), id, body).await {
-        Ok(planned) => planned,
-        Err((name, code)) => {
-            let text = validation_text(&locale, code);
-            raw.insert("_m2m_error".into(), json!({ name: text }));
-            return form_page(
-                state,
-                headers,
-                registry,
-                model_key,
-                id,
-                raw,
-                FormFeedback {
-                    notice: "",
-                    alert: &text,
-                },
-            )
-            .await;
-        }
+    let planned =
+        match plan_memberships(state, registry, &user, model.as_ref(), id, &repeated).await {
+            Ok(planned) => planned,
+            Err((name, code)) => {
+                let text = validation_text(&locale, code);
+                raw.insert("_m2m_error".into(), json!({ name: text }));
+                return form_page(
+                    state,
+                    headers,
+                    registry,
+                    model_key,
+                    id,
+                    raw,
+                    FormFeedback {
+                        notice: "",
+                        alert: &text,
+                    },
+                )
+                .await;
+            }
+        };
+    let links: Vec<crate::compose::StoredLink<'_>> = planned
+        .iter()
+        .filter(|item| item.changed)
+        .map(|item| crate::compose::StoredLink {
+            name: &item.name,
+            link: item.link,
+            children: &item.next,
+        })
+        .collect();
+    let mut files = Vec::new();
+    for (field, upload) in &uploads {
+        let Some(kind) = crate::files::image_type(&upload.bytes) else {
+            continue;
+        };
+        files.push(crate::compose::StoredFile {
+            field,
+            kind,
+            bytes: upload.bytes.as_slice(),
+        });
+    }
+    if files.len() != uploads.len()
+        || (!files.is_empty() && crate::files::ensure(&state.db).await.is_err())
+    {
+        return error_page(
+            state,
+            headers,
+            registry,
+            &locale,
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "forbidden",
+            true,
+            &user.email,
+        )
+        .await;
+    }
+    let draft = form
+        .get("_draft")
+        .and_then(|value| Uuid::parse_str(value).ok())
+        .map(|token| (token, user.session_id, user.id));
+    let tail = crate::compose::SaveTail {
+        links: &links,
+        files: &files,
+        draft,
     };
     if formed {
-        return match crate::compose::save(
+        return match crate::compose::save_with(
             &state.db,
             state.auth.as_ref().unwrap(),
             &user,
@@ -2855,33 +7364,11 @@ async fn save_form(
             id,
             object,
             &form,
+            tail,
         )
         .await
         {
             crate::compose::SaveResult::Saved(saved) => {
-                if let Err((name, code)) = commit_memberships(state, &planned, saved).await {
-                    let text = validation_text(&locale, code);
-                    raw.insert("_m2m_error".into(), json!({ name: text }));
-                    return form_page(
-                        state,
-                        headers,
-                        registry,
-                        model_key,
-                        Some(saved),
-                        raw,
-                        FormFeedback {
-                            notice: "",
-                            alert: &text,
-                        },
-                    )
-                    .await;
-                }
-                if let Some(token) = form
-                    .get("_draft")
-                    .and_then(|value| Uuid::parse_str(value).ok())
-                {
-                    let _ = drafts::delete(&state.db, token, user.session_id, user.id).await;
-                }
                 let notice = if id.is_some() { "saved" } else { "created" };
                 let target = match save {
                     "list" => format!("/admin/models/{model_key}?notice={notice}"),
@@ -2979,71 +7466,19 @@ async fn save_form(
             )
             .await;
         }
-        model
-            .update(
-                &state.db,
-                id,
-                Value::Object(object),
-                &access_scope(model.as_ref(), &user, true),
-                &user,
-            )
-            .await
+        commit_model(&state.db, &user, model.as_ref(), Some(id), object, &tail).await
     } else {
-        model.create(&state.db, Value::Object(object), &user).await
+        commit_model(&state.db, &user, model.as_ref(), None, object, &tail).await
     };
     match result {
-        Ok(created) => {
-            let Some(saved) = created
-                .get("id")
-                .and_then(Value::as_str)
-                .and_then(|value| Uuid::parse_str(value).ok())
-            else {
-                return error_page(
-                    state,
-                    headers,
-                    registry,
-                    &locale,
-                    StatusCode::UNPROCESSABLE_ENTITY,
-                    "forbidden",
-                    true,
-                    &user.email,
-                )
-                .await;
-            };
-            if let Err((name, code)) = commit_memberships(state, &planned, saved).await {
-                let text = validation_text(&locale, code);
-                raw.insert("_m2m_error".into(), json!({ name: text }));
-                return form_page(
-                    state,
-                    headers,
-                    registry,
-                    model_key,
-                    Some(saved),
-                    raw,
-                    FormFeedback {
-                        notice: "",
-                        alert: &text,
-                    },
-                )
-                .await;
-            }
-            if let Some(token) = form
-                .get("_draft")
-                .and_then(|value| Uuid::parse_str(value).ok())
-            {
-                let _ = drafts::delete(&state.db, token, user.session_id, user.id).await;
-            }
+        Ok(saved) => {
             let notice = if id.is_some() { "saved" } else { "created" };
-            let target = created
-                .get("id")
-                .and_then(Value::as_str)
-                .map(|value| match save {
-                    "list" => format!("/admin/models/{model_key}?notice={notice}"),
-                    "edit" => format!("/admin/models/{model_key}/{value}?notice={notice}"),
-                    "new" => format!("/admin/models/{model_key}/new?notice={notice}"),
-                    _ => format!("/admin/models/{model_key}/{value}?notice={notice}"),
-                })
-                .unwrap_or_else(|| format!("/admin/models/{model_key}?notice=saved"));
+            let target = match save {
+                "list" => format!("/admin/models/{model_key}?notice={notice}"),
+                "edit" => format!("/admin/models/{model_key}/{saved}?notice={notice}"),
+                "new" => format!("/admin/models/{model_key}/new?notice={notice}"),
+                _ => format!("/admin/models/{model_key}/{saved}?notice={notice}"),
+            };
             redirect(&target)
         }
         Err(FexuError::Validation(message)) => {
@@ -3202,6 +7637,7 @@ async fn input_fields(
             "invalid": error_field == field.name,
             "error": if error_field == field.name { error_text } else { "" },
             "hint": if column.foreign_table.is_some() { hint_select.clone() } else { String::new() },
+            "owns_relation": column.foreign_table.is_some(),
             "value": match &current {
                 Value::String(text) => text.clone(),
                 Value::Number(number) => number.to_string(),
@@ -3241,6 +7677,36 @@ async fn input_fields(
             let (kind, input_type) = crate::widgets::presentation(widget.kind);
             input["kind"] = json!(kind);
             input["input"] = json!(input_type);
+            if let crate::widgets::WidgetKind::Textarea { rows, .. } = widget.kind {
+                input["rows"] = json!(rows);
+            }
+            if matches!(widget.kind, crate::widgets::WidgetKind::Image) {
+                let preview = match values
+                    .get("id")
+                    .and_then(Value::as_str)
+                    .and_then(|value| Uuid::parse_str(value).ok())
+                {
+                    Some(id)
+                        if crate::files::exists(&state.db, model.meta().key, id, field.name)
+                            .await =>
+                    {
+                        format!(
+                            "/admin/models/{}/{id}/file/{}",
+                            model.meta().key,
+                            field.name
+                        )
+                    }
+                    _ => String::new(),
+                };
+                if !preview.is_empty() || !input["value"].as_str().unwrap_or("").is_empty() {
+                    input["required"] = json!(false);
+                }
+                input["preview"] = json!(preview);
+                input["hint"] = json!(catalog(locale)
+                    .get("hint_image")
+                    .and_then(Value::as_str)
+                    .unwrap_or(""));
+            }
         } else if column.foreign_table.is_some() {
             input["kind"] = json!("select");
             let (choices, truncated) = relation_options(
@@ -3265,6 +7731,14 @@ async fn input_fields(
                 }
             }
             input["input"] = json!("text");
+            input["related"] = related_links(
+                state,
+                registry,
+                user,
+                column,
+                current.as_str().unwrap_or(""),
+            )
+            .await;
         } else if column.kind == ColumnKind::Choice {
             input["kind"] = json!("select");
             input["options"] = json!(column
@@ -3407,30 +7881,130 @@ fn apply_picks(
     }
 }
 
-fn form_sections(fieldsets: &[fexu_core::AdminFieldset], fields: &[Value]) -> Vec<Value> {
-    if fieldsets.is_empty() {
-        return vec![json!({
-            "name": "",
-            "description": "",
-            "optional": false,
-            "fields": fields
-        })];
-    }
-    fieldsets
+fn form_rows(group: &[&Value], layout: Option<&[Vec<&'static str>]>) -> Vec<Value> {
+    let Some(layout) = layout else {
+        return group
+            .iter()
+            .map(|field| json!({ "fields": [*field] }))
+            .collect();
+    };
+    layout
         .iter()
-        .map(|section| {
-            let group: Vec<&Value> = fields
+        .map(|row| {
+            let cells: Vec<&Value> = row
                 .iter()
-                .filter(|field| field.get("fieldset").and_then(Value::as_str) == Some(section.name))
+                .filter_map(|name| {
+                    group
+                        .iter()
+                        .copied()
+                        .find(|field| field.get("name").and_then(Value::as_str) == Some(*name))
+                })
                 .collect();
-            json!({
-                "name": section.name,
-                "description": section.description,
-                "optional": section.optional,
-                "fields": group
-            })
+            json!({ "fields": cells })
+        })
+        .filter(|row| {
+            row.get("fields")
+                .and_then(Value::as_array)
+                .is_some_and(|cells| !cells.is_empty())
         })
         .collect()
+}
+
+fn owns_relation(field: &Value) -> bool {
+    field
+        .get("owns_relation")
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+}
+
+fn form_sections(
+    fieldsets: &[fexu_core::AdminFieldset],
+    fields: &[Value],
+    layouts: Option<&[crate::configure::FormLayout]>,
+) -> Vec<Value> {
+    let content: Vec<&Value> = fields
+        .iter()
+        .filter(|field| !owns_relation(field))
+        .collect();
+    let mut sections = if fieldsets.is_empty() {
+        if content.is_empty() {
+            Vec::new()
+        } else {
+            vec![json!({
+                "name": "",
+                "description": "",
+                "optional": false,
+                "fields": content,
+                "rows": form_rows(&content, None)
+            })]
+        }
+    } else {
+        fieldsets
+            .iter()
+            .filter_map(|section| {
+                let group: Vec<&Value> = content
+                    .iter()
+                    .copied()
+                    .filter(|field| {
+                        field.get("fieldset").and_then(Value::as_str) == Some(section.name)
+                    })
+                    .collect();
+                if group.is_empty() {
+                    return None;
+                }
+                let layout = layouts.and_then(|items| {
+                    items
+                        .iter()
+                        .find(|item| item.name == section.name)
+                        .map(|item| item.rows.as_slice())
+                });
+                Some(json!({
+                    "name": section.name,
+                    "description": section.description,
+                    "optional": section.optional,
+                    "fields": group,
+                    "rows": form_rows(&group, layout)
+                }))
+            })
+            .collect()
+    };
+    for field in fields.iter().filter(|field| owns_relation(field)) {
+        let label = field.get("label").and_then(Value::as_str).unwrap_or("");
+        let group = [field];
+        sections.push(json!({
+            "name": label,
+            "description": "",
+            "optional": false,
+            "fields": [field],
+            "rows": form_rows(&group, None)
+        }));
+    }
+    sections
+}
+
+async fn related_links(
+    state: &AppState,
+    registry: &AdminRegistry,
+    user: &AuthUser,
+    column: &ColumnSpec,
+    current: &str,
+) -> Value {
+    let Some(table) = column.foreign_table else {
+        return Value::Null;
+    };
+    let Some(target) = registry.model_for_table(table) else {
+        return Value::Null;
+    };
+    let auth = state.auth.as_ref().unwrap();
+    let key = target.meta().key;
+    json!({
+        "key": key,
+        "id": current,
+        "can_view": permit(auth, user, target.meta(), "read").await.is_ok(),
+        "can_change": permit(auth, user, target.meta(), "update").await.is_ok(),
+        "can_add": permit(auth, user, target.meta(), "create").await.is_ok(),
+        "can_delete": permit(auth, user, target.meta(), "delete").await.is_ok()
+    })
 }
 
 async fn ensure_relations(
@@ -3610,17 +8184,28 @@ fn link_names(
     order: Option<&[&str]>,
 ) -> Vec<&'static str> {
     let listed = listed_fields(fields, specs, order);
+    let foreign = |name: &str| {
+        specs
+            .iter()
+            .any(|column| column.name == name && column.foreign_table.is_some())
+    };
     let chosen: Vec<&'static str> = listed
         .iter()
-        .filter(|field| field.list_link)
+        .filter(|field| field.list_link && !foreign(field.name))
         .map(|field| field.name)
         .collect();
     if !chosen.is_empty() {
         return chosen;
     }
+    let text = |name: &str| {
+        specs
+            .iter()
+            .any(|column| column.name == name && column.kind == ColumnKind::Text)
+    };
     listed
         .iter()
-        .find(|field| field.name != "id")
+        .find(|field| !foreign(field.name) && text(field.name))
+        .or_else(|| listed.iter().find(|field| !foreign(field.name)))
         .or_else(|| listed.first())
         .map(|field| vec![field.name])
         .unwrap_or_default()
@@ -3662,47 +8247,34 @@ fn list_columns(
 
 /// Spalten der Liste.
 ///
-/// 1. Felder mit `list_display` in der Reihenfolge von `ModelAdmin`, sonst in Struct-Reihenfolge. `id` bleibt dabei, wenn es noch als Listenspalte markiert ist.
-/// 2. Ohne solche Felder das erste sichtbare Textfeld, danach `id`.
-/// 3. Ohne Textfeld das erste andere sichtbare Feld, danach `id`.
-/// 4. Sonst nur `id`.
+/// Felder mit `list_display` in der Reihenfolge von `ModelAdmin::list_display`,
+/// sonst in der Reihenfolge der Modellfelder. Die Kennung `id` bleibt draußen:
+/// sie ist eine UUID und in der Tabelle nicht lesbar.
 ///
-/// `hidden` und sensible Namen fallen in jedem Schritt weg. Ein Feld heißt nicht zwingend `name`.
+/// Ohne solche Felder das erste sichtbare Textfeld, sonst das erste andere sichtbare Feld.
+/// `hidden` und sensible Namen fallen weg.
 fn listed_fields<'a>(
     fields: &'a [fexu_core::AdminFieldMeta],
     specs: &[ColumnSpec],
     order: Option<&[&str]>,
 ) -> Vec<&'a fexu_core::AdminFieldMeta> {
-    let visible = |field: &fexu_core::AdminFieldMeta| !field.hidden && !sensitive(field.name);
-    let explicit: Vec<_> = fields
+    let visible = |field: &fexu_core::AdminFieldMeta| {
+        field.name != "id" && !field.hidden && !sensitive(field.name)
+    };
+    let mut chosen: Vec<_> = fields
         .iter()
-        .filter(|field| field.list_display && field.name != "id" && visible(field))
+        .filter(|field| field.list_display && visible(field))
         .collect();
-    if !explicit.is_empty() {
-        let mut chosen: Vec<_> = fields
+    if chosen.is_empty() {
+        let text = fields.iter().find(|field| {
+            visible(field) && column_kind(specs, field.name) == Some(ColumnKind::Text)
+        });
+        let other = fields
             .iter()
-            .filter(|field| field.list_display && visible(field))
-            .collect();
-        apply_column_order(&mut chosen, order);
-        return chosen;
-    }
-    let mut chosen = Vec::new();
-    let text = fields.iter().find(|field| {
-        field.name != "id"
-            && visible(field)
-            && column_kind(specs, field.name) == Some(ColumnKind::Text)
-    });
-    let other = fields.iter().find(|field| {
-        field.name != "id" && visible(field) && column_kind(specs, field.name).is_some()
-    });
-    if let Some(field) = text.or(other) {
-        chosen.push(field);
-    }
-    if let Some(id) = fields
-        .iter()
-        .find(|field| field.name == "id" && visible(field))
-    {
-        chosen.push(id);
+            .find(|field| visible(field) && column_kind(specs, field.name).is_some());
+        if let Some(field) = text.or(other) {
+            chosen.push(field);
+        }
     }
     apply_column_order(&mut chosen, order);
     chosen
@@ -3727,6 +8299,78 @@ fn column_kind(specs: &[ColumnSpec], name: &str) -> Option<ColumnKind> {
         .map(|column| column.kind)
 }
 
+fn list_href(params: &HashMap<String, String>, key: &str, value: Option<&str>) -> String {
+    let mut pairs: Vec<(String, String)> = params
+        .iter()
+        .filter(|(name, current)| {
+            !current.is_empty()
+                && !matches!(name.as_str(), "page" | "notice" | "changed")
+                && name.as_str() != key
+        })
+        .map(|(name, current)| ((*name).clone(), current.clone()))
+        .collect();
+    if let Some(value) = value.filter(|value| !value.is_empty()) {
+        pairs.push((key.to_owned(), value.to_owned()));
+    }
+    pairs.sort();
+    if pairs.is_empty() {
+        return "?".to_owned();
+    }
+    format!(
+        "?{}",
+        pairs
+            .iter()
+            .map(|(name, current)| format!("{}={}", url_encode(name), url_encode(current)))
+            .collect::<Vec<_>>()
+            .join("&")
+    )
+}
+
+fn facet_options(
+    params: &HashMap<String, String>,
+    name: &str,
+    value: &str,
+    choices: Vec<(String, String)>,
+    all_label: &str,
+) -> Vec<Value> {
+    let key = format!("filter.{name}");
+    let mut options = vec![json!({
+        "id": "",
+        "label": all_label,
+        "href": list_href(params, &key, None),
+        "current": value.is_empty()
+    })];
+    for (id, label) in choices {
+        let href = list_href(params, &key, Some(id.as_str()));
+        let current = value == id;
+        options.push(json!({
+            "id": id,
+            "label": label,
+            "href": href,
+            "current": current
+        }));
+    }
+    options
+}
+
+fn choice_rows(options: &Value) -> Vec<(String, String)> {
+    let Some(rows) = options.as_array() else {
+        return Vec::new();
+    };
+    rows.iter()
+        .filter_map(|option| {
+            Some((
+                option.get("id")?.as_str()?.to_owned(),
+                option
+                    .get("label")
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+                    .to_owned(),
+            ))
+        })
+        .collect()
+}
+
 async fn filter_inputs(
     locale: &str,
     registry: &AdminRegistry,
@@ -3736,6 +8380,9 @@ async fn filter_inputs(
     columns: &[ColumnSpec],
     params: &HashMap<String, String>,
 ) -> Vec<Value> {
+    let all = catalog(locale)["all"].as_str().unwrap_or("All").to_owned();
+    let yes = catalog(locale)["yes"].as_str().unwrap_or("Yes").to_owned();
+    let no = catalog(locale)["no"].as_str().unwrap_or("No").to_owned();
     let mut filters = Vec::new();
     for field in registry
         .field_slice(meta)
@@ -3753,6 +8400,21 @@ async fn filter_inputs(
                 ("uuid", options)
             }
             Some(column) if column.kind == ColumnKind::Boolean => ("boolean", json!([])),
+            Some(column) if column.kind == ColumnKind::Choice => (
+                "choice",
+                Value::Array(
+                    column
+                        .choices
+                        .iter()
+                        .map(|choice| {
+                            json!({
+                                "id": choice.value,
+                                "label": if locale == "de" { choice.label_de } else { choice.label_en }
+                            })
+                        })
+                        .collect(),
+                ),
+            ),
             Some(column) if column.kind == ColumnKind::BigInt => ("number", json!([])),
             Some(column) if column.kind == ColumnKind::Date => ("date", json!([])),
             Some(column) if column.kind == ColumnKind::Time => ("time", json!([])),
@@ -3768,14 +8430,38 @@ async fn filter_inputs(
         } else {
             raw
         };
+        let facet = matches!(kind, "boolean" | "uuid" | "choice");
+        let options = if kind == "boolean" {
+            Value::Array(facet_options(
+                params,
+                field.name,
+                &value,
+                vec![
+                    ("true".to_owned(), yes.clone()),
+                    ("false".to_owned(), no.clone()),
+                ],
+                &all,
+            ))
+        } else if facet {
+            Value::Array(facet_options(
+                params,
+                field.name,
+                &value,
+                choice_rows(&options),
+                &all,
+            ))
+        } else {
+            options
+        };
         filters.push(json!({
-                "name": field.name,
-                "label": field.label,
+            "name": field.name,
+            "label": field.label,
             "kind": kind,
+            "facet": facet,
             "value": value,
             "options": options,
-            "yes": catalog(locale)["yes"].as_str().unwrap_or("Yes"),
-            "no": catalog(locale)["no"].as_str().unwrap_or("No")
+            "yes": yes,
+            "no": no
         }));
     }
     for filter in registry
@@ -3790,26 +8476,41 @@ async fn filter_inputs(
         let (kind, options) = match &filter.kind {
             crate::filters::FilterKind::Choice { options, .. } => (
                 "choice",
-                options
-                    .iter()
-                    .map(|option| {
-                        json!({
-                            "id": option.value,
-                            "label": if locale == "de" { option.label_de } else { option.label_en }
+                Value::Array(
+                    options
+                        .iter()
+                        .map(|option| {
+                            json!({
+                                "id": option.value,
+                                "label": if locale == "de" { option.label_de } else { option.label_en }
+                            })
                         })
-                    })
-                    .collect::<Vec<_>>(),
+                        .collect(),
+                ),
             ),
-            crate::filters::FilterKind::Equals { .. } => ("text", Vec::new()),
+            crate::filters::FilterKind::Equals { .. } => ("text", json!([])),
+        };
+        let facet = kind == "choice";
+        let options = if facet {
+            Value::Array(facet_options(
+                params,
+                filter.name,
+                &raw,
+                choice_rows(&options),
+                &all,
+            ))
+        } else {
+            options
         };
         filters.push(json!({
             "name": filter.name,
             "label": filter.label(locale),
             "kind": kind,
+            "facet": facet,
             "value": raw,
             "options": options,
-            "yes": catalog(locale)["yes"].as_str().unwrap_or("Yes"),
-            "no": catalog(locale)["no"].as_str().unwrap_or("No")
+            "yes": yes,
+            "no": no
         }));
     }
     if let Some(order) = registry.filter_order_of(meta) {
@@ -4108,6 +8809,7 @@ async fn user_create(
         &[
             "confirm",
             "email",
+            "name",
             "password",
             "password_confirm",
             "active",
@@ -4239,6 +8941,20 @@ async fn user_create(
             .await
         }
     };
+    let name = values.get("name").unwrap_or("");
+    if auth.set_display_name(created.id, name).await.is_err() {
+        return error_page(
+            &state,
+            &headers,
+            &registry,
+            &locale,
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "forbidden",
+            true,
+            &actor.email,
+        )
+        .await;
+    }
     redirect(&format!(
         "/admin/directory/users/{}?notice=created",
         created.id
@@ -4257,8 +8973,7 @@ async fn user_detail(
         &registry.branding().default_locale,
         &registry.branding().fallback_locale,
     );
-    let actor = match require_directory(&state, &headers, &registry, "/admin/directory/users").await
-    {
+    let actor = match require_roles(&state, &headers, &registry, "/admin/directory/users").await {
         Ok(user) => user,
         Err(response) => return response,
     };
@@ -4276,7 +8991,7 @@ async fn user_detail(
         )
         .await;
     };
-    if !target.is_superuser {
+    if actor.is_superuser {
         return user_form(
             &state,
             &headers,
@@ -4298,7 +9013,9 @@ async fn user_detail(
         .into_iter()
         .filter_map(|(user_id, name)| (user_id == id).then_some(name))
         .collect::<Vec<_>>();
+    let role_choices = role_names(auth).await;
     let permissions = auth.list_user_permissions(id).await.unwrap_or_default();
+    let display_name = auth.display_name(id).await.unwrap_or_default();
     let csrf = session_csrf(auth, &headers).await;
     let history = record_history(&state, &actor, &locale, "_fexu_users", &id.to_string()).await;
     page_as(
@@ -4322,12 +9039,15 @@ async fn user_detail(
         json!({
             "id": id,
             "email": target.email,
+            "display_name": display_name,
             "is_active": target.is_active,
             "is_staff": target.is_staff,
             "is_superuser": target.is_superuser,
             "roles": roles,
+            "role_choices": role_choices,
             "permissions": permissions,
-            "can_edit": !target.is_superuser,
+            "self_record": actor.id == id,
+            "can_edit": actor.is_superuser && !target.is_superuser,
             "history_href": history_href("_fexu_users", &id.to_string()),
             "history": history.events,
             "history_more": history.more
@@ -4362,7 +9082,7 @@ async fn user_update(
         Err(response) => return response,
     };
     let auth = state.auth.as_ref().unwrap();
-    let Some(target) = auth.get_user(id).await.ok().flatten() else {
+    let Some(_target) = auth.get_user(id).await.ok().flatten() else {
         return error_page(
             &state,
             &headers,
@@ -4375,19 +9095,6 @@ async fn user_update(
         )
         .await;
     };
-    if target.is_superuser {
-        return error_page(
-            &state,
-            &headers,
-            &registry,
-            &locale,
-            StatusCode::FORBIDDEN,
-            "forbidden",
-            true,
-            &actor.email,
-        )
-        .await;
-    }
     if let Err(code) = confirmed(&body) {
         return error_page(
             &state,
@@ -4417,7 +9124,12 @@ async fn user_update(
             .await
         }
     };
-    if reject_unknown(&values, &["confirm", "email", "active", "staff", "save"]).is_err() {
+    if reject_unknown(
+        &values,
+        &["confirm", "email", "name", "active", "staff", "save"],
+    )
+    .is_err()
+    {
         return error_page(
             &state,
             &headers,
@@ -4471,13 +9183,17 @@ async fn user_update(
         )
         .await;
     };
-    if actor.id == id && (!active || !staff && target.is_staff) {
+    if auth
+        .set_display_name(id, values.get("name").unwrap_or(""))
+        .await
+        .is_err()
+    {
         return error_page(
             &state,
             &headers,
             &registry,
             &locale,
-            StatusCode::FORBIDDEN,
+            StatusCode::UNPROCESSABLE_ENTITY,
             "forbidden",
             true,
             &actor.email,
@@ -4554,7 +9270,7 @@ async fn user_password(
         Err(response) => return response,
     };
     let auth = state.auth.as_ref().unwrap();
-    let Some(target) = auth.get_user(id).await.ok().flatten() else {
+    let Some(_target) = auth.get_user(id).await.ok().flatten() else {
         return error_page(
             &state,
             &headers,
@@ -4567,19 +9283,6 @@ async fn user_password(
         )
         .await;
     };
-    if target.is_superuser {
-        return error_page(
-            &state,
-            &headers,
-            &registry,
-            &locale,
-            StatusCode::FORBIDDEN,
-            "forbidden",
-            true,
-            &actor.email,
-        )
-        .await;
-    }
     if let Err(code) = confirmed(&body) {
         return error_page(
             &state,
@@ -4619,6 +9322,7 @@ async fn user_password(
             Some(id),
             Some(UserDraft {
                 email: None,
+                name: None,
                 active: None,
                 staff: None,
                 roles: None,
@@ -4643,6 +9347,7 @@ async fn user_password(
             Some(id),
             Some(UserDraft {
                 email: None,
+                name: None,
                 active: None,
                 staff: None,
                 roles: None,
@@ -4687,6 +9392,7 @@ async fn user_password(
                 Some(id),
                 Some(UserDraft {
                     email: None,
+                    name: None,
                     active: None,
                     staff: None,
                     roles: None,
@@ -4716,6 +9422,7 @@ async fn user_password(
 
 struct UserDraft {
     email: Option<String>,
+    name: Option<String>,
     active: Option<bool>,
     staff: Option<bool>,
     roles: Option<Vec<String>>,
@@ -4731,6 +9438,7 @@ fn user_draft(values: &FormValues, roles: Option<Vec<String>>) -> UserDraft {
     };
     UserDraft {
         email: Some(values.get("email").unwrap_or("").to_owned()),
+        name: Some(values.get("name").unwrap_or("").to_owned()),
         active: flag("active"),
         staff: flag("staff"),
         roles,
@@ -4760,20 +9468,7 @@ async fn user_form(
     let auth = state.auth.as_ref().unwrap();
     let target = if let Some(id) = id {
         match auth.get_user(id).await.ok().flatten() {
-            Some(user) if !user.is_superuser => Some(user),
-            Some(_) => {
-                return error_page(
-                    state,
-                    headers,
-                    registry,
-                    &locale,
-                    StatusCode::FORBIDDEN,
-                    "forbidden",
-                    true,
-                    &actor.email,
-                )
-                .await
-            }
+            Some(user) => Some(user),
             None => {
                 return error_page(
                     state,
@@ -4806,6 +9501,13 @@ async fn user_form(
         .and_then(|item| item.email.clone())
         .or_else(|| target.as_ref().map(|user| user.email.clone()))
         .unwrap_or_default();
+    let name = match draft.as_ref().and_then(|item| item.name.clone()) {
+        Some(name) => name,
+        None => match id {
+            Some(id) => auth.display_name(id).await.unwrap_or_default(),
+            None => String::new(),
+        },
+    };
     let is_active = draft
         .as_ref()
         .and_then(|item| item.active)
@@ -4880,10 +9582,12 @@ async fn user_form(
             "creating": id.is_none(),
             "action": action,
             "email": email,
+            "name": name,
             "email_error": email_error,
             "password_error": password_error,
             "is_active": is_active,
             "is_staff": is_staff,
+            "is_superuser": target.as_ref().is_some_and(|user| user.is_superuser),
             "self_edit": id == Some(actor.id),
             "roles": known_roles,
             "role_checks": role_checks,
@@ -4934,7 +9638,7 @@ async fn mutate_user(
     };
     let form = parse_form(body);
     let auth = state.auth.as_ref().unwrap();
-    let Some(target) = auth
+    let Some(_target) = auth
         .list_users()
         .await
         .ok()
@@ -4952,22 +9656,6 @@ async fn mutate_user(
         )
         .await;
     };
-    if target.is_superuser
-        || (user.id == id
-            && form_flag(&form, if active_flag { "active" } else { "staff" }) == Some(false))
-    {
-        return error_page(
-            state,
-            headers,
-            registry,
-            &locale,
-            StatusCode::FORBIDDEN,
-            "forbidden",
-            true,
-            &user.email,
-        )
-        .await;
-    }
     if let Err(code) = confirmed(body) {
         return error_page(
             state,
@@ -5151,6 +9839,99 @@ async fn require_directory_post(
             "",
         )
         .await),
+    }
+}
+
+#[allow(clippy::result_large_err)]
+async fn require_roles(
+    state: &AppState,
+    headers: &HeaderMap,
+    registry: &AdminRegistry,
+    next: &str,
+) -> Result<AuthUser, Response> {
+    let user = require_get(state, headers, registry, next).await?;
+    let allowed = match state.auth.as_ref() {
+        Some(auth) => auth.holds(&user, "roles.update").await.unwrap_or(false),
+        None => false,
+    };
+    if allowed {
+        Ok(user)
+    } else {
+        let locale = locale_of(
+            headers,
+            &registry.branding().default_locale,
+            &registry.branding().fallback_locale,
+        );
+        Err(error_page(
+            state,
+            headers,
+            registry,
+            &locale,
+            StatusCode::FORBIDDEN,
+            "forbidden",
+            true,
+            &user.email,
+        )
+        .await)
+    }
+}
+
+#[allow(clippy::result_large_err)]
+async fn require_roles_post(
+    state: &AppState,
+    headers: &HeaderMap,
+    registry: &AdminRegistry,
+    body: &Bytes,
+) -> Result<AuthUser, Response> {
+    let locale = locale_of(
+        headers,
+        &registry.branding().default_locale,
+        &registry.branding().fallback_locale,
+    );
+    let Some(auth) = state.auth.as_ref() else {
+        return Err(plain(
+            StatusCode::FORBIDDEN,
+            "authentication is not configured",
+        ));
+    };
+    let form = parse_form(body);
+    let user = match auth
+        .authenticate_csrf(
+            headers,
+            &Method::POST,
+            form.get("csrf_token").map(String::as_str).unwrap_or(""),
+        )
+        .await
+    {
+        Ok(user) => user,
+        Err(_) => {
+            return Err(error_page(
+                state,
+                headers,
+                registry,
+                &locale,
+                StatusCode::FORBIDDEN,
+                "csrf",
+                false,
+                "",
+            )
+            .await)
+        }
+    };
+    if auth.holds(&user, "roles.update").await.unwrap_or(false) {
+        Ok(user)
+    } else {
+        Err(error_page(
+            state,
+            headers,
+            registry,
+            &locale,
+            StatusCode::FORBIDDEN,
+            "forbidden",
+            true,
+            &user.email,
+        )
+        .await)
     }
 }
 
@@ -5816,6 +10597,14 @@ fn child_inline<'a>(
         .inlines
         .iter()
         .find(|item| item.name == name)?;
+    resolve_inline(registry, parent, spec)
+}
+
+fn resolve_inline<'a>(
+    registry: &'a AdminRegistry,
+    parent: &dyn ManagedModel,
+    spec: &fexu_core::AdminInline,
+) -> Option<&'a std::sync::Arc<dyn ManagedModel>> {
     let child = registry.find(spec.child_table)?;
     child.columns().iter().find(|column| {
         column.name == spec.column && crate::registry::references_parent(column, parent)
@@ -5937,11 +10726,33 @@ async fn inline_sections(
     locale: &str,
 ) -> Vec<Value> {
     let mut sections = Vec::new();
-    for spec in parent.meta().inlines {
+    let mut specs: Vec<fexu_core::AdminInline> = parent.meta().inlines.to_vec();
+    for table in registry.related_tables(parent.meta().key) {
+        if specs.iter().any(|spec| spec.name == table.name) {
+            continue;
+        }
+        specs.push(fexu_core::AdminInline {
+            name: table.name,
+            child_table: table.child_key,
+            column: table.column,
+            label: table.label,
+            fields: &[],
+            readonly_fields: &[],
+            min_count: 0,
+            max_count: 0,
+            extra: 0,
+            can_add: true,
+            can_change: true,
+            can_delete: false,
+            ordering: None,
+            form: false,
+        });
+    }
+    for spec in &specs {
         if editing && spec.form {
             continue;
         }
-        let Some(child) = child_inline(registry, parent, spec.name) else {
+        let Some(child) = resolve_inline(registry, parent, spec) else {
             continue;
         };
         if list_blocked(child.as_ref())
@@ -5976,6 +10787,129 @@ async fn inline_sections(
         else {
             continue;
         };
+        let owned = parent
+            .meta()
+            .inlines
+            .iter()
+            .any(|item| item.name == spec.name);
+        if !owned {
+            let shown: Vec<&str> = child
+                .meta()
+                .fields
+                .iter()
+                .filter(|field| {
+                    field.list_display
+                        && !field.hidden
+                        && !field.sensitive
+                        && field.name != "id"
+                        && field.name != spec.column
+                })
+                .map(|field| field.name)
+                .collect();
+            let shown: Vec<&str> = if shown.is_empty() { vec!["id"] } else { shown };
+            let foreign: Vec<ColumnSpec> = child
+                .columns()
+                .iter()
+                .copied()
+                .filter(|column| shown.contains(&column.name) && column.foreign_table.is_some())
+                .collect();
+            let relations = if foreign.is_empty() {
+                HashMap::new()
+            } else {
+                match relation_names(registry, state, user, &foreign, &rows).await {
+                    Ok(relations) => relations,
+                    Err(_) => continue,
+                }
+            };
+            let headings: Vec<&str> = shown
+                .iter()
+                .map(|name| {
+                    child
+                        .meta()
+                        .fields
+                        .iter()
+                        .find(|field| field.name == *name)
+                        .map(|field| field.label)
+                        .unwrap_or(name)
+                })
+                .collect();
+            let child_key = child.meta().key;
+            let row_ids: Vec<Uuid> = rows
+                .iter()
+                .filter_map(|row| {
+                    row.get("id")
+                        .and_then(Value::as_str)
+                        .and_then(|value| Uuid::parse_str(value).ok())
+                })
+                .collect();
+            let mut images = HashMap::new();
+            for name in &shown {
+                let image = registry.widgets().iter().any(|widget| {
+                    widget.model_key == child_key
+                        && widget.field == *name
+                        && matches!(widget.kind, crate::widgets::WidgetKind::Image)
+                });
+                if image {
+                    if let Ok(found) =
+                        crate::files::stored_ids(&state.db, child_key, name, &row_ids).await
+                    {
+                        images.insert(*name, found);
+                    }
+                }
+            }
+            let rendered = rows
+                .iter()
+                .filter_map(|row| {
+                    let id = row.get("id")?.as_str()?;
+                    let cells: Vec<Value> = shown
+                        .iter()
+                        .map(|name| {
+                            let mut lead = false;
+                            let cell = present_cell(
+                                locale,
+                                registry.branding().currency.as_str(),
+                                child.columns(),
+                                name,
+                                row.get(*name).unwrap_or(&Value::Null),
+                                &relations,
+                                user.is_superuser,
+                                &mut lead,
+                            );
+                            let image = images.get(name).and_then(|found| {
+                                Uuid::parse_str(id)
+                                    .ok()
+                                    .filter(|value| found.contains(value))
+                                    .map(|value| {
+                                        format!("/admin/models/{child_key}/{value}/file/{name}")
+                                    })
+                            });
+                            json!({
+                                "text": cell["text"].as_str().unwrap_or(""),
+                                "href": cell["href"].as_str().unwrap_or(""),
+                                "image": image.unwrap_or_default()
+                            })
+                        })
+                        .collect();
+                    Some(json!({
+                        "cells": cells,
+                        "href": format!("/admin/models/{}/{}", child.meta().key, id)
+                    }))
+                })
+                .collect::<Vec<_>>();
+            let can_create = permit(state.auth.as_ref().unwrap(), user, child.meta(), "create")
+                .await
+                .is_ok();
+            sections.push(json!({
+                "label": if spec.label.is_empty() { child.meta().label } else { spec.label },
+                "wide": true,
+                "pictures": !images.is_empty(),
+                "headings": headings,
+                "rows": rendered,
+                "add": can_create.then(|| format!("/admin/models/{}/new", child.meta().key)),
+                "next": has_more.then(|| format!("/admin/models/{}/{parent_id}?inline.{}={}", parent.meta().key, spec.name, page_number + 1))
+            }));
+            continue;
+        }
         let label_field = child
             .meta()
             .fields
@@ -6848,10 +11782,19 @@ pub(crate) async fn page_as(
     alert: &str,
     mut extra: Value,
 ) -> Response {
+    crate::project::ensure(registry, &state.db).await;
     let navigation = crate::nav::navigation(state, user, registry, locale, path).await;
+    let user_name = match state.auth.as_ref() {
+        Some(auth) => auth.display_name(user.id).await.unwrap_or_default(),
+        None => String::new(),
+    };
     if let Some(object) = extra.as_object_mut() {
         object.insert("nav_sections".to_owned(), navigation.sections);
         object.insert("model_groups".to_owned(), navigation.groups);
+        object.insert("user_id".to_owned(), json!(user.id.to_string()));
+        object
+            .entry("user_name".to_owned())
+            .or_insert_with(|| json!(user_name));
     }
     page(
         registry,
@@ -6888,6 +11831,7 @@ pub(crate) fn page(
 ) -> Response {
     let theme = theme.as_ref();
     let branding = registry.branding();
+    let icons = registry.icons();
     let mut value = json!({
         "locale": locale,
         "theme": theme,
@@ -6895,7 +11839,15 @@ pub(crate) fn page(
         "site_title": branding.site_title,
         "site_header": branding.site_header,
         "app_name": branding.app_name,
+        "brand_mark": brand_mark(&branding.site_header),
+        "query": "",
         "primary_color": brand_for_ui(&branding.primary_color),
+        "project_color": color_input_value(&branding.primary_color),
+        "project_currency": branding.currency,
+        "project_locale": branding.default_locale,
+        "project_fallback": branding.fallback_locale,
+        "favicon": icons.favicon,
+        "apple_touch_icon": icons.apple_touch_icon,
         "nav_dashboard": template != "error.html" && (path == "/admin" || path == "/admin/"),
         "nav_models": path.starts_with("/admin/models"),
         "nav_audit": path.starts_with("/admin/audit"),
@@ -6907,6 +11859,8 @@ pub(crate) fn page(
         "nav": signed_in,
         "superuser": superuser,
         "user_email": email,
+        "user_id": "",
+        "user_initial": user_initial(email),
         "csrf_token": csrf,
         "current_path": path,
         "notice": notice_text,
@@ -6915,6 +11869,14 @@ pub(crate) fn page(
     if let (Some(target), Some(source)) = (value.as_object_mut(), extra.as_object()) {
         for (key, item) in source {
             target.insert(key.clone(), item.clone());
+        }
+    }
+    if let Some(name) = value.get("user_name").and_then(Value::as_str) {
+        if !name.is_empty() {
+            let initial = user_initial(name);
+            if let Some(target) = value.as_object_mut() {
+                target.insert("user_initial".to_owned(), json!(initial));
+            }
         }
     }
     if value.get("nav_custom").is_none() {
@@ -7266,6 +12228,46 @@ pub(crate) fn csrf_token_from(headers: &HeaderMap, body: &Bytes) -> String {
         .unwrap_or_default()
 }
 
+fn row_form(body: &Bytes) -> Result<HashMap<String, String>, ()> {
+    let mut values = HashMap::new();
+    for pair in String::from_utf8_lossy(body).split('&') {
+        if pair.is_empty() {
+            continue;
+        }
+        let (key, value) = pair.split_once('=').unwrap_or((pair, ""));
+        if values.insert(decode(key), decode(value)).is_some() {
+            return Err(());
+        }
+    }
+    Ok(values)
+}
+
+fn apply_row_fields(
+    object: &mut Map<String, Value>,
+    columns: &[ColumnSpec],
+    allowed: &[&str],
+    form: &HashMap<String, String>,
+) -> Result<(), ()> {
+    for key in form.keys() {
+        if key == "csrf_token" {
+            continue;
+        }
+        if !allowed.contains(&key.as_str()) {
+            return Err(());
+        }
+    }
+    for field in allowed {
+        let Some(posted) = form.get(*field) else {
+            continue;
+        };
+        let Some(column) = columns.iter().find(|column| column.name == *field) else {
+            continue;
+        };
+        object.insert((*field).to_owned(), typed_value(column, posted));
+    }
+    Ok(())
+}
+
 pub(crate) fn parse_form(body: &Bytes) -> HashMap<String, String> {
     let mut values = HashMap::new();
     for pair in String::from_utf8_lossy(body).split('&') {
@@ -7360,6 +12362,18 @@ fn is_uuid(value: &str) -> bool {
 
 fn shorten_uuid(value: &str) -> String {
     format!("{}…{}", &value[..8], &value[value.len() - 4..])
+}
+
+fn color_input_value(hex: &str) -> String {
+    let body = hex.trim().trim_start_matches('#').to_ascii_lowercase();
+    if body.len() == 3 {
+        let chars: Vec<char> = body.chars().collect();
+        return format!(
+            "#{}{}{}{}{}{}",
+            chars[0], chars[0], chars[1], chars[1], chars[2], chars[2]
+        );
+    }
+    format!("#{body}")
 }
 
 /// Projektfarbe nur, wenn weiße Schrift darauf mindestens 4,5:1 erreicht.
@@ -7470,7 +12484,51 @@ async fn record_history(
             }
         }
     }
-    let rendered = events
+    RecordHistory {
+        events: render_audit_events(user, locale, &emails, events),
+        more,
+    }
+}
+
+const OVERVIEW_LIMIT: usize = 6;
+
+async fn overview_extra(state: &AppState, user: &AuthUser, locale: &str) -> Value {
+    let actor = (!user.is_superuser).then_some(user.id);
+    let listed = audit::page(&state.db, actor, 0).await;
+    let (events, activity_error) = match listed {
+        Ok((events, _)) => {
+            let events: Vec<_> = events.into_iter().take(OVERVIEW_LIMIT).collect();
+            (events, false)
+        }
+        Err(_) => (Vec::new(), true),
+    };
+    let mut emails = std::collections::HashMap::<uuid::Uuid, String>::new();
+    if user.is_superuser && !activity_error {
+        if let Some(auth) = state.auth.as_ref() {
+            for event in &events {
+                if event.actor_id == user.id || emails.contains_key(&event.actor_id) {
+                    continue;
+                }
+                if let Ok(Some(account)) = auth.get_user(event.actor_id).await {
+                    emails.insert(event.actor_id, account.email);
+                }
+            }
+        }
+    }
+    json!({
+        "user_email": user.email,
+        "activity": render_audit_events(user, locale, &emails, events),
+        "activity_error": activity_error,
+    })
+}
+
+fn render_audit_events(
+    user: &AuthUser,
+    locale: &str,
+    emails: &std::collections::HashMap<uuid::Uuid, String>,
+    events: Vec<audit::StoredEvent>,
+) -> Vec<Value> {
+    events
         .into_iter()
         .map(|event| {
             let actor_label = if event.actor_id == user.id {
@@ -7494,11 +12552,22 @@ async fn record_history(
                 "summary": event.summary,
             })
         })
-        .collect();
-    RecordHistory {
-        events: rendered,
-        more,
-    }
+        .collect()
+}
+
+fn brand_mark(name: &str) -> String {
+    name.chars()
+        .find(|char| char.is_alphanumeric())
+        .map(|char| char.to_uppercase().collect::<String>())
+        .unwrap_or_else(|| "F".to_owned())
+}
+
+fn user_initial(email: &str) -> String {
+    email
+        .chars()
+        .find(|char| char.is_alphanumeric())
+        .map(|char| char.to_uppercase().collect::<String>())
+        .unwrap_or_else(|| "?".to_owned())
 }
 
 fn action_label(locale: &str, action: &str) -> String {
@@ -7817,6 +12886,149 @@ fn form_flag(form: &HashMap<String, String>, name: &str) -> Option<bool> {
     }
 }
 
+fn role_label_ok(value: &str) -> bool {
+    let value = value.trim();
+    (1..=80).contains(&value.chars().count())
+        && value.chars().all(|character| {
+            character.is_alphanumeric() || matches!(character, ' ' | '_' | '.' | '-')
+        })
+}
+
+fn permission_catalog(registry: &AdminRegistry, locale: &str) -> Vec<Value> {
+    let mut rows: Vec<(String, String, String)> = Vec::new();
+    for model in registry.models() {
+        let Some(code) = model.meta().permission else {
+            continue;
+        };
+        if !identifier(code) {
+            continue;
+        }
+        let app_key = registry.model_app(model.meta().key).unwrap_or("");
+        let app = registry
+            .app_catalog()
+            .iter()
+            .find(|(key, _)| key == app_key)
+            .map(|(_, label)| label.clone())
+            .unwrap_or_else(|| app_key.to_owned());
+        let label = model.meta().label.to_owned();
+        if let Some(existing) = rows.iter_mut().find(|(key, _, _)| key == code) {
+            if label.chars().count() < existing.2.chars().count() {
+                existing.1 = app;
+                existing.2 = label;
+            }
+            continue;
+        }
+        rows.push((code.to_owned(), app, label));
+    }
+    rows.sort_by(|left, right| left.1.cmp(&right.1).then(left.2.cmp(&right.2)));
+    let mut values: Vec<Value> = rows
+        .into_iter()
+        .map(|(key, app, label)| {
+            json!({
+                "key": key,
+                "app": app,
+                "label": label,
+                "offer_create": true,
+                "offer_read": true,
+                "offer_update": true,
+                "offer_delete": true
+            })
+        })
+        .collect();
+    let roles = catalog(locale)
+        .get("roles_grant")
+        .and_then(Value::as_str)
+        .unwrap_or("Role assignment")
+        .to_owned();
+    values.push(json!({
+        "key": "roles",
+        "app": "",
+        "label": roles,
+        "offer_create": false,
+        "offer_read": false,
+        "offer_update": true,
+        "offer_delete": false
+    }));
+    values
+}
+
+async fn save_permission_matrix(
+    state: &AppState,
+    headers: &HeaderMap,
+    registry: &AdminRegistry,
+    locale: &str,
+    user: &AuthUser,
+    role: &str,
+    form: &HashMap<String, String>,
+) -> Response {
+    let auth = state.auth.as_ref().unwrap();
+    let listed = auth.list_roles().await.unwrap_or_default();
+    let resolved = if let Ok(id) = uuid::Uuid::parse_str(role) {
+        listed.iter().find(|(role_id, _)| role_id == &id).cloned()
+    } else if role_label_ok(role) {
+        listed.iter().find(|(_, name)| name == role).cloned()
+    } else {
+        None
+    };
+    let Some((role_id, role_name)) = resolved else {
+        return error_page(
+            state,
+            headers,
+            registry,
+            locale,
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "unknown_role",
+            true,
+            &user.email,
+        )
+        .await;
+    };
+    let granted = auth
+        .list_role_permissions(&role_name)
+        .await
+        .unwrap_or_default();
+    for row in permission_catalog(registry, locale) {
+        let key = row.get("key").and_then(Value::as_str).unwrap_or("");
+        for action in ["create", "read", "update", "delete"] {
+            let offer_key = format!("offer_{action}");
+            let offer = row
+                .get(&offer_key)
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
+            if !offer || !identifier(key) {
+                continue;
+            }
+            let code = format!("{key}.{action}");
+            let wanted = form.contains_key(&code);
+            let has = granted.iter().any(|item| item == &code);
+            if wanted == has {
+                continue;
+            }
+            if crate::directory::grant_permission(auth, user.id, &role_name, &code, wanted)
+                .await
+                .is_err()
+            {
+                return error_page(
+                    state,
+                    headers,
+                    registry,
+                    locale,
+                    StatusCode::UNPROCESSABLE_ENTITY,
+                    "forbidden",
+                    true,
+                    &user.email,
+                )
+                .await;
+            }
+        }
+    }
+    if form.get("return_to").map(String::as_str) == Some("record") {
+        redirect(&format!("/admin/directory/roles/{role_id}?notice=updated"))
+    } else {
+        redirect("/admin/directory/permissions?notice=updated")
+    }
+}
+
 fn identifier(value: &str) -> bool {
     !value.is_empty()
         && value.len() <= 80
@@ -7944,5 +13156,714 @@ mod relation_label_tests {
         assert_eq!(hidden_cell["href"], "");
         assert_eq!(missing_cell["href"], "");
         assert_ne!(hidden_cell["text"].as_str(), Some(id));
+    }
+}
+
+#[cfg(test)]
+mod posted_body_tests {
+    use super::{apply_row_fields, read_model_body, row_form};
+    use axum::body::Bytes;
+    use axum::http::{header, HeaderMap, HeaderValue};
+    use fexu_core::{ColumnKind, ColumnSpec};
+    use serde_json::{json, Map};
+
+    fn text_column(name: &'static str) -> ColumnSpec {
+        ColumnSpec {
+            name,
+            kind: ColumnKind::Text,
+            nullable: true,
+            primary_key: false,
+            default_bool: None,
+            unique: false,
+            indexed: false,
+            foreign_table: None,
+            foreign_column: None,
+            on_delete: None,
+            precision: 0,
+            scale: 0,
+            choices: &[],
+        }
+    }
+
+    #[test]
+    fn missing_list_fields_keep_their_stored_value() {
+        let columns = [text_column("street"), text_column("city")];
+        let mut object = Map::new();
+        object.insert("street".into(), json!("Lindengasse"));
+        object.insert("city".into(), json!("Wien"));
+        let form = row_form(&Bytes::from_static(b"csrf_token=abc&street=Neu")).unwrap();
+        apply_row_fields(&mut object, &columns, &["street", "city"], &form).unwrap();
+        assert_eq!(object["street"], json!("Neu"));
+        assert_eq!(object["city"], json!("Wien"));
+
+        let mut untouched = object.clone();
+        let unknown = row_form(&Bytes::from_static(b"csrf_token=abc&street=Weg&note=x")).unwrap();
+        assert!(apply_row_fields(&mut untouched, &columns, &["street", "city"], &unknown).is_err());
+        assert_eq!(untouched["street"], json!("Neu"));
+        assert_eq!(untouched["city"], json!("Wien"));
+        assert!(row_form(&Bytes::from_static(b"city=Wien&city=Graz")).is_err());
+    }
+
+    #[test]
+    fn duplicate_multipart_names_are_rejected() {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            header::CONTENT_TYPE,
+            HeaderValue::from_static("multipart/form-data; boundary=bound"),
+        );
+        let duplicate_text = Bytes::from(
+            "--bound\r\nContent-Disposition: form-data; name=\"title\"\r\n\r\nAlt\r\n\
+--bound\r\nContent-Disposition: form-data; name=\"title\"\r\n\r\nNeu\r\n\
+--bound--\r\n",
+        );
+        assert!(read_model_body(&headers, &duplicate_text).is_err());
+        let duplicate_file = Bytes::from(
+            "--bound\r\nContent-Disposition: form-data; name=\"file.cover\"; filename=\"a.gif\"\r\n\r\nGIF89a\r\n\
+--bound\r\nContent-Disposition: form-data; name=\"file.cover\"; filename=\"b.gif\"\r\n\r\nGIF89a\r\n\
+--bound--\r\n",
+        );
+        assert!(read_model_body(&headers, &duplicate_file).is_err());
+        let checked = Bytes::from(
+            "--bound\r\nContent-Disposition: form-data; name=\"active\"\r\n\r\nfalse\r\n\
+--bound\r\nContent-Disposition: form-data; name=\"active\"\r\n\r\ntrue\r\n\
+--bound\r\nContent-Disposition: form-data; name=\"m2m.tags\"\r\n\r\n11111111-1111-4111-8111-111111111111\r\n\
+--bound\r\nContent-Disposition: form-data; name=\"m2m.tags\"\r\n\r\n22222222-2222-4222-8222-222222222222\r\n\
+--bound--\r\n",
+        );
+        let parsed = read_model_body(&headers, &checked).unwrap();
+        assert_eq!(
+            parsed.fields.get("active").map(String::as_str),
+            Some("true")
+        );
+        assert_eq!(parsed.repeated.get("m2m.tags").map(Vec::len), Some(2));
+        let urlencoded = Bytes::from_static(b"title=Alt&title=Neu");
+        let mut plain = HeaderMap::new();
+        plain.insert(
+            header::CONTENT_TYPE,
+            HeaderValue::from_static("application/x-www-form-urlencoded"),
+        );
+        assert!(read_model_body(&plain, &urlencoded).is_err());
+    }
+}
+
+#[cfg(test)]
+mod store_rollback_tests {
+    use super::commit_model;
+    use crate::compose::{save_with, SaveTail, StoredFile, StoredLink};
+    use crate::files::{self, fail_next_save};
+    use crate::registry::ManagedModel;
+    use fexu_auth::{AuthConfig, AuthService, AuthUser};
+    use fexu_core::{
+        AdminFieldMeta, AdminInline, AdminModelMeta, ColumnKind, ColumnSpec, FexuError,
+        ModelDescriptor, QueryScope, ReferentialAction,
+    };
+    use fexu_db::driver::{
+        ConnectionTrait, DatabaseConnection, DatabaseTransaction, Statement, Value as DbValue,
+    };
+    use fexu_db::{DeleteOutcome, ManyToMany};
+    use serde_json::{json, Map, Value};
+    use std::sync::Arc;
+    use uuid::Uuid;
+
+    const ID_FIELD: AdminFieldMeta = AdminFieldMeta {
+        name: "id",
+        label: "Id",
+        list_display: false,
+        list_link: false,
+        searchable: false,
+        sortable: false,
+        filterable: false,
+        readonly: true,
+        hidden: false,
+        sensitive: false,
+        fieldset: "",
+    };
+    const TITLE_FIELD: AdminFieldMeta = AdminFieldMeta {
+        name: "title",
+        label: "Title",
+        list_display: true,
+        list_link: false,
+        searchable: false,
+        sortable: false,
+        filterable: false,
+        readonly: false,
+        hidden: false,
+        sensitive: false,
+        fieldset: "",
+    };
+    const SHEET_FIELD: AdminFieldMeta = AdminFieldMeta {
+        name: "sheet_id",
+        label: "Sheet",
+        list_display: false,
+        list_link: false,
+        searchable: false,
+        sortable: false,
+        filterable: false,
+        readonly: false,
+        hidden: false,
+        sensitive: false,
+        fieldset: "",
+    };
+    const LABEL_FIELD: AdminFieldMeta = AdminFieldMeta {
+        name: "label",
+        label: "Label",
+        list_display: true,
+        list_link: false,
+        searchable: false,
+        sortable: false,
+        filterable: false,
+        readonly: false,
+        hidden: false,
+        sensitive: false,
+        fieldset: "",
+    };
+    static SHEET_FIELDS: [AdminFieldMeta; 2] = [ID_FIELD, TITLE_FIELD];
+    static LINE_FIELDS: [AdminFieldMeta; 3] = [ID_FIELD, SHEET_FIELD, LABEL_FIELD];
+
+    const fn key_column(name: &'static str) -> ColumnSpec {
+        ColumnSpec {
+            name,
+            kind: ColumnKind::Uuid,
+            nullable: false,
+            primary_key: true,
+            default_bool: None,
+            unique: false,
+            indexed: false,
+            foreign_table: None,
+            foreign_column: None,
+            on_delete: None,
+            precision: 0,
+            scale: 0,
+            choices: &[],
+        }
+    }
+    const fn text_column(name: &'static str) -> ColumnSpec {
+        ColumnSpec {
+            name,
+            kind: ColumnKind::Text,
+            nullable: false,
+            primary_key: false,
+            default_bool: None,
+            unique: false,
+            indexed: false,
+            foreign_table: None,
+            foreign_column: None,
+            on_delete: None,
+            precision: 0,
+            scale: 0,
+            choices: &[],
+        }
+    }
+    const SHEET_LINK: ColumnSpec = ColumnSpec {
+        name: "sheet_id",
+        kind: ColumnKind::Uuid,
+        nullable: false,
+        primary_key: false,
+        default_bool: None,
+        unique: false,
+        indexed: true,
+        foreign_table: Some("probe_sheets"),
+        foreign_column: Some("id"),
+        on_delete: Some(ReferentialAction::Cascade),
+        precision: 0,
+        scale: 0,
+        choices: &[],
+    };
+    static SHEET_COLUMNS: [ColumnSpec; 2] = [key_column("id"), text_column("title")];
+    static LINE_COLUMNS: [ColumnSpec; 3] = [key_column("id"), SHEET_LINK, text_column("label")];
+    static INLINE: [AdminInline; 1] = [AdminInline {
+        name: "lines",
+        child_table: "probe_lines",
+        column: "sheet_id",
+        label: "",
+        fields: &[],
+        readonly_fields: &[],
+        min_count: 0,
+        max_count: 5,
+        extra: 0,
+        can_add: true,
+        can_change: true,
+        can_delete: true,
+        ordering: None,
+        form: true,
+    }];
+    static SHEET_META: AdminModelMeta = AdminModelMeta {
+        key: "probe_sheets",
+        label: "Sheets",
+        permission: Some("sheets"),
+        fields: &SHEET_FIELDS,
+        ordering: None,
+        per_page: 25,
+        fieldsets: &[],
+        inlines: &INLINE,
+        date_hierarchy: None,
+    };
+    static LINE_META: AdminModelMeta = AdminModelMeta {
+        key: "probe_lines",
+        label: "Lines",
+        permission: Some("sheets"),
+        fields: &LINE_FIELDS,
+        ordering: None,
+        per_page: 25,
+        fieldsets: &[],
+        inlines: &[],
+        date_hierarchy: None,
+    };
+    static SHEET_DESC: ModelDescriptor = ModelDescriptor {
+        name: "probe_sheet",
+        table: "probe_sheets",
+        api_path: "/api/v1/probe_sheets",
+        allow_anonymous: false,
+        permission: Some("sheets"),
+        requires_object_policy: false,
+    };
+    static LINE_DESC: ModelDescriptor = ModelDescriptor {
+        name: "probe_line",
+        table: "probe_lines",
+        api_path: "/api/v1/probe_lines",
+        allow_anonymous: false,
+        permission: Some("sheets"),
+        requires_object_policy: false,
+    };
+
+    struct Sheet;
+    struct Line;
+
+    async fn exec(db: &impl ConnectionTrait, sql: &str, values: Vec<DbValue>) {
+        let backend = db.get_database_backend();
+        db.execute(Statement::from_sql_and_values(backend, sql, values))
+            .await
+            .unwrap();
+    }
+
+    async fn tally(db: &DatabaseConnection, sql: &str) -> usize {
+        let backend = db.get_database_backend();
+        db.query_all(Statement::from_string(backend, sql.to_owned()))
+            .await
+            .unwrap()
+            .len()
+    }
+
+    fn titled(title: &str) -> Map<String, Value> {
+        let mut object = Map::new();
+        object.insert("title".into(), json!(title));
+        object
+    }
+
+    async fn title_of(db: &DatabaseConnection, id: Uuid) -> String {
+        let backend = db.get_database_backend();
+        let row = db
+            .query_one(Statement::from_sql_and_values(
+                backend,
+                "SELECT title FROM probe_sheets WHERE id = ?",
+                [DbValue::from(id.to_string())],
+            ))
+            .await
+            .unwrap()
+            .unwrap();
+        row.try_get("", "title").unwrap()
+    }
+
+    #[async_trait::async_trait]
+    impl ManagedModel for Sheet {
+        fn meta(&self) -> &'static AdminModelMeta {
+            &SHEET_META
+        }
+        fn descriptor(&self) -> &'static ModelDescriptor {
+            &SHEET_DESC
+        }
+        fn columns(&self) -> &'static [ColumnSpec] {
+            &SHEET_COLUMNS
+        }
+        fn policy_bound(&self) -> bool {
+            false
+        }
+        fn read_scope(&self, _: &AuthUser) -> QueryScope {
+            QueryScope::All
+        }
+        fn write_scope(&self, _: &AuthUser) -> QueryScope {
+            QueryScope::All
+        }
+        async fn page(
+            &self,
+            _: &DatabaseConnection,
+            _: &[&str],
+            _: Option<&str>,
+            _: &str,
+            _: bool,
+            _: &[(&str, DbValue)],
+            _: &[(&str, bool, DbValue)],
+            _: u64,
+            _: u64,
+            _: &QueryScope,
+        ) -> Result<(Vec<Value>, bool, i64), FexuError> {
+            Ok((Vec::new(), false, 0))
+        }
+        async fn read(
+            &self,
+            _: &DatabaseConnection,
+            _: Uuid,
+            _: &QueryScope,
+        ) -> Result<Option<Value>, FexuError> {
+            Ok(None)
+        }
+        async fn create(
+            &self,
+            _: &DatabaseConnection,
+            _: Value,
+            _: &AuthUser,
+        ) -> Result<Value, FexuError> {
+            Err(FexuError::NotFound)
+        }
+        async fn update(
+            &self,
+            _: &DatabaseConnection,
+            _: Uuid,
+            _: Value,
+            _: &QueryScope,
+            _: &AuthUser,
+        ) -> Result<Value, FexuError> {
+            Err(FexuError::NotFound)
+        }
+        async fn remove(
+            &self,
+            _: &DatabaseConnection,
+            _: Uuid,
+            _: &QueryScope,
+            _: &AuthUser,
+        ) -> Result<DeleteOutcome, FexuError> {
+            Ok(DeleteOutcome::Missing)
+        }
+        fn object_allows(&self, _: &AuthUser, _: &str, _: &Value) -> bool {
+            true
+        }
+        async fn read_in(
+            &self,
+            tx: &DatabaseTransaction,
+            id: Uuid,
+            _: &QueryScope,
+        ) -> Result<Option<Value>, FexuError> {
+            let backend = tx.get_database_backend();
+            let Some(row) = tx
+                .query_one(Statement::from_sql_and_values(
+                    backend,
+                    "SELECT title FROM probe_sheets WHERE id = ?",
+                    [DbValue::from(id.to_string())],
+                ))
+                .await
+                .map_err(FexuError::database)?
+            else {
+                return Ok(None);
+            };
+            let title: String = row.try_get("", "title").map_err(FexuError::database)?;
+            Ok(Some(json!({ "id": id, "title": title })))
+        }
+        async fn create_in(
+            &self,
+            tx: &DatabaseTransaction,
+            body: Value,
+            _: &AuthUser,
+        ) -> Result<Value, FexuError> {
+            let id = Uuid::new_v4();
+            let title = body["title"].as_str().unwrap_or("").to_owned();
+            exec(
+                tx,
+                "INSERT INTO probe_sheets (id, title) VALUES (?, ?)",
+                vec![DbValue::from(id.to_string()), DbValue::from(title.clone())],
+            )
+            .await;
+            Ok(json!({ "id": id.to_string(), "title": title }))
+        }
+        async fn update_in(
+            &self,
+            tx: &DatabaseTransaction,
+            id: Uuid,
+            body: Value,
+            _: &QueryScope,
+            _: &AuthUser,
+        ) -> Result<Value, FexuError> {
+            let title = body["title"].as_str().unwrap_or("").to_owned();
+            let backend = tx.get_database_backend();
+            let result = tx
+                .execute(Statement::from_sql_and_values(
+                    backend,
+                    "UPDATE probe_sheets SET title = ? WHERE id = ?",
+                    [DbValue::from(title.clone()), DbValue::from(id.to_string())],
+                ))
+                .await
+                .map_err(FexuError::database)?;
+            if result.rows_affected() == 0 {
+                return Err(FexuError::NotFound);
+            }
+            Ok(json!({ "id": id.to_string(), "title": title }))
+        }
+        async fn delete_in(
+            &self,
+            _: &DatabaseTransaction,
+            _: Uuid,
+            _: &QueryScope,
+            _: &AuthUser,
+        ) -> Result<DeleteOutcome, FexuError> {
+            Ok(DeleteOutcome::Missing)
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl ManagedModel for Line {
+        fn meta(&self) -> &'static AdminModelMeta {
+            &LINE_META
+        }
+        fn descriptor(&self) -> &'static ModelDescriptor {
+            &LINE_DESC
+        }
+        fn columns(&self) -> &'static [ColumnSpec] {
+            &LINE_COLUMNS
+        }
+        fn policy_bound(&self) -> bool {
+            false
+        }
+        fn read_scope(&self, _: &AuthUser) -> QueryScope {
+            QueryScope::All
+        }
+        fn write_scope(&self, _: &AuthUser) -> QueryScope {
+            QueryScope::All
+        }
+        async fn page(
+            &self,
+            _: &DatabaseConnection,
+            _: &[&str],
+            _: Option<&str>,
+            _: &str,
+            _: bool,
+            _: &[(&str, DbValue)],
+            _: &[(&str, bool, DbValue)],
+            _: u64,
+            _: u64,
+            _: &QueryScope,
+        ) -> Result<(Vec<Value>, bool, i64), FexuError> {
+            Ok((Vec::new(), false, 0))
+        }
+        async fn read(
+            &self,
+            _: &DatabaseConnection,
+            _: Uuid,
+            _: &QueryScope,
+        ) -> Result<Option<Value>, FexuError> {
+            Ok(None)
+        }
+        async fn create(
+            &self,
+            _: &DatabaseConnection,
+            _: Value,
+            _: &AuthUser,
+        ) -> Result<Value, FexuError> {
+            Err(FexuError::NotFound)
+        }
+        async fn update(
+            &self,
+            _: &DatabaseConnection,
+            _: Uuid,
+            _: Value,
+            _: &QueryScope,
+            _: &AuthUser,
+        ) -> Result<Value, FexuError> {
+            Err(FexuError::NotFound)
+        }
+        async fn remove(
+            &self,
+            _: &DatabaseConnection,
+            _: Uuid,
+            _: &QueryScope,
+            _: &AuthUser,
+        ) -> Result<DeleteOutcome, FexuError> {
+            Ok(DeleteOutcome::Missing)
+        }
+        fn object_allows(&self, _: &AuthUser, _: &str, _: &Value) -> bool {
+            true
+        }
+        async fn read_in(
+            &self,
+            _: &DatabaseTransaction,
+            _: Uuid,
+            _: &QueryScope,
+        ) -> Result<Option<Value>, FexuError> {
+            Ok(None)
+        }
+        async fn create_in(
+            &self,
+            tx: &DatabaseTransaction,
+            body: Value,
+            _: &AuthUser,
+        ) -> Result<Value, FexuError> {
+            let id = Uuid::new_v4();
+            let sheet = body["sheet_id"].as_str().unwrap_or("").to_owned();
+            let label = body["label"].as_str().unwrap_or("").to_owned();
+            exec(
+                tx,
+                "INSERT INTO probe_lines (id, sheet_id, label) VALUES (?, ?, ?)",
+                vec![
+                    DbValue::from(id.to_string()),
+                    DbValue::from(sheet),
+                    DbValue::from(label),
+                ],
+            )
+            .await;
+            Ok(json!({ "id": id.to_string() }))
+        }
+        async fn update_in(
+            &self,
+            _: &DatabaseTransaction,
+            _: Uuid,
+            _: Value,
+            _: &QueryScope,
+            _: &AuthUser,
+        ) -> Result<Value, FexuError> {
+            Err(FexuError::NotFound)
+        }
+        async fn delete_in(
+            &self,
+            _: &DatabaseTransaction,
+            _: Uuid,
+            _: &QueryScope,
+            _: &AuthUser,
+        ) -> Result<DeleteOutcome, FexuError> {
+            Ok(DeleteOutcome::Missing)
+        }
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn file_failure_rolls_back_record_links_and_inlines() {
+        let db = fexu_db::connect("sqlite::memory:").await.unwrap();
+        fexu_auth::apply_migrations(&db).await.unwrap();
+        let auth = Arc::new(AuthService::new(db.clone(), AuthConfig::development()));
+        let created = auth
+            .create_user(
+                "probe@example.invalid",
+                &Uuid::new_v4().simple().to_string(),
+                true,
+                true,
+            )
+            .await
+            .unwrap();
+        let user = AuthUser {
+            id: created.id,
+            email: created.email,
+            is_active: created.is_active,
+            is_staff: created.is_staff,
+            is_superuser: created.is_superuser,
+            session_id: Uuid::new_v4(),
+        };
+        for sql in [
+            "CREATE TABLE probe_sheets (id TEXT PRIMARY KEY, title TEXT NOT NULL)",
+            "CREATE TABLE probe_lines (id TEXT PRIMARY KEY, sheet_id TEXT NOT NULL, label TEXT NOT NULL)",
+            "CREATE TABLE probe_tags (sheet_id TEXT NOT NULL, tag_id TEXT NOT NULL)",
+        ] {
+            exec(&db, sql, Vec::new()).await;
+        }
+        files::ensure(&db).await.unwrap();
+        let sheet = Sheet;
+        let tag = Uuid::from_u128(7);
+        let members = [tag];
+        let bytes = b"GIF89a";
+        let link = StoredLink {
+            name: "tags",
+            link: ManyToMany {
+                join_table: "probe_tags",
+                parent_column: "sheet_id",
+                child_column: "tag_id",
+            },
+            children: &members,
+        };
+        let file = StoredFile {
+            field: "file_name",
+            kind: "image/gif",
+            bytes,
+        };
+        let tail = SaveTail {
+            links: std::slice::from_ref(&link),
+            files: std::slice::from_ref(&file),
+            draft: None,
+        };
+        fail_next_save();
+        let failed = commit_model(&db, &user, &sheet, None, titled("Neu"), &tail).await;
+        assert!(failed.is_err());
+        assert_eq!(tally(&db, "SELECT id FROM probe_sheets").await, 0);
+        assert_eq!(tally(&db, "SELECT sheet_id FROM probe_tags").await, 0);
+
+        let existing = Uuid::new_v4();
+        exec(
+            &db,
+            "INSERT INTO probe_sheets (id, title) VALUES (?, ?)",
+            vec![DbValue::from(existing.to_string()), DbValue::from("Alt")],
+        )
+        .await;
+        fail_next_save();
+        let kept = commit_model(&db, &user, &sheet, Some(existing), titled("Neu"), &tail).await;
+        assert!(kept.is_err());
+        assert_eq!(title_of(&db, existing).await, "Alt");
+
+        let child: Arc<dyn ManagedModel> = Arc::new(Line);
+        let mut parent_body = Map::new();
+        parent_body.insert("title".into(), json!("Blatt"));
+        let mut form = std::collections::HashMap::new();
+        form.insert("inline_lines_0_label".into(), "Zeile".into());
+        fail_next_save();
+        let inline = save_with(
+            &db,
+            auth.as_ref(),
+            &user,
+            &sheet,
+            |key| (key == "probe_lines").then(|| child.clone()),
+            None,
+            parent_body,
+            &form,
+            SaveTail {
+                links: &[],
+                files: std::slice::from_ref(&file),
+                draft: None,
+            },
+        )
+        .await;
+        assert!(matches!(inline, crate::compose::SaveResult::Invalid(_)));
+        assert_eq!(tally(&db, "SELECT id FROM probe_sheets").await, 1);
+        assert_eq!(tally(&db, "SELECT id FROM probe_lines").await, 0);
+
+        let stored = commit_model(&db, &user, &sheet, None, titled("Bleibt"), &tail)
+            .await
+            .unwrap();
+        assert_eq!(tally(&db, "SELECT id FROM probe_sheets").await, 2);
+        assert_eq!(tally(&db, "SELECT sheet_id FROM probe_tags").await, 1);
+        let loaded = files::load(&db, "probe_sheets", stored, "file_name")
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(loaded.1.as_slice(), bytes);
+    }
+}
+
+#[cfg(test)]
+mod password_change_tests {
+    use super::posted_password_change;
+    use std::collections::HashMap;
+
+    #[test]
+    fn missing_password_fields_stay_absent() {
+        let mut form = HashMap::new();
+        assert!(posted_password_change(&form).is_none());
+        form.insert("current_password".into(), String::new());
+        form.insert("password".into(), "next-phrase".into());
+        form.insert("password_confirm".into(), "next-phrase".into());
+        assert!(posted_password_change(&form).is_none());
+        form.insert("current_password".into(), "current-phrase".into());
+        form.insert("password".into(), String::new());
+        assert!(posted_password_change(&form).is_none());
+        form.insert("password".into(), "next-phrase".into());
+        form.insert("password_confirm".into(), "other-phrase".into());
+        assert!(posted_password_change(&form).is_none());
+        form.insert("password_confirm".into(), "next-phrase".into());
+        assert_eq!(
+            posted_password_change(&form),
+            Some(("current-phrase", "next-phrase"))
+        );
     }
 }

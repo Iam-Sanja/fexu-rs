@@ -1,0 +1,129 @@
+{% if block.kind == "card" %}
+<article class="card kpi board-item" {% if block.w %}style="grid-column: {{ block.x }} / span {{ block.w }}; grid-row: {{ block.y }} / span {{ block.h }}"{% endif %} {% if arranging and not quiet %}data-widget="{{ block.id }}" data-kind="card" data-x="{{ block.x }}" data-y="{{ block.y }}" data-w="{{ block.w }}" data-h="{{ block.h }}"{% endif %}>
+{% if arranging and not quiet %}{% include "board_place.html" %}{% endif %}
+<p class="kpi-label">{{ block.title }}</p>
+<p class="kpi-value">{{ block.total }}</p>
+{% if block.delta %}<p class="kpi-delta {{ block.direction }}">{{ block.delta }}</p>{% endif %}
+{% if block.spark %}<svg class="spark" viewBox="0 0 120 36" aria-hidden="true"><polyline points="{{ block.spark }}"></polyline></svg>{% endif %}
+<p class="hint">{{ block.model_label }}</p>
+{% if block.error %}<p class="alert" role="alert">{{ block.error }}</p>{% endif %}
+</article>
+{% else %}
+<section class="card section board-item" {% if block.w %}style="grid-column: {{ block.x }} / span {{ block.w }}; grid-row: {{ block.y }} / span {{ block.h }}"{% endif %} {% if arranging and not quiet %}data-widget="{{ block.id }}" data-kind="{{ block.kind }}" data-x="{{ block.x }}" data-y="{{ block.y }}" data-w="{{ block.w }}" data-h="{{ block.h }}"{% endif %} aria-labelledby="block-{{ block.kind }}-{{ block.title | slugify }}">
+{% if arranging and not quiet %}{% include "board_place.html" %}{% endif %}
+<h2 id="block-{{ block.kind }}-{{ block.title | slugify }}">{{ block.title }}</h2>
+{% if block.error %}
+<p class="alert" role="alert">{{ block.error }}</p>
+{% elif block.kind == "table" %}
+{% if block.rows | length == 0 %}
+<p class="empty">{{ i18n.empty }}</p>
+{% else %}
+<div class="table-wrap" tabindex="0">
+<table>
+<thead>
+<tr>{% for column in block.columns %}<th scope="col">{{ column }}</th>{% endfor %}</tr>
+</thead>
+<tbody>
+{% for row in block.rows %}
+<tr>{% for cell in row.cells %}<td>{% if row.href %}<a class="row-open" href="{{ row.href }}"{% if not loop.first %} tabindex="-1"{% endif %}>{{ cell }}</a>{% else %}{{ cell }}{% endif %}</td>{% endfor %}</tr>
+{% endfor %}
+</tbody>
+</table>
+</div>
+{% endif %}
+<p><a href="/admin/models/{{ block.model_key }}">{{ i18n.open_list }}</a></p>
+{% elif block.kind == "pie" %}
+{% if block.slices | length == 0 %}
+<p class="empty">{{ i18n.empty }}</p>
+{% else %}
+<div class="donut-wrap">
+<svg class="donut" viewBox="0 0 220 220" role="img">
+{% for slice in block.slices %}
+<circle cx="110" cy="110" r="70" fill="none" stroke="{{ slice.color }}" stroke-width="28" stroke-dasharray="{{ slice.dash }}" stroke-dashoffset="{{ slice.offset }}" transform="rotate(-90 110 110)"><title>{{ slice.label }}: {{ slice.amount }}</title></circle>
+{% endfor %}
+<text x="110" y="108" class="donut-total" text-anchor="middle">{{ block.total }}</text>
+<text x="110" y="128" class="donut-caption" text-anchor="middle">{{ i18n.total }}</text>
+</svg>
+<ul class="pie-legend">
+{% for slice in block.slices %}
+<li><span class="pie-swatch" style="background: {{ slice.color }}"></span>{{ slice.label }} · {{ slice.amount }} · {{ slice.share }}%</li>
+{% endfor %}
+</ul>
+</div>
+{% endif %}
+{% elif block.kind == "line" %}
+{% if block.slices | length == 0 %}
+<p class="empty">{{ i18n.empty }}</p>
+{% else %}
+<svg class="chart" viewBox="0 0 640 280" role="img">
+{% for line in block.grid %}
+<line x1="48" x2="624" y1="{{ line.y }}" y2="{{ line.y }}" class="chart-grid"></line>
+<text x="42" y="{{ line.y }}" class="chart-axis" text-anchor="end" dominant-baseline="middle">{{ line.label }}</text>
+{% endfor %}
+<polygon points="{{ block.area }}" class="chart-area"></polygon>
+<polyline points="{{ block.points }}" class="chart-line"></polyline>
+{% for dot in block.dots %}
+<circle cx="{{ dot.x }}" cy="{{ dot.y }}" r="4" class="chart-dot"><title>{{ dot.amount }}</title></circle>
+{% endfor %}
+</svg>
+<p class="line-labels"><span>{{ block.first }}</span><span>{{ block.last }}</span></p>
+{% endif %}
+{% elif block.kind == "stack" %}
+{% if block.rows | length == 0 %}
+<p class="empty">{{ i18n.empty }}</p>
+{% else %}
+<ul class="pie-legend">
+{% for item in block.legend %}
+<li><span class="pie-swatch" style="background: {{ item.color }}"></span>{{ item.label }}</li>
+{% endfor %}
+</ul>
+<svg class="chart" viewBox="0 0 640 {{ block.height }}" role="img">
+{% for row in block.rows %}
+<text x="140" y="{{ row.y + 13 }}" class="chart-label" text-anchor="end">{{ row.label }}</text>
+{% for segment in row.segments %}
+<rect x="{{ segment.x }}" y="{{ row.y }}" width="{{ segment.w }}" height="16" rx="3" fill="{{ segment.color }}"><title>{{ segment.amount }}</title></rect>
+{% endfor %}
+{% endfor %}
+{% for tick in block.axis %}
+<text x="{{ tick.x }}" y="{{ block.height - 8 }}" class="chart-axis" text-anchor="middle">{{ tick.label }}</text>
+{% endfor %}
+</svg>
+{% endif %}
+{% elif block.kind == "tree" %}
+{% if block.tiles | length == 0 %}
+<p class="empty">{{ i18n.empty }}</p>
+{% else %}
+<svg class="chart" viewBox="0 0 640 320" role="img">
+{% for tile in block.tiles %}
+<rect x="{{ tile.x }}" y="{{ tile.y }}" width="{{ tile.w }}" height="{{ tile.h }}" fill="{{ tile.color }}" rx="6"><title>{{ tile.full }}: {{ tile.amount }}</title></rect>
+{% if tile.text %}
+<text x="{{ tile.lx }}" y="{{ tile.ly }}" class="tile-label">{{ tile.label }}</text>
+<text x="{{ tile.lx }}" y="{{ tile.vy }}" class="tile-value">{{ tile.amount }}</text>
+{% endif %}
+{% endfor %}
+</svg>
+{% endif %}
+{% else %}
+{% if block.bars | length == 0 %}
+<p class="empty">{{ i18n.empty }}</p>
+{% else %}
+<svg class="chart" viewBox="0 0 640 {% if block.tilt %}360{% else %}280{% endif %}" role="img">
+{% for line in block.grid %}
+<line x1="48" x2="624" y1="{{ line.y }}" y2="{{ line.y }}" class="chart-grid"></line>
+<text x="42" y="{{ line.y }}" class="chart-axis" text-anchor="end" dominant-baseline="middle">{{ line.label }}</text>
+{% endfor %}
+{% for bar in block.bars %}
+<rect x="{{ bar.x }}" y="{{ bar.y }}" width="{{ bar.w }}" height="{{ bar.h }}" rx="4" fill="{{ bar.color }}"><title>{{ bar.label }}: {{ bar.amount }}</title></rect>
+<text x="{{ bar.cx }}" y="{{ bar.value_y }}" class="chart-value" text-anchor="middle">{{ bar.amount }}</text>
+{% if block.tilt %}
+<text x="{{ bar.cx }}" y="246" class="chart-label" text-anchor="end" transform="rotate(-40 {{ bar.cx }} 246)">{{ bar.label }}</text>
+{% else %}
+<text x="{{ bar.cx }}" y="252" class="chart-label" text-anchor="middle">{{ bar.label }}</text>
+{% endif %}
+{% endfor %}
+</svg>
+{% endif %}
+{% endif %}
+{% if block.note %}<p class="hint">{{ block.note }}</p>{% endif %}
+</section>
+{% endif %}
