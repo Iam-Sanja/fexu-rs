@@ -473,7 +473,7 @@ name = "{name}"
 template = "{template_name}"
 layout_version = 2
 apps_dir = "{apps_dir}"
-default_locale = "de"
+default_locale = "en"
 fallback_locale = "en"
 
 [database]
