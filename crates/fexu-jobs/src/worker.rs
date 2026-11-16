@@ -1,4 +1,4 @@
-//! Worker-Schleife. Sie startet keinen Webserver und wendet keine Migration an.
+//! Worker loop. Does not start a web server or apply migrations.
 
 use crate::error::JobError;
 use crate::queue::{Finish, Queue};
@@ -39,8 +39,8 @@ impl Worker {
         &self.id
     }
 
-    /// Holt Jobs, bis `stop` gesetzt ist. Ein bereits geholter Handler läuft zu Ende
-    /// oder bis zu seinem Timeout. Danach wird nichts Neues mehr geholt.
+    /// Polls for jobs until `stop` is set. An already fetched handler completes
+    /// or reaches its timeout. No new jobs are fetched afterward.
     pub async fn run(&self, stop: &AtomicBool) -> Result<(), JobError> {
         self.queue.ready().await?;
         while !stop.load(Ordering::SeqCst) {

@@ -1,11 +1,11 @@
-//! Optionaler, typisierter Cache. Der mitgelieferte Speicher gilt nur im aktuellen Prozess.
+//! Optional typed cache. Bundled storage is local to the current process.
 //!
-//! Ein externes Backend implementiert [`CacheBackend`]. Fexu liefert keinen
-//! Redis-Client und behandelt den Prozessspeicher nicht als verteilten Cache.
-//! Zwei `MemoryCache::new`-Werte teilen keine Einträge. Ein `clone` schon, aber
-//! nur innerhalb dieses Prozesses. [`ViewCache`] speichert Views nur, wenn die
-//! Anwendung ihn aufruft. Ein gemeinsamer Scope lehnt angemeldete Betrachter ab,
-//! ein Nutzer-Scope lehnt anonyme Betrachter ab. Das Boolean ersetzt keine Sitzung.
+//! External backends implement [`CacheBackend`]. Fexu does not include a
+//! Redis client or treat in-process storage as a distributed cache.
+//! Two calls to `MemoryCache::new` do not share entries. Clones do, but
+//! only in the same process. [`ViewCache`] stores views only when
+//! the application invokes it. Shared scopes reject authenticated viewers,
+//! and user scopes reject anonymous viewers. A boolean does not replace session verification.
 
 mod backend;
 mod error;

@@ -1,6 +1,6 @@
 //! Statische Projektdateien. Getrennt von den eingebetteten Admin-Assets.
 //!
-//! Ausgeliefert wird nur, was nach der Kanonisierung im konfigurierten Wurzelverzeichnis liegt.
+//! Only files whose canonical paths remain under the configured root are served.
 
 use axum::body::Body;
 use axum::extract::Request;
@@ -209,7 +209,7 @@ fn missing() -> Response {
     StatusCode::NOT_FOUND.into_response()
 }
 
-/// SHA-256 als ETag. Jedes Byte wird explizit zweistellig und kleingeschrieben ausgegeben.
+/// SHA-256 ETag. Each byte is formatted explicitly as two lowercase hexadecimal digits.
 fn quoted_sha256_etag(bytes: &[u8]) -> String {
     const HEX: &[u8; 16] = b"0123456789abcdef";
     let digest = Sha256::digest(bytes);

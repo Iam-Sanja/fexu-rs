@@ -1,4 +1,4 @@
-//! Wer eine Datei schreiben oder lesen darf. Der Besitzer ist nicht automatisch eine andere Person.
+//! Authorization to read or write a file. Ownership does not automatically transfer to another actor.
 
 use crate::StorageError;
 use uuid::Uuid;

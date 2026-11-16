@@ -8245,14 +8245,14 @@ fn list_columns(
         .collect()
 }
 
-/// Spalten der Liste.
+/// Columns displayed in a model list.
 ///
-/// Felder mit `list_display` in der Reihenfolge von `ModelAdmin::list_display`,
-/// sonst in der Reihenfolge der Modellfelder. Die Kennung `id` bleibt draußen:
-/// sie ist eine UUID und in der Tabelle nicht lesbar.
+/// Fields marked with `list_display` follow `ModelAdmin::list_display` order;
+/// otherwise, model field order applies. The `id` column is excluded:
+/// it contains a UUID and is not useful for reading the table.
 ///
-/// Ohne solche Felder das erste sichtbare Textfeld, sonst das erste andere sichtbare Feld.
-/// `hidden` und sensible Namen fallen weg.
+/// Without explicitly listed fields, use the first visible text field, then another visible field.
+/// Exclude `hidden` fields and sensitive names.
 fn listed_fields<'a>(
     fields: &'a [fexu_core::AdminFieldMeta],
     specs: &[ColumnSpec],
@@ -12147,9 +12147,9 @@ fn constant_eq(left: &str, right: &str) -> bool {
         == 0
 }
 
-/// Das Login-Dokument sendet bei einem Same-Origin-POST die echte Origin.
-/// `no-referrer` würde Browser dazu bringen, `Origin: null` zu senden. Recovery-Seiten
-/// setzen ihren eigenen Wert und werden hier nicht verändert.
+/// The login page submits its actual origin on same-origin POST requests.
+/// `no-referrer` could make browsers send `Origin: null`. Recovery pages
+/// set their own policy and are not modified here.
 fn same_origin_document(response: &mut Response) {
     response.headers_mut().insert(
         header::REFERRER_POLICY,
@@ -12376,7 +12376,7 @@ fn color_input_value(hex: &str) -> String {
     format!("#{body}")
 }
 
-/// Projektfarbe nur, wenn weiße Schrift darauf mindestens 4,5:1 erreicht.
+/// Use the project color only if white text achieves a contrast ratio of at least 4.5:1.
 fn brand_for_ui(hex: &str) -> String {
     if contrast_ratio(hex, "#ffffff") >= 4.5 {
         hex.to_owned()

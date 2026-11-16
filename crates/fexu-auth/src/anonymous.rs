@@ -10,18 +10,18 @@ use crate::store::{self, AnonymousRow};
 use axum::http::{HeaderMap, Method};
 use uuid::Uuid;
 
-/// Sitzung, die ein Formular oder eine Cookie-Anfrage gerade verwendet.
+/// Session currently used by a form or cookie-authenticated request.
 #[derive(Debug)]
 pub enum BrowserActor {
     User(AuthUser),
     Anonymous {
         session_id: Uuid,
     },
-    /// Kein Session-Cookie. Bearer- oder öffentliche API-Clients fallen hierher und werden nicht per Browser-CSRF blockiert.
+    /// No session cookie. Bearer and public API clients follow this path without browser CSRF blocking.
     Stateless,
 }
 
-/// Neu ausgegebene oder wiedererkannte anonyme Sitzung. Der Roh-Token steht nur im Cookie.
+/// Newly issued or recognized anonymous session. The raw token is only exposed in the cookie.
 pub struct AnonymousSession {
     pub session_id: Uuid,
     pub csrf_token: String,
@@ -41,8 +41,8 @@ impl std::fmt::Debug for AnonymousSession {
 }
 
 impl AuthService {
-    /// Legt eine anonyme Sitzung an, wenn das anonyme Cookie fehlt, abgelaufen oder unbekannt ist.
-    /// Eine vorhandene Benutzersitzung bleibt unberührt.
+    /// Creates an anonymous session if its cookie is missing, expired, or unknown.
+    /// An existing user session remains unchanged.
     pub async fn ensure_anonymous_session(
         &self,
         headers: &HeaderMap,
@@ -66,7 +66,7 @@ impl AuthService {
         self.issue_anonymous().await
     }
 
-    /// Prüft POST, PUT, PATCH und DELETE. Eine Benutzersitzung wird nicht auf die anonyme Sitzung zurückgestuft.
+    /// Checks POST, PUT, PATCH, and DELETE. User sessions are never downgraded to anonymous sessions.
     pub async fn authenticate_browser_form(
         &self,
         headers: &HeaderMap,
@@ -88,7 +88,7 @@ impl AuthService {
         Err(AuthError::Unauthenticated)
     }
 
-    /// Cookie-Schreibzugriffe prüfen CSRF. Ohne Session-Cookie bleibt die Anfrage unberührt, auch mit `Authorization: Bearer`.
+    /// Cookie-authenticated writes check CSRF. Without a session cookie, the request is unchanged, even with `Authorization: Bearer`.
     pub async fn guard_cookie_write(
         &self,
         headers: &HeaderMap,
@@ -103,7 +103,7 @@ impl AuthService {
         self.authenticate_browser_form(headers, method, field).await
     }
 
-    /// Ob die Anfrage ein konfiguriertes Benutzer- oder anonymes Session-Cookie trägt.
+    /// Whether the request carries a configured user or anonymous session cookie.
     pub fn request_has_session_cookie(&self, headers: &HeaderMap) -> bool {
         read_cookie(headers, &self.config.cookie_name).is_some()
             || read_cookie(headers, &self.config.anonymous_cookie_name).is_some()

@@ -1,4 +1,4 @@
-//! Versandstrategie. Der Dienst schreibt den Nachrichtentext nicht ins Tracing.
+//! Delivery strategy. The service never logs message bodies to tracing.
 
 use crate::error::MailError;
 use crate::message::{validate, MailMessage, MailReceipt};
@@ -6,7 +6,7 @@ use crate::smtp::{self, SmtpSecurity, SmtpSettings};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-/// Vollständige Mail-Form aus Konfiguration und Umgebungsvariablen.
+/// Complete mail configuration resolved from project settings and environment variables.
 #[derive(Clone, Debug)]
 pub struct MailConfig {
     pub backend: String,
@@ -106,7 +106,7 @@ impl MailService {
         )
     }
 
-    /// `fexu.toml` liefert die Form. Das SMTP-Passwort kommt aus `FEXU_SMTP_PASSWORD`.
+    /// `fexu.toml` supplies configuration. The SMTP password comes from `FEXU_SMTP_PASSWORD`.
     pub fn open(config: &MailConfig) -> Self {
         Self::try_open(config).unwrap_or_else(|error| panic!("{error}"))
     }

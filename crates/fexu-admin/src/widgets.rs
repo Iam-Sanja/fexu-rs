@@ -1,4 +1,4 @@
-//! Registrierte Formular-Widgets. Ein Widget ändert die Darstellung, nicht das Recht.
+//! Registered form widgets. A widget changes presentation, not permissions.
 
 use fexu_core::{is_email, is_http_url, AdminModelMeta, ColumnKind, ColumnSpec};
 use serde_json::{Map, Value};
@@ -36,7 +36,7 @@ impl AdminWidget {
         Self::textarea_rows(model_key, field, max_length, 4)
     }
 
-    /// `rows` ist die sichtbare Höhe des Textfelds, von 2 bis 24.
+    /// `rows` controls the visible textarea height, from 2 to 24.
     pub fn textarea_rows(
         model_key: &'static str,
         field: &'static str,

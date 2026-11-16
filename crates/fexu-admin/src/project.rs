@@ -1,4 +1,4 @@
-//! Projektangaben der Verwaltung. Die Datei liefert den Anfang, die Tabelle hält Änderungen.
+//! Admin project settings. The configuration file supplies defaults; the table stores changes.
 
 use crate::registry::{is_hex_color, is_public_label, AdminBranding, AdminRegistry, ProjectIcons};
 use fexu_core::FexuError;

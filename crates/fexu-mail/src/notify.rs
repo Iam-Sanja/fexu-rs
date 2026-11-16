@@ -1,4 +1,4 @@
-//! Typisierte Konto-Hinweise. Der Name kommt nicht aus einem HTTP-Parameter.
+//! Typed account notifications. Names are not taken from HTTP parameters.
 
 use crate::error::MailError;
 use crate::message::{check_header, MailMessage, MailReceipt};

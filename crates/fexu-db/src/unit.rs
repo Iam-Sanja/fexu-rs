@@ -1,5 +1,5 @@
-//! Eine Schreibgrenze. Der Aufrufer arbeitet auf der übergebenen Transaktion.
-//! `conclude` committet nur nach `Ok` und rollt bei `Err` zurück.
+//! Transaction boundary for writes. The caller operates on the supplied transaction.
+//! `conclude` commits only after `Ok` and rolls back on `Err`.
 
 use crate::driver::DatabaseTransaction;
 

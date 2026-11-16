@@ -1,4 +1,4 @@
-//! Vertrauenswürdige Prüfung im Serverprozess. Ein Provider legt keine Sitzung an.
+//! Trusted verification inside the server process. Providers do not create sessions.
 
 use crate::error::AuthError;
 use crate::password::{verify_against_dummy, verify_password};

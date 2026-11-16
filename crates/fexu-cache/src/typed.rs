@@ -1,4 +1,4 @@
-//! Typisierte Werte mit Versionspräfix. Ein abweichendes Präfix ist ein Fehler.
+//! Typed values with a version prefix. Mismatched prefixes are errors.
 
 use crate::backend::{validate_key, validate_namespace, CacheBackend, Publish, RawLookup};
 use crate::error::CacheError;
@@ -16,8 +16,8 @@ const MAGIC: &[u8; 4] = b"FXC1";
 /// Ergebnis einer typisierten Suche.
 ///
 /// `get` bildet `Miss` und `Expired` auf `None` ab. `lookup` unterscheidet sie.
-/// Ein abgelaufener Eintrag wird beim ersten Lesen entfernt. Der nächste Aufruf ist `Miss`.
-/// Ein späteres Backend, das abgelaufene Schlüssel selbst löscht, kann `Expired` als `Miss` melden.
+/// Expired entries are removed on first read; subsequent reads return `Miss`.
+/// A future backend that deletes expired keys may report `Expired` as `Miss`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CacheLookup<T> {
     Hit(T),

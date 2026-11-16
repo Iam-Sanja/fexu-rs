@@ -298,7 +298,7 @@ pub fn render_plan(locale: &str, plan: &UpgradePlan, dry_run: bool) -> String {
     text
 }
 
-/// Schreibt nur das Legacy-Manifest, und nur wenn der Plan genau das vorsieht.
+/// Writes only the legacy manifest, and only when explicitly required by the plan.
 pub fn apply_upgrade(root: &Path, plan: &UpgradePlan) -> Result<bool, MigrationError> {
     if plan.has_conflict() {
         return Err(MigrationError::new(

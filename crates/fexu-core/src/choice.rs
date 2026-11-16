@@ -1,8 +1,8 @@
-//! Stabile Speicherwerte für Rust-Enums.
+//! Stable stored values for Rust enums.
 //!
 //! Das Derive `FexuChoice` setzt `VALUES`, `stored` und `from_stored`.
-//! Unbekannte Werte scheitern in JSON und vor dem Schreiben. Ein entfernter
-//! Speicherwert ist eine Datenmigration: bestehende Zeilen werden nicht umgeschrieben.
+//! Unknown values are rejected in JSON and before writes. Removing a
+//! stored value requires a data migration: existing rows are not rewritten.
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ChoiceValue {

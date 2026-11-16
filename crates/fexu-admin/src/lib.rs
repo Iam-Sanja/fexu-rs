@@ -1,6 +1,6 @@
-//! Admin-API und serverseitige HTML-Oberfläche.
+//! Admin API and server-rendered HTML interface.
 //!
-//! Datenzugriff, Validierung und Sitzungen bleiben in den vorhandenen Fexu-Crates.
+//! Data access, validation, and sessions remain in the existing Fexu crates.
 
 mod actions;
 mod assets;

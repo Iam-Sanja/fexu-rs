@@ -24,7 +24,7 @@ pub fn kind_of(backend: DatabaseBackend) -> Result<DatabaseKind, FexuError> {
     }
 }
 
-/// Spalte für DDL. CRUD und Migrationen nutzen dieselbe Typabbildung.
+/// DDL column. CRUD and migrations share this type mapping.
 #[derive(Debug, Clone, Copy)]
 pub struct PhysicalColumn<'a> {
     pub name: &'a str,
@@ -464,7 +464,7 @@ pub async fn query_admin_page(
     })
 }
 
-/// Eine begrenzte Abfrage je 100 Bezeichner. Tabelle und Spalte müssen registrierte Identifier sein.
+/// Bounded query in batches of 100 identifiers. Tables and columns must be registered identifiers.
 pub async fn query_labels(
     db: &DatabaseConnection,
     table: &str,

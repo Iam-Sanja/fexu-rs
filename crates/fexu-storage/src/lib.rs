@@ -1,8 +1,8 @@
-//! Lokaler Dateispeicher. Öffentliche Auslieferung bleibt aus.
+//! Local file storage. Public delivery is disabled by default.
 //!
-//! [`s3`] prüft nur die Form eines entfernten Speichers und öffnet keine Verbindung.
-//! Malware-Scanning ist nicht enthalten. Die Inhaltsprüfung ersetzt keinen Virenscanner
-//! und dekodiert keine Bildpixel.
+//! [`s3`] validates remote-storage configuration without opening a connection.
+//! Malware scanning is not included. Content validation does not replace antivirus scanning
+//! and does not decode image pixels.
 
 mod access;
 mod http;
@@ -41,7 +41,7 @@ pub trait Storage: Send + Sync {
     async fn exists(&self, owner: Uuid, id: Uuid) -> Result<bool, StorageError>;
     async fn metadata(&self, owner: Uuid, id: Uuid) -> Result<StoredFile, StorageError>;
 
-    /// Der Besitzer bleibt der Eigentümer. Ein anderer Akteur wird abgelehnt.
+    /// The original owner retains ownership. Other actors are rejected.
     async fn save_for(
         &self,
         actor: Uuid,

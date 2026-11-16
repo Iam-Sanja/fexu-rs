@@ -1,4 +1,4 @@
-//! Tera-Vorlagen aus dem Crate. Es werden keine Template-Pfade aus Anfragen gelesen.
+//! Tera templates embedded in this crate. Request input never selects filesystem template paths.
 
 use serde_json::Value;
 use std::sync::OnceLock;

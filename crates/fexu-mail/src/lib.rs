@@ -1,4 +1,4 @@
-//! E-Mail-Versand für Fexu. Tests nutzen das Memory-Backend und öffnen keine SMTP-Verbindung.
+//! Email delivery for Fexu. Tests use an in-memory backend without opening SMTP connections.
 
 mod error;
 mod message;
