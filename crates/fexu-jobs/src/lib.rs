@@ -1,8 +1,8 @@
 //! Persistent background jobs. The web server does not start the worker.
 //!
 //! Delivery is **at least once**. Handlers must tolerate repeated execution.
-//! [`DELIVERY`] ist die einzige Zusage. Ein abgelaufenes Lease kann denselben Effekt
-//! repeat work. Database transactions cannot guarantee exactly-once external effects
+//! [`DELIVERY`] is the only guarantee. An expired lease may cause the same effect
+//! to run again. Database transactions cannot guarantee exactly-once external effects
 //! such as SMTP. An accepted SMTP response does not prove final delivery.
 
 mod clock;
