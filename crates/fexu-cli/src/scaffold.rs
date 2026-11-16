@@ -719,6 +719,17 @@ mod tests {
     use std::path::PathBuf;
 
     #[test]
+    fn new_project_manifest_defaults_to_english() {
+        let fullstack = super::manifest("demo", super::Template::Fullstack, "apps");
+        let api = super::manifest("demo", super::Template::Api, "apps");
+        for source in [fullstack, api] {
+            assert!(source.contains("default_locale = \"en\""));
+            assert!(source.contains("fallback_locale = \"en\""));
+            assert!(!source.contains("default_locale = \"de\""));
+        }
+    }
+
+    #[test]
     fn rejects_unsafe_project_names() {
         for name in ["", "../secret", "shop;rm", "con", "com9", "type", "Self"] {
             assert!(validate_project_name(name).is_err(), "{name}");
