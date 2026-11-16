@@ -1152,8 +1152,8 @@ async fn html_admin_works_without_javascript() {
     assert!(home.body.contains("Kategorien"));
     assert!(home.body.contains("href=\"/admin/models/html_products\""));
     assert!(!home.body.contains("href=\"/admin/models\""));
-    assert!(home.body.contains("Anwendungen"));
-    assert!(home.body.contains("Historie"));
+    assert!(home.body.contains("Applications"));
+    assert!(home.body.contains("History"));
     assert!(!home.body.contains("Users and access"));
     assert!(!home.body.contains("Payroll") && !home.body.contains("html_payroll"));
     assert!(!home.body.contains("$argon"));
