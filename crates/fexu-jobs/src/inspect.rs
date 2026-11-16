@@ -1,4 +1,4 @@
-//! Operatorausgabe. Das Lease-Token bleibt immer verborgen.
+//! Operator-facing output. Lease tokens are always hidden.
 
 use crate::error::payload_line;
 use crate::queue::JobRecord;
