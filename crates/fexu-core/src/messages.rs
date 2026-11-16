@@ -1,4 +1,4 @@
-//! Anzeigetexte für Validierung. Codes bleiben stabil; nur diese Schicht übersetzt.
+//! Display strings for validation. Error codes remain stable; only this layer translates.
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FieldOverride {
@@ -95,8 +95,8 @@ pub fn message_for(
     apply_params(template, params)
 }
 
-/// Übersetzt einen Modell- oder Formularfehler. Unbekannte Texte bleiben erhalten und werden escaped.
-/// SQL, Passwortfelder und Stacktraces werden nicht angezeigt.
+/// Localizes a model or form error. Unknown text is retained and escaped.
+/// SQL, password fields, and stack traces are not displayed.
 pub fn localize_detail(locale: &str, detail: &str) -> String {
     if sensitive(detail) {
         return message_text(locale, "request.rejected").to_owned();
