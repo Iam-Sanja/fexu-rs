@@ -1,13 +1,12 @@
 //! Common interface for in-process caches and future external storage.
 //!
-//! No Redis or other network-backed driver is included. A
-//! [`crate::MemoryCache`] applies only within its creating process. A clone shares
-//! that storage. A separate `MemoryCache::new` does not, nor does another process
-//! .
+//! No Redis or other network-backed driver is included.
+//! [`crate::MemoryCache`] is scoped to the process that created it. Clones share
+//! entries; separately constructed caches and other processes do not.
 //!
-//! Keys consist of a namespace and a key. Implementations must not
-//! concatenate these parts using a character that can occur in a valid key
-//! . [`validate_namespace`] and [`validate_key`] define the shared validation rules.
+//! Cache keys consist of a namespace and a key. Implementations must not
+//! concatenate them using a delimiter permitted within either part.
+//! [`validate_namespace`] and [`validate_key`] define the shared validation rules.
 //! `invalidate_namespace` matches only the exact namespace, not longer prefixes.
 
 use crate::error::CacheError;
