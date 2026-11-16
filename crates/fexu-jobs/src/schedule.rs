@@ -1,8 +1,8 @@
-//! Fünf-Feld-Cron in UTC, einer festen Verschiebung oder Europe/Berlin.
+//! Five-field cron in UTC, a fixed offset, or Europe/Berlin.
 //!
-//! Namen wie `MON` sind kein Ausdruck. Eine Lücke der Sommerzeit wird übersprungen.
-//! Eine wiederholte Stunde löst einmal aus, und zwar zum früheren UTC-Zeitpunkt.
-//! Verpasste Zeitpunkte werden nicht nachgeholt.
+//! Names such as `MON` are not expressions. Spring DST gaps are skipped.
+//! Repeated fall-back hours trigger once, at the earlier UTC instant.
+//! Missed execution times are not backfilled.
 
 use crate::error::JobError;
 use chrono::{DateTime, Datelike, Duration, NaiveDate, NaiveDateTime, Timelike, Utc, Weekday};
