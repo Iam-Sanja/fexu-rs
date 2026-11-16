@@ -1,4 +1,4 @@
-//! Änderungshistorie. Einträge entstehen in derselben Transaktion wie die Änderung.
+//! Change history. Audit entries are written in the same transaction as the change.
 
 use fexu_auth::ADMIN_AUDIT;
 use fexu_core::{AdminFieldMeta, AdminModelMeta, FexuError};
@@ -18,7 +18,7 @@ pub struct Event {
     pub action: String,
     pub outcome: String,
     pub summary: String,
-    /// Gemeinsamer Vorgang mehrerer Zeilen. `None` bei älteren Einzeleinträgen.
+    /// Operation shared by multiple rows. `None` for older single-row entries.
     pub operation_id: Option<Uuid>,
 }
 
