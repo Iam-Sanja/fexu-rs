@@ -20,7 +20,7 @@ The fixture is one user with `bench.read`, `bench.create`, `bench.update` and `b
 | Rejected limit | 10 | `GET ?limit=101`, status 422 |
 | Concurrent reads | 4 workers, 40 list requests each | same sorted list URL |
 
-Writes send `Origin: http://127.0.0.1:3000` and `x-csrf-token`. That origin is the development allow-list entry. The server itself listens on `127.0.0.1` with an ephemeral port. Login is one Argon2 check and is reported as `login_ns`, not as part of the read rate.
+Writes send `Origin: http://127.0.0.1:3000` and `x-csrf-token`. That origin is the development allow-list entry. The server itself listens on `127.0.0.1` with an ephemeral port. Login is one Argon2 check and is reported as `login_ns`, not as part of the read rate. The bench password is 32 hexadecimal characters from 16 bytes of `getrandom`. That process uses the same value for user creation and the one login, then drops it. `host.json`, `build.json`, `run-N.json` and the error text do not contain it.
 
 SQLite comes from `fexu::db::connect`, which sets `max_connections` to 1. The benchmark does not raise that limit. Concurrent latency therefore includes waiting for that single connection. The concurrent rate divides all worker requests by the parent wall clock.
 

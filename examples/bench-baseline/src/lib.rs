@@ -17,7 +17,13 @@ use tokio::net::TcpListener;
 pub use report::{Latency, Phase, Plan, Report};
 
 const USER_EMAIL: &str = "bench@example.com";
-const USER_PASSWORD: &str = "bench-password-1";
+
+/// 32 hex characters from 16 OS random bytes. The value stays in this process.
+fn bench_password() -> String {
+    let mut bytes = [0u8; 16];
+    getrandom::getrandom(&mut bytes).expect("os entropy unavailable");
+    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
+}
 
 #[derive(Debug, fexu::FexuModel, fexu::serde::Serialize, fexu::serde::Deserialize)]
 #[fexu(
@@ -93,7 +99,8 @@ pub async fn execute(started: Instant, database_url: &str, plan: &Plan) -> Resul
         .await
         .map_err(|error| error.to_string())?;
     let auth = AuthService::new(db.clone(), AuthConfig::development());
-    auth.create_user(USER_EMAIL, USER_PASSWORD, false, false)
+    let password = bench_password();
+    auth.create_user(USER_EMAIL, &password, false, false)
         .await
         .map_err(|error| error.to_string())?;
     for action in ["read", "create", "update", "delete"] {
@@ -131,8 +138,9 @@ pub async fn execute(started: Instant, database_url: &str, plan: &Plan) -> Resul
 
     let mut client = http::Client::connect(address).await?;
     let login_started = Instant::now();
-    let session = client.login(USER_EMAIL, USER_PASSWORD).await?;
+    let session = client.login(USER_EMAIL, &password).await?;
     let login_ns = login_started.elapsed().as_nanos() as u64;
+    drop(password);
 
     let page = client.discover(&session, plan.page_limit).await?;
     let reads = read_paths(&fixture, &page, plan.page_limit);

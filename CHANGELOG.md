@@ -21,6 +21,7 @@
 ## Unreleased — framework benchmark baseline
 
 - `examples/bench-baseline` measures one authenticated SQLite workload through the existing HTTP API: relations, keyset pages, writes and 401, 404 and 422 responses. `scripts/benchmark-baseline.ps1` and `scripts/benchmark-baseline.sh` record the host, the incremental release build and three fresh runs. Runique, Cot, Loco and PostgreSQL are listed as not measured. See `docs/benchmarks.md`.
+- The bench user password is drawn from `getrandom` for that process only. Result files and error text do not include it.
 
 ## Unreleased — API contract pagination
 

@@ -21,6 +21,8 @@ async fn check_plan_exercises_auth_crud_relation_page_and_errors() {
     assert!(report.sequential_reads.latency_ns.p50 <= report.sequential_reads.latency_ns.p95);
     assert!(report.sequential_reads.latency_ns.p95 <= report.sequential_reads.latency_ns.p99);
     assert!(report.concurrent_reads.is_none());
+    let json = serde_json::to_string(&report).expect("report json");
+    assert!(!json.contains("password"));
     assert!(report.not_measured.contains(&"postgresql"));
     assert!(report.not_measured.contains(&"runique"));
     assert!(report.not_measured.contains(&"cot"));
