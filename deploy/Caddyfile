@@ -1,4 +1,10 @@
+# Local HTTPS example. The browser Origin is forwarded unchanged.
+# X-Forwarded-Host and X-Forwarded-Proto are not public origins.
+# deploy/compose.yaml does not set FEXU_TRUST_PROXY.
 localhost:443 {
 	tls internal
-	reverse_proxy app:8080
+	reverse_proxy app:8080 {
+		header_up X-Forwarded-Proto {scheme}
+		header_up X-Forwarded-Host {host}
+	}
 }

@@ -97,10 +97,6 @@ async fn download(
     match storage.read(user.id, id).await {
         Ok((meta, bytes)) => {
             let mut response = Response::new(axum::body::Body::from(bytes));
-            let disposition = format!(
-                "attachment; filename=\"{}\"",
-                meta.original_name.replace('"', "")
-            );
             let headers = response.headers_mut();
             headers.insert(
                 header::CONTENT_TYPE,
@@ -114,9 +110,10 @@ async fn download(
                 header::CONTENT_SECURITY_POLICY,
                 HeaderValue::from_static("sandbox; default-src 'none'"),
             );
-            if let Ok(value) = HeaderValue::from_str(&disposition) {
-                headers.insert(header::CONTENT_DISPOSITION, value);
-            }
+            headers.insert(
+                header::CONTENT_DISPOSITION,
+                content_disposition(&meta.original_name),
+            );
             response
         }
         Err(error) => storage_error(error),
@@ -140,6 +137,14 @@ async fn remove(
         Ok(()) => StatusCode::NO_CONTENT.into_response(),
         Err(error) => storage_error(error),
     }
+}
+
+/// `filename` is the sanitized basename. Quotes and line breaks cannot split the header.
+fn content_disposition(original_name: &str) -> HeaderValue {
+    let name = crate::sanitize_name(original_name);
+    let value = format!("attachment; filename=\"{name}\"");
+    HeaderValue::from_str(&value)
+        .unwrap_or_else(|_| HeaderValue::from_static("attachment; filename=\"file\""))
 }
 
 fn storage_error(error: StorageError) -> Response {
@@ -540,9 +545,45 @@ mod tests {
             .header("cookie", ada.cookie.split(';').next().unwrap())
             .body(Body::empty())
             .unwrap();
-        let (status, body) = call(app.clone(), request).await;
-        assert_eq!(status, StatusCode::OK);
-        assert!(body.contains("hello fexu"));
+        let response = app.clone().oneshot(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let headers = response.headers();
+        assert_eq!(
+            headers.get(axum::http::header::CONTENT_TYPE).unwrap(),
+            "application/octet-stream"
+        );
+        assert_eq!(
+            headers
+                .get(axum::http::header::X_CONTENT_TYPE_OPTIONS)
+                .unwrap(),
+            "nosniff"
+        );
+        assert_eq!(
+            headers
+                .get(axum::http::header::CONTENT_SECURITY_POLICY)
+                .unwrap(),
+            "sandbox; default-src 'none'"
+        );
+        assert_eq!(
+            headers
+                .get(axum::http::header::CONTENT_DISPOSITION)
+                .unwrap(),
+            "attachment; filename=\"notes.txt\""
+        );
+        let body = axum::body::to_bytes(response.into_body(), 4096)
+            .await
+            .unwrap();
+        assert_eq!(body.as_ref(), b"hello fexu");
+
+        let spoofed = Request::post("/uploads")
+            .header("cookie", ada.cookie.split(';').next().unwrap())
+            .header("x-csrf-token", &ada.csrf_token)
+            .header("content-type", "image/png")
+            .header("x-original-name", "notes.png")
+            .body(Body::from("hello fexu"))
+            .unwrap();
+        let (status, body) = call(app.clone(), spoofed).await;
+        assert_eq!(status, StatusCode::UNSUPPORTED_MEDIA_TYPE, "{body}");
 
         let request = Request::delete(format!("/uploads/{id}"))
             .header("cookie", ada.cookie.split(';').next().unwrap())
@@ -632,5 +673,16 @@ JPEG\r\n\
         assert_eq!(repeated.len(), 2);
         assert_eq!(repeated[0].name, "file.cover");
         assert_eq!(repeated[1].name, "file.cover");
+    }
+
+    #[test]
+    fn download_header_drops_injected_line_breaks() {
+        let value = super::content_disposition("notes.txt\r\nContent-Type: text/html");
+        let text = value.to_str().unwrap();
+        assert!(text.starts_with("attachment; filename=\""));
+        assert!(text.ends_with('"'));
+        assert_eq!(text.matches('"').count(), 2);
+        assert!(!text.contains('\r'));
+        assert!(!text.contains('\n'));
     }
 }

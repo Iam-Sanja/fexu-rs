@@ -9,7 +9,8 @@ members = [
   "examples/myshop",
   "examples/notes",
   "examples/desk",
-  "examples/board"
+  "examples/board",
+  "examples/contract"
 ]
 
 [workspace.package]

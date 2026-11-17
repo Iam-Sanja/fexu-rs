@@ -151,6 +151,7 @@ jobs:
           cargo test -p myshop --test framework_names -- --ignored fresh_postgres_initializes_auth_jobs_and_application
           cargo test -p myshop --test postgres_api -- --ignored postgres_http_roundtrip
           cargo test -p fexu-migrations --test engine -- --ignored postgres_migration_roundtrip
+          cargo test -p fexu-migrations --test schema_evolution -- --ignored postgres_schema_evolution_keeps_rows_on_a_disposable_database
           cargo test -p fexu-migrations --test cross_app -- --ignored postgres_enforces_cross_app_foreign_keys
           cargo test -p fexu-auth --lib -- --ignored postgres_anonymous_session_roundtrip
           cargo test -p fexu-auth --lib -- --ignored postgres_account_security_roundtrip
@@ -167,7 +168,14 @@ jobs:
           cargo test -p fexu-db --lib -- --ignored postgres_empty_in_and_bounded_scan
           cargo test -p fexu-migrations --lib fixtures::tests::postgres_temporal_fixture_roundtrip -- --ignored
           cargo test -p fexu-api --lib testing::tests::postgres_isolated_databases_do_not_share_rows -- --ignored
-          cargo test -p fexu-db --lib testing::tests::postgres_fixture -- --ignored --test-threads=8
+          require_one() {
+            local output
+            output=$(cargo test "$@" 2>&1)
+            printf '%s\n' "$output"
+            printf '%s\n' "$output" | grep -q "test result: ok. 1 passed"
+          }
+          require_one -p fexu-db --lib testing::tests::postgres_fixture_parallel_create_isolate_and_cleanup -- --ignored --exact --test-threads=8
+          require_one -p fexu-contract --test cross_backend postgres_contract_login_matches_sqlite -- --ignored --exact
           cargo test -p fexu-api --lib browser_security::postgres_browser_security_matrix -- --ignored
           cargo test -p fexu-api --lib flash::tests::postgres_flash_is_consumed_once_per_session -- --ignored
           cargo test -p fexu-api --lib flash::tests::postgres_parallel_flash_takes_return_each_message_once -- --ignored

@@ -261,6 +261,19 @@ pub fn require_embedded_migrations(
             "Required framework migration resources for `{component}` are missing. The embedded package is empty, so those migrations were not applied."
         )));
     }
+    let mut seen = std::collections::BTreeSet::new();
+    for (id, _) in sources {
+        if !seen.insert(*id) {
+            return Err(MigrationError::new(format!(
+                "Required framework migration `{id}` for `{component}` is duplicated in the embedded package. Those migrations were not applied."
+            )));
+        }
+        if !expected_ids.iter().any(|expected| expected == id) {
+            return Err(MigrationError::new(format!(
+                "Required framework migration `{id}` for `{component}` is not part of the expected package. Those migrations were not applied."
+            )));
+        }
+    }
     let mut files = Vec::with_capacity(sources.len());
     for (id, text) in sources {
         let file = load_migration_text(id, text).map_err(|error| {
@@ -443,6 +456,11 @@ pub fn write_explicit_migration(
         .unwrap_or_else(SchemaSnapshot::empty);
     let produced = crate::simulate::apply_operations(&from, std::slice::from_ref(&operation))?;
     if !produced.semantically_eq(current) {
+        if rename_name_change_is_ambiguous(&from, current, &operation) {
+            return Err(MigrationError::new(
+                "The rename is ambiguous because more than one name changed. Similar names are not paired automatically. No file was written.".to_owned(),
+            ));
+        }
         return Err(MigrationError::new(
             "The rename does not account for all differences between the last migration target and registered schema. No file was written.".to_owned(),
         ));
@@ -470,6 +488,81 @@ pub fn write_explicit_migration(
         id: file.id,
         risks: file.risks,
     })
+}
+
+fn rename_name_change_is_ambiguous(
+    before: &SchemaSnapshot,
+    after: &SchemaSnapshot,
+    operation: &MigrationOperation,
+) -> bool {
+    match operation {
+        MigrationOperation::RenameColumn { table, from, to } => {
+            let Some(previous) = before
+                .tables
+                .iter()
+                .find(|candidate| candidate.name == *table)
+            else {
+                return false;
+            };
+            let Some(next) = after
+                .tables
+                .iter()
+                .find(|candidate| candidate.name == *table)
+            else {
+                return false;
+            };
+            let removed = previous
+                .columns
+                .iter()
+                .filter(|column| {
+                    next.columns
+                        .iter()
+                        .all(|candidate| candidate.name != column.name)
+                })
+                .count();
+            let added = next
+                .columns
+                .iter()
+                .filter(|column| {
+                    previous
+                        .columns
+                        .iter()
+                        .all(|candidate| candidate.name != column.name)
+                })
+                .count();
+            removed != 1
+                || added != 1
+                || !previous.columns.iter().any(|column| column.name == *from)
+                || !next.columns.iter().any(|column| column.name == *to)
+        }
+        MigrationOperation::RenameTable { from, to } => {
+            let removed = before
+                .tables
+                .iter()
+                .filter(|table| {
+                    after
+                        .tables
+                        .iter()
+                        .all(|candidate| candidate.name != table.name)
+                })
+                .count();
+            let added = after
+                .tables
+                .iter()
+                .filter(|table| {
+                    before
+                        .tables
+                        .iter()
+                        .all(|candidate| candidate.name != table.name)
+                })
+                .count();
+            removed != 1
+                || added != 1
+                || !before.tables.iter().any(|table| table.name == *from)
+                || !after.tables.iter().any(|table| table.name == *to)
+        }
+        _ => false,
+    }
 }
 
 pub fn reseal_migration(path: &Path) -> Result<MigrationFile, MigrationError> {
@@ -721,5 +814,28 @@ mod tests {
         assert!(mismatch.contains("fexu-auth"), "{mismatch}");
         assert!(mismatch.contains("Checksum mismatch"), "{mismatch}");
         assert!(mismatch.contains("corrupted"), "{mismatch}");
+        let duplicate = super::require_embedded_migrations(
+            "fexu-auth",
+            &["0001_alpha"],
+            &[("0001_alpha", text.as_str()), ("0001_alpha", text.as_str())],
+        )
+        .unwrap_err()
+        .0;
+        assert!(duplicate.contains("fexu-auth"), "{duplicate}");
+        assert!(duplicate.contains("0001_alpha"), "{duplicate}");
+        assert!(duplicate.contains("duplicated"), "{duplicate}");
+        let unexpected = super::require_embedded_migrations(
+            "fexu-jobs",
+            &["0001_alpha"],
+            &[("0001_alpha", text.as_str()), ("0002_extra", text.as_str())],
+        )
+        .unwrap_err()
+        .0;
+        assert!(unexpected.contains("fexu-jobs"), "{unexpected}");
+        assert!(unexpected.contains("0002_extra"), "{unexpected}");
+        assert!(
+            unexpected.contains("not part of the expected package"),
+            "{unexpected}"
+        );
     }
 }
