@@ -76,7 +76,7 @@ async fn exercise(db: DatabaseConnection, password: &str) -> Result<(), String> 
         return Err("rejected login issued a session".into());
     }
 
-    let wrong = post_login(&mut client, LOCAL, &token, "not-the-password").await?;
+    let wrong = post_login(&mut client, LOCAL, &token, &different_password(password)).await?;
     expect_status(&wrong, StatusCode::UNAUTHORIZED, "wrong password")?;
     if client.cookie("fexu_session").is_some() {
         return Err("wrong password issued a session".into());
@@ -179,6 +179,15 @@ fn fixture_password() -> String {
     let mut bytes = [0u8; 16];
     getrandom::getrandom(&mut bytes).expect("test password");
     bytes.iter().map(|byte| format!("{byte:02x}")).collect()
+}
+
+fn different_password(password: &str) -> String {
+    loop {
+        let candidate = fixture_password();
+        if candidate != password {
+            return candidate;
+        }
+    }
 }
 
 #[tokio::test]
