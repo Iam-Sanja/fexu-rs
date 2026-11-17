@@ -67,7 +67,11 @@ pub async fn plan_database(
 /// Read-only status and live drift for an embedded framework package.
 ///
 /// History tables and schema objects are not created or altered. A checksum or
-/// order conflict is an error and suppresses the live comparison.
+/// order conflict is an error and suppresses the live comparison. The live
+/// comparison covers only tables named by the latest applied package snapshot.
+/// Application tables and the other framework package stay out of this drift
+/// report. A missing package table, or an extra or changed column on a package
+/// table, remains drift.
 pub async fn plan_embedded(
     db: &DatabaseConnection,
     files: &[MigrationFile],
@@ -104,7 +108,8 @@ pub async fn plan_embedded(
     if trusted {
         if let Some(file) = latest_applied(files, &status) {
             let live = crate::introspection::introspect_live(db).await?;
-            for difference in crate::introspection::compare_snapshot(&file.to_snapshot, &live) {
+            let owned = live_tables_owned_by(&file.to_snapshot, &live);
+            for difference in crate::introspection::compare_snapshot(&file.to_snapshot, &owned) {
                 findings.push(finding(
                     PlanLevel::Drift,
                     format!("{label}: {}", drift_text(&difference)),
@@ -134,6 +139,21 @@ pub fn package_dependency_findings(
         Ok(_) => Vec::new(),
         Err(error) => vec![finding(PlanLevel::Error, error.0)],
     }
+}
+
+fn live_tables_owned_by(
+    snapshot: &SchemaSnapshot,
+    live: &[crate::introspection::LiveTable],
+) -> Vec<crate::introspection::LiveTable> {
+    live.iter()
+        .filter(|table| {
+            snapshot
+                .tables
+                .iter()
+                .any(|expected| expected.name == table.name)
+        })
+        .cloned()
+        .collect()
 }
 
 fn latest_applied<'a>(
@@ -681,6 +701,132 @@ mod tests {
         assert!(columns
             .iter()
             .any(|row| { row.try_get::<String>("", "name").unwrap_or_default() == "extra" }));
+    }
+
+    #[tokio::test]
+    async fn embedded_plan_ignores_other_component_tables_and_keeps_owned_drift() {
+        let root = scratch("scope");
+        let app = root.join("migrations");
+        std::fs::create_dir_all(&app).unwrap();
+        make_migration(&app, "initial", &products()).unwrap();
+        let db = fexu_db::connect(&sqlite_url(&root.join("db.sqlite")))
+            .await
+            .unwrap();
+        crate::apply_directory(&db, &app, false).await.unwrap();
+        let sealed = crate::seal(
+            "0001_probe".into(),
+            "probe".into(),
+            SchemaSnapshot::empty(),
+            probe_table(),
+            &crate::MigrationPlan {
+                operations: Vec::new(),
+                risks: Vec::new(),
+                refusal: None,
+            },
+        )
+        .unwrap();
+        crate::apply_files_with_history(
+            &db,
+            std::slice::from_ref(&sealed),
+            false,
+            "_fexu_plan_probe",
+        )
+        .await
+        .unwrap();
+        let missing = plan_embedded(
+            &db,
+            std::slice::from_ref(&sealed),
+            "_fexu_plan_probe",
+            "Auth",
+        )
+        .await
+        .unwrap();
+        assert!(missing.has_drift(), "{missing:?}");
+        assert!(
+            missing
+                .findings
+                .iter()
+                .any(|item| item.message.contains("plan_probe") && item.message.contains("missing")),
+            "{missing:?}"
+        );
+        assert!(
+            missing
+                .findings
+                .iter()
+                .all(|item| !item.message.contains("products")),
+            "{missing:?}"
+        );
+        db.execute(Statement::from_string(
+            DatabaseBackend::Sqlite,
+            "CREATE TABLE plan_probe (id integer NOT NULL PRIMARY KEY)",
+        ))
+        .await
+        .unwrap();
+        let quiet = plan_embedded(
+            &db,
+            std::slice::from_ref(&sealed),
+            "_fexu_plan_probe",
+            "Auth",
+        )
+        .await
+        .unwrap();
+        assert!(!quiet.has_error(), "{quiet:?}");
+        assert!(!quiet.has_drift(), "{quiet:?}");
+        assert!(
+            quiet
+                .findings
+                .iter()
+                .all(|item| !item.message.contains("products")),
+            "{quiet:?}"
+        );
+        let app_sees_probe = plan_database(&db, &app, Some(&products())).await.unwrap();
+        assert!(app_sees_probe.has_drift(), "{app_sees_probe:?}");
+        assert!(
+            app_sees_probe
+                .findings
+                .iter()
+                .any(|item| item.message.contains("plan_probe")),
+            "{app_sees_probe:?}"
+        );
+        db.execute(Statement::from_string(
+            DatabaseBackend::Sqlite,
+            "ALTER TABLE plan_probe ADD COLUMN embedded_extra integer",
+        ))
+        .await
+        .unwrap();
+        db.execute(Statement::from_string(
+            DatabaseBackend::Sqlite,
+            "ALTER TABLE products ADD COLUMN extra integer",
+        ))
+        .await
+        .unwrap();
+        let embedded = plan_embedded(&db, &[sealed], "_fexu_plan_probe", "Auth")
+            .await
+            .unwrap();
+        assert!(embedded.has_drift(), "{embedded:?}");
+        assert!(
+            embedded
+                .findings
+                .iter()
+                .any(|item| item.message.contains("embedded_extra")),
+            "{embedded:?}"
+        );
+        assert!(
+            embedded
+                .findings
+                .iter()
+                .all(|item| !item.message.contains("products")),
+            "{embedded:?}"
+        );
+        let app_column = plan_database(&db, &app, Some(&products())).await.unwrap();
+        assert!(
+            app_column
+                .findings
+                .iter()
+                .any(|item| item.message.contains("products.extra")),
+            "{app_column:?}"
+        );
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]

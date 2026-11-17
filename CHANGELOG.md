@@ -16,7 +16,7 @@
 
 ## Unreleased — read-only migration plan
 
-- `migrate plan` reports missing-app, self-dependency, and cycle errors for declared apps without writing migration files. It also reports pending IDs and live drift for the embedded auth and job snapshots. A checksum or order conflict stays an error and skips that live comparison.
+- `migrate plan` reports missing-app, self-dependency, and cycle errors for declared apps without writing migration files. It also reports pending IDs and live drift for the embedded auth and job snapshots. A checksum or order conflict stays an error and skips that live comparison. An embedded plan compares only the tables in that package snapshot. Another component's table stays visible to that component's own plan and is not framework drift.
 - An embedded framework package with a duplicate ID or an ID outside the expected auth or jobs list fails by name. Existing migration IDs and checksums are unchanged. No data is migrated and no schema is reset.
 
 ## Unreleased — embedded framework migrations
