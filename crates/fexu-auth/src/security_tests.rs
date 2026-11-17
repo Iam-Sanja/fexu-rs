@@ -1,5 +1,6 @@
 //! Security tests for MFA, sessions, and account closure.
 
+use crate::provider::IdentityProvider;
 use crate::{AuthConfig, AuthError, AuthService, RemoteProtocol};
 use argon2::password_hash::rand_core::{OsRng, RngCore};
 use axum::body::Body;
@@ -199,6 +200,7 @@ async fn session_revoke_reauth_and_close_respect_the_actor_on(auth: &AuthService
         .expect("proof");
     assert!(!format!("{grant:?}").contains(&grant.proof));
     auth.require_reauth(&owner, &grant.proof).expect("bound");
+    assert!(auth.require_reauth(&owner, &grant.proof).is_err());
     assert!(auth.require_reauth(&owner_again, &grant.proof).is_err());
     let now = crate::service::unix_now().expect("clock");
     let expired =
@@ -610,6 +612,209 @@ async fn legacy_totp_migrates_and_recovery_hashes_stay_until_used() {
             .len(),
         1
     );
+}
+
+#[tokio::test]
+async fn sessions_mfa_and_disabled_accounts_fail_closed() {
+    let auth = service().await;
+    let address = email("lifecycle");
+    let created = auth
+        .create_user(&address, password(), false, false)
+        .await
+        .expect("user");
+    let anonymous = auth
+        .ensure_anonymous_session(&axum::http::HeaderMap::new())
+        .await
+        .expect("anonymous");
+    let cookie = anonymous.cookie.expect("anonymous cookie");
+    let anonymous_token = cookie
+        .split(';')
+        .next()
+        .and_then(|pair| pair.split_once('=').map(|(_, token)| token))
+        .expect("token");
+    let issued = auth
+        .login_replacing(&address, password(), "fix", Some(anonymous_token))
+        .await
+        .expect("login");
+    let actor = auth.authenticate_token(&issued.token).await.expect("actor");
+    assert_ne!(actor.session_id, anonymous.session_id);
+    let stored_anonymous = crate::store::find_anonymous_by_hash(
+        auth.database(),
+        &crate::service::digest(anonymous_token),
+    )
+    .await
+    .expect("lookup")
+    .expect("anonymous row");
+    assert!(stored_anonymous.revoked_at.is_some());
+    let second = auth
+        .login(&address, password(), "other-browser")
+        .await
+        .expect("second login");
+    assert_ne!(issued.token, second.token);
+    auth.logout(Some(&issued.token)).await.expect("logout one");
+    assert!(auth.authenticate_token(&issued.token).await.is_err());
+    assert!(auth.authenticate_token(&second.token).await.is_ok());
+    let still = auth
+        .authenticate_token(&second.token)
+        .await
+        .expect("remaining actor");
+    assert!(auth.begin_totp(&actor, password()).await.is_err());
+    auth.begin_totp(&still, password()).await.expect("enroll");
+    let (current, _) = codes(&auth, created.id).await;
+    auth.confirm_totp(&still, &current).await.expect("confirm");
+
+    let mut spoof = still.clone();
+    spoof.is_superuser = true;
+    let outsider = auth
+        .create_user(&email("outsider"), password(), false, false)
+        .await
+        .expect("outsider");
+    let outsider_session = auth
+        .login(&outsider.email, password(), "outsider")
+        .await
+        .expect("outsider session");
+    let outsider_actor = auth
+        .authenticate_token(&outsider_session.token)
+        .await
+        .expect("outsider actor");
+    assert!(matches!(
+        auth.revoke_session_for(&spoof, outsider_actor.session_id)
+            .await,
+        Err(AuthError::Forbidden)
+    ));
+    assert!(auth
+        .authenticate_token(&outsider_session.token)
+        .await
+        .is_ok());
+
+    let proof = auth
+        .reauthenticate(&outsider_actor, password(), None)
+        .await
+        .expect("proof");
+    let mut tampered = proof.proof.clone();
+    let last = tampered.pop().expect("proof char");
+    tampered.push(if last == 'a' { 'b' } else { 'a' });
+    assert!(auth.require_reauth(&outsider_actor, &tampered).is_err());
+    auth.require_reauth(&outsider_actor, &proof.proof)
+        .expect("once");
+    assert!(auth.require_reauth(&outsider_actor, &proof.proof).is_err());
+
+    for _ in 0..5 {
+        assert!(matches!(
+            auth.reauthenticate(&outsider_actor, wrong_password(), None)
+                .await,
+            Err(AuthError::InvalidCredentials)
+        ));
+    }
+    assert!(matches!(
+        auth.reauthenticate(&outsider_actor, wrong_password(), None)
+            .await,
+        Err(AuthError::RateLimited)
+    ));
+
+    let now = crate::service::unix_now().expect("clock");
+    let expired_token = "expired-session-token";
+    crate::store::insert_session(
+        auth.database(),
+        &crate::store::SessionRow {
+            id: Uuid::new_v4(),
+            user_id: outsider.id,
+            token_hash: crate::service::digest(expired_token),
+            csrf_token_hash: "unused".to_owned(),
+            created_at: now.saturating_sub(100),
+            expires_at: now.saturating_sub(1),
+            last_seen_at: now.saturating_sub(1),
+            revoked_at: None,
+        },
+    )
+    .await
+    .expect("expired row");
+    assert!(auth.authenticate_token(expired_token).await.is_err());
+    let idle_token = "idle-session-token";
+    crate::store::insert_session(
+        auth.database(),
+        &crate::store::SessionRow {
+            id: Uuid::new_v4(),
+            user_id: outsider.id,
+            token_hash: crate::service::digest(idle_token),
+            csrf_token_hash: "unused".to_owned(),
+            created_at: now.saturating_sub(10_000),
+            expires_at: now.saturating_add(3_600),
+            last_seen_at: now.saturating_sub(10_000),
+            revoked_at: None,
+        },
+    )
+    .await
+    .expect("idle row");
+    assert!(auth.authenticate_token(idle_token).await.is_err());
+
+    let stale = "already-expired-challenge";
+    crate::account_store::insert_challenge(
+        auth.database(),
+        Uuid::new_v4(),
+        outsider.id,
+        &crate::service::digest(stale),
+        now.saturating_sub(600),
+        now.saturating_sub(1),
+    )
+    .await
+    .expect("stale challenge");
+    assert!(auth
+        .complete_pending_login(stale, "000000", "stale", None)
+        .await
+        .is_err());
+    assert!(auth
+        .complete_pending_login("not-a-challenge", "000000", "missing", None)
+        .await
+        .is_err());
+
+    let pending = auth.login(&address, password(), "mfa").await;
+    let Err(AuthError::MfaPending(challenge)) = pending else {
+        panic!("challenge");
+    };
+    auth.set_user_active(&address, false)
+        .await
+        .expect("disable");
+    assert!(auth.authenticate_token(&second.token).await.is_err());
+    assert!(auth
+        .complete_pending_login(&challenge.challenge, &current, "mfa", None)
+        .await
+        .is_err());
+    let planted = "planted-while-disabled";
+    let planted_at = crate::service::unix_now().expect("clock");
+    crate::account_store::insert_challenge(
+        auth.database(),
+        Uuid::new_v4(),
+        created.id,
+        &crate::service::digest(planted),
+        planted_at,
+        planted_at.saturating_add(300),
+    )
+    .await
+    .expect("planted challenge");
+    assert!(auth
+        .complete_pending_login(planted, &current, "disabled", None)
+        .await
+        .is_err());
+    auth.set_user_active(&address, true).await.expect("enable");
+    assert!(auth
+        .complete_pending_login(&challenge.challenge, &current, "mfa", None)
+        .await
+        .is_err());
+    let Err(AuthError::MfaPending(_)) = auth.login(&address, password(), "after-enable").await
+    else {
+        panic!("fresh challenge");
+    };
+
+    let before = session_count(&auth, created.id).await;
+    crate::provider::PasswordProvider
+        .verify(auth.database(), &address, password())
+        .await
+        .expect("provider");
+    assert_eq!(session_count(&auth, created.id).await, before);
+    assert!(!RemoteProtocol::Oidc.is_implemented());
+    assert!(!RemoteProtocol::OAuthAuthorizationCode.is_implemented());
+    assert!(!RemoteProtocol::Passkey.is_implemented());
 }
 
 #[tokio::test]

@@ -62,6 +62,8 @@ pub struct AuthService {
     pub(crate) db: DatabaseConnection,
     pub(crate) config: AuthConfig,
     limiter: std::sync::Arc<Mutex<HashMap<String, Vec<i64>>>>,
+    /// Process-local expiry of accepted reauthentication proofs. A restart clears it.
+    proofs: std::sync::Arc<Mutex<HashMap<String, i64>>>,
 }
 
 impl AuthService {
@@ -73,6 +75,7 @@ impl AuthService {
             db,
             config,
             limiter: std::sync::Arc::new(Mutex::new(HashMap::new())),
+            proofs: std::sync::Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -198,10 +201,13 @@ impl AuthService {
             .await?
             .ok_or_else(|| AuthError::Validation("user was not found".into()))?;
         let now = unix_now()?;
-        store::set_active(&self.db, user.id, active, now).await?;
+        let transaction = self.db.begin().await.map_err(AuthError::database)?;
+        store::set_active(&transaction, user.id, active, now).await?;
         if !active {
-            store::revoke_user_sessions(&self.db, user.id, now).await?;
+            store::revoke_user_sessions(&transaction, user.id, now).await?;
+            crate::account_store::delete_user_challenges(&transaction, user.id).await?;
         }
+        transaction.commit().await.map_err(AuthError::database)?;
         Ok(())
     }
 
@@ -287,12 +293,11 @@ impl AuthService {
         new_password: &str,
     ) -> Result<String, AuthError> {
         validate_new_password(new_password)?;
+        self.require_live_actor(user).await?;
+        self.require_password(user, current).await?;
         let row = store::find_user_by_id(&self.db, user.id)
             .await?
             .ok_or(AuthError::Unauthenticated)?;
-        if !verify_password(current, &row.password_hash)? {
-            return Err(AuthError::InvalidCredentials);
-        }
         if verify_password(new_password, &row.password_hash)? {
             return Err(AuthError::Validation(
                 "new password must differ from the current password".into(),
@@ -310,6 +315,13 @@ impl AuthService {
         let current = self.open_session(token).await?;
         let now = unix_now()?;
         if current.expires_at <= now {
+            return Err(AuthError::Unauthenticated);
+        }
+        let account = store::find_user_by_id(&self.db, current.user_id)
+            .await?
+            .ok_or(AuthError::Unauthenticated)?;
+        if !account.is_active {
+            store::revoke_session(&self.db, current.id, now).await?;
             return Err(AuthError::Unauthenticated);
         }
         let transaction = self.db.begin().await.map_err(AuthError::database)?;
@@ -929,6 +941,29 @@ impl AuthService {
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         guard.remove(key);
         Ok(())
+    }
+
+    /// Accepts a validated reauthentication proof once in this process.
+    pub(crate) fn consume_reauth_proof(
+        &self,
+        proof: &str,
+        expires_at: i64,
+    ) -> Result<bool, AuthError> {
+        let mut guard = self
+            .proofs
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let now = unix_now()?;
+        guard.retain(|_, expiry| *expiry > now);
+        if guard.len() >= 4096 {
+            return Ok(false);
+        }
+        let key = digest(proof);
+        if guard.contains_key(&key) {
+            return Ok(false);
+        }
+        guard.insert(key, expires_at);
+        Ok(true)
     }
 }
 

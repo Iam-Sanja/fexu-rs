@@ -95,3 +95,71 @@ async fn local_lifecycle_keeps_password_login_and_does_not_issue_a_session() {
         .await
         .expect("login after restore");
 }
+
+#[tokio::test]
+async fn suspend_and_revoke_drop_pending_mfa_challenges() {
+    let auth = service().await;
+    let address = email("mfa-life");
+    let created = auth
+        .provision_local(&address, &password(), false, false)
+        .await
+        .expect("provision");
+    let issued = auth
+        .login(&address, &password(), "enroll")
+        .await
+        .expect("session");
+    let actor = auth.authenticate_token(&issued.token).await.expect("actor");
+    auth.begin_totp(&actor, &password()).await.expect("enroll");
+    let row = crate::account_store::find_totp(auth.database(), created.user.id)
+        .await
+        .expect("row")
+        .expect("totp");
+    let secret = crate::totp::open_stored(
+        &auth.config().mfa_key,
+        &crate::totp::legacy_mfa_key(&auth.config().csrf_secret),
+        created.user.id,
+        &row.nonce,
+        &row.ciphertext,
+    )
+    .expect("secret");
+    let now = crate::service::unix_now().expect("clock");
+    let code = crate::totp::totp_code(&secret, now, 6).expect("code");
+    auth.confirm_totp(&actor, &code).await.expect("confirm");
+
+    let Err(AuthError::MfaPending(pending)) = auth.login(&address, &password(), "challenge").await
+    else {
+        panic!("challenge");
+    };
+    assert_eq!(
+        auth.suspend_local(&address).await.expect("suspend"),
+        AccountPhase::Disabled
+    );
+    assert!(auth
+        .complete_pending_login(&pending.challenge, &code, "challenge", None)
+        .await
+        .is_err());
+    assert_eq!(
+        auth.restore_local(&address).await.expect("restore"),
+        AccountPhase::Active
+    );
+    assert!(auth
+        .complete_pending_login(&pending.challenge, &code, "challenge", None)
+        .await
+        .is_err());
+
+    let Err(AuthError::MfaPending(again)) = auth.login(&address, &password(), "again").await else {
+        panic!("second challenge");
+    };
+    auth.revoke_local_sessions(&address).await.expect("revoke");
+    assert_eq!(
+        auth.account_phase(created.user.id).await.expect("phase"),
+        AccountPhase::Active
+    );
+    assert!(auth
+        .complete_pending_login(&again.challenge, &code, "again", None)
+        .await
+        .is_err());
+    let Err(AuthError::MfaPending(_)) = auth.login(&address, &password(), "after").await else {
+        panic!("login still requires the second factor");
+    };
+}
