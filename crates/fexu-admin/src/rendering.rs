@@ -1,4 +1,4 @@
-//! Tera-Vorlagen aus dem Crate. Es werden keine Template-Pfade aus Anfragen gelesen.
+//! Tera templates embedded in this crate. Request input never selects filesystem template paths.
 
 use serde_json::Value;
 use std::sync::OnceLock;
@@ -59,6 +59,30 @@ const TEMPLATES: &[(&str, &str)] = &[
     (
         "dashboard.html",
         include_str!("../templates/dashboard.html"),
+    ),
+    ("account.html", include_str!("../templates/account.html")),
+    ("password.html", include_str!("../templates/password.html")),
+    ("settings.html", include_str!("../templates/settings.html")),
+    ("search.html", include_str!("../templates/search.html")),
+    (
+        "board_config.html",
+        include_str!("../templates/boards/config.html"),
+    ),
+    (
+        "board_edit.html",
+        include_str!("../templates/boards/edit.html"),
+    ),
+    (
+        "board_show.html",
+        include_str!("../templates/boards/show.html"),
+    ),
+    (
+        "board_block.html",
+        include_str!("../templates/boards/block.html"),
+    ),
+    (
+        "board_place.html",
+        include_str!("../templates/boards/place.html"),
     ),
     ("list.html", include_str!("../templates/models/list.html")),
     ("form.html", include_str!("../templates/models/form.html")),

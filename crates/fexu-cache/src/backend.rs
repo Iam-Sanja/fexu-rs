@@ -1,24 +1,23 @@
-//! Gemeinsame Schnittstelle für Prozessspeicher und einen späteren externen Speicher.
+//! Common interface for in-process caches and future external storage.
 //!
-//! Ein Redis- oder anderer Netzwerktreiber ist nicht enthalten. Ein
-//! [`crate::MemoryCache`] gilt nur im Prozess, der ihn erzeugt hat. Ein Klon teilt
-//! denselben Speicher. Ein zweites `MemoryCache::new` nicht, und ein zweiter Prozess
-//! ebenfalls nicht.
+//! No Redis or other network-backed driver is included.
+//! [`crate::MemoryCache`] is scoped to the process that created it. Clones share
+//! entries; separately constructed caches and other processes do not.
 //!
-//! Schlüssel sind das Paar aus Namensraum und Schlüssel. Implementierungen dürfen die
-//! beiden Teile nicht mit einem Zeichen verketten, das in einem gültigen Schlüssel
-//! vorkommen kann. [`validate_namespace`] und [`validate_key`] sind die gemeinsame Regel.
-//! `invalidate_namespace` trifft nur denselben Namensraum, keine längeren Namen.
+//! Cache keys consist of a namespace and a key. Implementations must not
+//! concatenate them using a delimiter permitted within either part.
+//! [`validate_namespace`] and [`validate_key`] define the shared validation rules.
+//! `invalidate_namespace` matches only the exact namespace, not longer prefixes.
 
 use crate::error::CacheError;
 use async_trait::async_trait;
 use std::time::Duration;
 
-/// Rohbytes ohne Typprüfung.
+/// Raw bytes without type checking.
 ///
-/// `Expired` setzt voraus, dass das Backend den Ablauf noch kennt. Ein späteres
-/// Redis-Backend darf abgelaufene Schlüssel als `Miss` melden, wenn der Server sie
-/// bereits gelöscht hat.
+/// `Expired` assumes the backend still tracks expiration. A future
+/// Redis backend may report expired keys as `Miss` if the server has
+/// already deleted them.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RawLookup {
     Hit(Vec<u8>),
@@ -26,21 +25,21 @@ pub enum RawLookup {
     Expired,
 }
 
-/// Beobachteter Stand von Löschungen und Invalidierungen.
+/// Observed state of deletions and invalidations.
 ///
-/// Der Wert ist nur eine Marke. Ein Backend muss ihn unter demselben Ausschluss
-/// prüfen und schreiben, den `delete_raw` und `invalidate_namespace` benutzen.
-/// Zwei getrennte Aufrufe reichen nicht: dazwischen kann eine Invalidierung liegen.
+/// This value is only a token. Backends must validate and write it under
+/// the same exclusion lock used by `delete_raw` and `invalidate_namespace`.
+/// Two separate calls are insufficient: invalidation can occur between them.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct WriteToken {
     pub observed: u64,
 }
 
-/// Ergebnis einer bedingten Veröffentlichung.
+/// Result of a conditional publication.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Publish {
     Stored,
-    /// Der Stand in [`WriteToken`] ist überholt. Es wurde nichts geschrieben.
+    /// The state in [`WriteToken`] is obsolete. Nothing was written.
     Superseded,
 }
 
@@ -67,19 +66,19 @@ pub trait CacheBackend: Send + Sync {
 
     async fn invalidate_namespace(&self, namespace: &str) -> Result<(), CacheError>;
 
-    /// Stand für eine spätere [`Self::put_raw_if_current`]-Prüfung.
+    /// State token for a later [`Self::put_raw_if_current`] check.
     ///
-    /// `MemoryCache` liest ihn unter dem Mutex der Einträge. Ein anderes Backend
-    /// muss dasselbe für seine eigene Löschsperre tun. Das Trait kann diese
-    /// Atomarität nicht erzwingen.
+    /// `MemoryCache` reads it under the entry mutex. Other backends
+    /// must do the same under their own deletion lock. The trait cannot enforce
+    /// this atomicity.
     async fn current_token(&self, namespace: &str, key: &str) -> Result<WriteToken, CacheError>;
 
-    /// Schreibt nur, wenn `token` noch zum Schlüssel passt.
+    /// Writes only if `token` still matches the key.
     ///
-    /// Prüfung und Schreiben laufen unter demselben Ausschluss wie `delete_raw`
-    /// und `invalidate_namespace`. Ein `set` desselben Schlüssels, `delete_raw`
-    /// und `invalidate_namespace` machen einen älteren Token ungültig. Ein Backend
-    /// ohne diese Kopplung darf die Methode nicht als zwei lose Aufrufe nachbauen.
+    /// Validation and writing use the same exclusion lock as `delete_raw`
+    /// and `invalidate_namespace`. Setting the same key, calling `delete_raw`,
+    /// or calling `invalidate_namespace` invalidates older tokens. Backends
+    /// must not implement this method as two disconnected calls.
     async fn put_raw_if_current(
         &self,
         namespace: &str,
@@ -90,7 +89,7 @@ pub trait CacheBackend: Send + Sync {
     ) -> Result<Publish, CacheError>;
 }
 
-/// Namensräume sind 1 bis 64 ASCII-Zeichen: Buchstabe oder Ziffer, danach auch `_`, `-`, `.`.
+/// Namespaces have 1–64 ASCII characters: start alphanumeric, then allow `_`, `-`, `.`.
 pub fn validate_namespace(namespace: &str) -> Result<(), CacheError> {
     let mut chars = namespace.chars();
     let ok = matches!(chars.next(), Some(char) if char.is_ascii_alphanumeric())
@@ -104,7 +103,7 @@ pub fn validate_namespace(namespace: &str) -> Result<(), CacheError> {
     }
 }
 
-/// Schlüssel sind 1 bis 180 ASCII-Zeichen ohne Leerzeichen, `\\` oder `..`.
+/// Keys have 1–180 ASCII characters, excluding whitespace, `\\`, and `..`.
 pub fn validate_key(key: &str) -> Result<(), CacheError> {
     let ok = !key.is_empty()
         && key.len() <= 180

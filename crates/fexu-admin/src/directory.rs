@@ -1,4 +1,4 @@
-//! Verzeichnisänderungen und ihr Audit teilen sich eine Transaktion.
+//! Directory changes and their audit entries share a transaction.
 
 use crate::audit::{self, Event};
 use fexu_auth::{AuthError, AuthService, PublicUser};
@@ -106,9 +106,6 @@ pub async fn set_active(
     id: Uuid,
     active: bool,
 ) -> Result<(), FexuError> {
-    if actor == id && !active {
-        return Err(FexuError::Forbidden);
-    }
     let tx = auth.begin().await.map_err(auth_error)?;
     let result = async {
         auth.require_directory_actor(&tx, actor)
@@ -168,7 +165,7 @@ pub async fn assign_role(
 ) -> Result<(), FexuError> {
     let tx = auth.begin().await.map_err(auth_error)?;
     let result = async {
-        auth.require_directory_actor(&tx, actor)
+        auth.require_role_manager(&tx, actor)
             .await
             .map_err(auth_error)?;
         let user_id = if grant {
@@ -203,7 +200,7 @@ pub async fn grant_permission(
     }
     let tx = auth.begin().await.map_err(auth_error)?;
     let result = async {
-        auth.require_directory_actor(&tx, actor)
+        auth.require_role_manager(&tx, actor)
             .await
             .map_err(auth_error)?;
         if grant {
@@ -267,7 +264,9 @@ fn auth_error(error: AuthError) -> FexuError {
 
 #[cfg(test)]
 mod tests {
-    use super::{assign_role, grant_permission, reset_password, set_active};
+    use super::{
+        assign_role, create_user, grant_permission, reset_password, set_active, set_staff,
+    };
     use crate::audit::{self, fail_next_insert};
     use fexu_auth::{AuthConfig, AuthService};
     use fexu_core::FexuError;
@@ -377,14 +376,94 @@ mod tests {
                 .await
                 .is_err()
         );
+        set_active(&auth, actor.id, actor.id, false).await.unwrap();
+        assert!(matches!(
+            reset_password(&auth, actor.id, actor.id, &password).await,
+            Err(FexuError::Forbidden)
+        ));
+        let (events, _) = audit::page(auth.database(), None, 0).await.unwrap();
+        assert!(events.iter().any(|event| {
+            event.actor_id == actor.id
+                && event.action == "user_update"
+                && event.summary == "inactive"
+                && event.operation_id.is_some()
+        }));
+    }
+
+    #[tokio::test]
+    async fn deactivated_superuser_cannot_continue_admin_work() {
+        let auth = service().await;
+        let password = ephemeral_password();
+        let actor = auth
+            .create_user("root@example.com", &password, true, true)
+            .await
+            .unwrap();
+        let session = auth
+            .login("root@example.com", &password, "peer")
+            .await
+            .unwrap();
+        fail_next_insert();
         assert!(matches!(
             set_active(&auth, actor.id, actor.id, false).await,
+            Err(FexuError::Database(_))
+        ));
+        auth.authenticate_token(&session.token)
+            .await
+            .expect("rollback keeps the session");
+        auth.login("root@example.com", &password, "peer")
+            .await
+            .expect("rollback keeps the login");
+        let (events, _) = audit::page(auth.database(), None, 0).await.unwrap();
+        assert!(events.is_empty());
+
+        set_active(&auth, actor.id, actor.id, false).await.unwrap();
+        assert!(auth.authenticate_token(&session.token).await.is_err());
+        assert!(auth
+            .login("root@example.com", &password, "peer")
+            .await
+            .is_err());
+        let (events, _) = audit::page(auth.database(), None, 0).await.unwrap();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].action, "user_update");
+        assert_eq!(events[0].summary, "inactive");
+        assert_eq!(events[0].actor_id, actor.id);
+        assert!(events[0].operation_id.is_some());
+
+        assert!(matches!(
+            set_active(&auth, actor.id, actor.id, true).await,
+            Err(FexuError::Forbidden)
+        ));
+        assert!(matches!(
+            set_staff(&auth, actor.id, actor.id, false).await,
+            Err(FexuError::Forbidden)
+        ));
+        assert!(matches!(
+            assign_role(&auth, actor.id, "root@example.com", "clerk", true).await,
+            Err(FexuError::Forbidden)
+        ));
+        assert!(matches!(
+            grant_permission(&auth, actor.id, "clerk", "orders.read", true).await,
             Err(FexuError::Forbidden)
         ));
         assert!(matches!(
             reset_password(&auth, actor.id, actor.id, &password).await,
             Err(FexuError::Forbidden)
         ));
+        assert!(matches!(
+            create_user(
+                &auth,
+                actor.id,
+                "other@example.com",
+                &password,
+                true,
+                false,
+                &[],
+            )
+            .await,
+            Err(FexuError::Forbidden)
+        ));
+        let (after, _) = audit::page(auth.database(), None, 0).await.unwrap();
+        assert_eq!(after.len(), 1);
     }
 
     #[tokio::test]

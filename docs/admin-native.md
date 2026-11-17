@@ -56,9 +56,13 @@ The JSON API remains under `/admin/api`. It uses the same models, permissions an
 
 `fexu_locale` and `fexu_theme` are HttpOnly cookies set by `POST /admin/preferences`. Languages are `de` and `en`; themes are `light`, `dark` and `system`. `system` follows `prefers-color-scheme`. With no cookie, the project language and `system` apply. `next` must begin with `/admin` and contain neither a URL scheme nor a host.
 
+## Form layout
+
+An app declares the change form in its admin registration, the same place as list columns and filters. `fieldset_rows` puts one to four fields on a line. A single field keeps the full width. `AdminWidget::textarea_rows` sets the visible height of a text column. A foreign key shows view, edit, add and delete links when the related model is in the admin and the account may use that action. The links open in a new tab, so the open form stays. `related_table` adds a table of records from another model whose foreign key points at the current record.
+
 ## Limitations
 
-There are no invented key figures on the overview. Foreign key selections load a maximum of 100 visible lines. The HTML list shows 25 lines. Password hashes and sensitive field names are not issued. A record outside the object rule is 404, not 403.
+The framework does not invent figures for a dashboard chart. Foreign key selections load a maximum of 100 visible lines. The HTML list shows 25 lines. Password hashes and sensitive field names are not issued. A record outside the object rule is 404, not 403.
 
 ## Foreign keys and filters
 

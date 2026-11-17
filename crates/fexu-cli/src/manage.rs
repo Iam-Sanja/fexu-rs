@@ -1,7 +1,7 @@
 //! Startet die projektlokale Binary `fexu-manage`.
 //!
-//! Der Befehlsname wird geprüft und als einzelnes Argument übergeben.
-//! Es gibt keine Shell-Zeichenkette und keinen Plugin-Lader.
+//! The command name is validated and passed as a single argument.
+//! No shell command string or plugin loader is involved.
 
 use std::process::ExitCode;
 

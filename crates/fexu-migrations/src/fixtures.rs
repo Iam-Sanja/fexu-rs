@@ -1,8 +1,8 @@
 //! Versionierte JSON-Fixtures.
 //!
-//! Das Format ist von Migrationen getrennt. Ein Datensatz führt keinen Code
-//! aus. Der Import prüft Modelle, Felder und Referenzen, bevor er schreibt,
-//! und hält alle Schreibvorgänge in einer Transaktion.
+//! The fixture format is independent of migrations. Records do not execute
+//! code. Imports validate models, fields, and references before writing
+//! all changes in a single transaction.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
@@ -66,7 +66,7 @@ pub fn fixture_to_json(file: &FixtureFile) -> Result<String, MigrationError> {
         .map_err(|error| MigrationError::new(format!("Could not write the fixture: {error}")))
 }
 
-/// Prüft das Dokument, ohne eine Zeile zu schreiben.
+/// Validates the document without writing any rows.
 pub fn prepare_records(
     schema: &SchemaSnapshot,
     file: &FixtureFile,

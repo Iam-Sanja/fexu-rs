@@ -1,7 +1,7 @@
-//! OIDC, OAuth und Passkeys sind nicht implementiert.
+//! OIDC, OAuth, and passkeys are not implemented.
 //!
-//! Die Grenzen stehen in `docs/auth-threat-model.md`. Es gibt keine Methode,
-//! die eine externe Anmeldung als Erfolg meldet.
+//! Limitations are documented in `docs/auth-threat-model.md`. No method
+//! reports an external login as successful.
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RemoteProtocol {

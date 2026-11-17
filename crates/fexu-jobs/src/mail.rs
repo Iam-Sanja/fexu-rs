@@ -1,4 +1,4 @@
-//! Gewöhnliche Hinweise als Jobs. Ein Passwort-Reset-Token wird hier nicht angenommen.
+//! Ordinary notifications as jobs. Password-reset tokens are not accepted here.
 
 use crate::error::JobError;
 use crate::queue::{EnqueueOutcome, Queue, When};

@@ -1,4 +1,4 @@
-//! Upload-Routen sind nicht öffentlich, solange sie nicht ausdrücklich eingehängt werden.
+//! Upload routes remain private unless explicitly mounted.
 
 use crate::{LocalStorage, Storage, StorageError};
 use axum::body::to_bytes;
@@ -310,7 +310,7 @@ impl std::error::Error for MultipartError {}
 ///
 /// Authentication can read `csrf_token` before a later filename is rejected.
 pub fn multipart_text_field(content_type: &str, body: &[u8], field: &str) -> Option<String> {
-    parse_parts(content_type, body, false)
+    parse_parts(content_type, body, false, true)
         .ok()
         .and_then(|parts| {
             parts.into_iter().find_map(|part| {
@@ -324,13 +324,24 @@ pub fn multipart_text_field(content_type: &str, body: &[u8], field: &str) -> Opt
 }
 
 pub fn read_multipart(content_type: &str, body: &[u8]) -> Result<Vec<FormPart>, MultipartError> {
-    parse_parts(content_type, body, true)
+    parse_parts(content_type, body, true, false)
+}
+
+/// Like [`read_multipart`], but preserves repeated field names.
+///
+/// The admin then determines which field names may be repeated.
+pub fn read_multipart_repeated(
+    content_type: &str,
+    body: &[u8],
+) -> Result<Vec<FormPart>, MultipartError> {
+    parse_parts(content_type, body, true, true)
 }
 
 fn parse_parts(
     content_type: &str,
     body: &[u8],
     check_filenames: bool,
+    keep_duplicates: bool,
 ) -> Result<Vec<FormPart>, MultipartError> {
     if body.len() > MULTIPART_BODY_LIMIT {
         return Err(MultipartError::TooLarge);
@@ -363,17 +374,21 @@ fn parse_parts(
         if name.is_empty() || name.len() > 80 || name.chars().any(|char| char.is_control()) {
             return Err(MultipartError::Malformed);
         }
-        if !names.insert(name.clone()) {
+        if !keep_duplicates && !names.insert(name.clone()) {
             return Err(MultipartError::DuplicateField(name));
         }
         let filename = header_value(&header, "filename");
-        if check_filenames {
-            if let Some(filename) = &filename {
-                if invalid_filename(filename) {
-                    return Err(MultipartError::InvalidFilename(filename.clone()));
+        let filename = if check_filenames {
+            match filename {
+                Some(filename) if filename.is_empty() && part_body.is_empty() => None,
+                Some(filename) if invalid_filename(&filename) => {
+                    return Err(MultipartError::InvalidFilename(filename));
                 }
+                other => other,
             }
-        }
+        } else {
+            filename
+        };
         parts.push(FormPart {
             name,
             filename,
@@ -588,5 +603,34 @@ JPEG\r\n\
             ),
             Err(super::MultipartError::TooLarge)
         ));
+        let untouched = b"\
+--bound\r\nContent-Disposition: form-data; name=\"favicon\"; filename=\"\"\r\n\r\n\r\n\
+--bound--\r\n";
+        let parts =
+            super::read_multipart("multipart/form-data; boundary=bound", untouched).unwrap();
+        assert_eq!(parts.len(), 1);
+        assert!(parts[0].filename.is_none());
+        assert!(parts[0].bytes.is_empty());
+        let named_empty = b"\
+--bound\r\nContent-Disposition: form-data; name=\"file\"; filename=\"\"\r\n\r\nPNG\r\n\
+--bound--\r\n";
+        assert!(matches!(
+            super::read_multipart("multipart/form-data; boundary=bound", named_empty),
+            Err(super::MultipartError::InvalidFilename(_))
+        ));
+        let repeated_file = b"\
+--bound\r\nContent-Disposition: form-data; name=\"file.cover\"; filename=\"a.gif\"\r\n\r\nGIF89a\r\n\
+--bound\r\nContent-Disposition: form-data; name=\"file.cover\"; filename=\"b.gif\"\r\n\r\nGIF89a\r\n\
+--bound--\r\n";
+        assert!(matches!(
+            super::read_multipart("multipart/form-data; boundary=bound", repeated_file),
+            Err(super::MultipartError::DuplicateField(_))
+        ));
+        let repeated =
+            super::read_multipart_repeated("multipart/form-data; boundary=bound", repeated_file)
+                .unwrap();
+        assert_eq!(repeated.len(), 2);
+        assert_eq!(repeated[0].name, "file.cover");
+        assert_eq!(repeated[1].name, "file.cover");
     }
 }

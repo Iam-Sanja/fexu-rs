@@ -1,4 +1,4 @@
-//! Persistente Queue. Änderungen laufen über bedingte Updates und gebundene Werte.
+//! Persistent queue. Changes use conditional updates and bound parameters.
 
 use crate::clock::Clock;
 use crate::error::JobError;
@@ -676,8 +676,8 @@ impl Queue {
         Ok(removed)
     }
 
-    /// Endgültig fehlgeschlagene Jobs. Die Aufbewahrung löscht sie später mit.
-    /// Das ist eine Inspektion, keine zweite Zustellung.
+    /// Permanently failed jobs. Retention cleanup eventually removes them.
+    /// This is inspection, not a second delivery.
     pub async fn dead_letters(&self, limit: u32) -> Result<Vec<JobDiagnosis>, JobError> {
         self.ready().await?;
         let limit = limit.clamp(1, 100);
@@ -717,9 +717,9 @@ impl Queue {
     }
 
     /// Schreibt in die Verbindung des Aufrufers. Ein Rollback des Aufrufers entfernt den Job.
-    /// Sichtbare Jobs bleiben at-least-once. Die Methode beginnt keine eigene Transaktion.
-    /// Ein eindeutiger Konflikt rollt nur auf einen Sicherungspunkt zurück. Die Transaktion
-    /// des Aufrufers bleibt benutzbar. Der Aufrufer entscheidet über Commit oder Rollback.
+    /// Visible jobs retain at-least-once semantics. This method starts no transaction.
+    /// A uniqueness conflict rolls back only to a savepoint. The caller's transaction
+    /// remains usable. The caller chooses whether to commit or roll back.
     pub async fn enqueue_json_on(
         &self,
         db: &impl ConnectionTrait,

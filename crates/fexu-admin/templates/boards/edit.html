@@ -1,0 +1,137 @@
+{% extends "base.html" %}
+{% block content %}
+<nav class="crumbs" aria-label="{{ i18n.breadcrumb }}"><a href="/admin">{{ i18n.dashboard }}</a> / <a href="/admin/boards/config">{{ i18n.board_config }}</a> / <span>{{ board.name }}</span></nav>
+<p class="studio-links"><a href="/admin/boards/{{ board.id }}">{{ i18n.board_open }}</a></p>
+{% if board.home %}
+<p class="hint">{{ i18n.board_home_on }}</p>
+{% else %}
+<form method="post" action="/admin/boards/{{ board.id }}/home">
+<input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+<input type="hidden" name="home" value="1">
+<button type="submit" class="ghost">{{ i18n.board_home }}</button>
+</form>
+{% endif %}
+<p class="hint">{{ i18n.board_layout_hint }}</p>
+{% if layout | length == 0 %}
+<p class="empty">{{ i18n.board_empty }}</p>
+{% endif %}
+<div class="board-canvas" data-arrange data-board="{{ board.id }}" data-csrf="{{ csrf_token }}">
+{% for block in layout %}{% include "board_block.html" %}{% endfor %}
+</div>
+<div class="studio">
+<section class="card studio-editor" aria-labelledby="board-add">
+<h2 id="board-add">{% if editing %}{{ i18n.board_widget_edit }}{% else %}{{ i18n.board_add }}{% endif %}</h2>
+<p class="hint">{{ i18n.board_hint }}</p>
+{% if chosen %}
+<form class="studio-form" method="post" action="{% if editing %}/admin/boards/{{ board.id }}/widgets/{{ editing.id }}{% else %}/admin/boards/{{ board.id }}/widgets{% endif %}" data-preview="/admin/boards/{{ board.id }}/preview">
+<input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+<input type="hidden" name="model" value="{{ chosen.key }}">
+{% if editing %}<input type="hidden" name="widget" value="{{ editing.id }}">{% endif %}
+<p><strong>{{ chosen.app }} · {{ chosen.label }}</strong></p>
+<label for="widget-title">{{ i18n.board_title }}
+<input id="widget-title" name="title" required maxlength="60" value="{% if form_widget %}{{ form_widget.title }}{% else %}{{ chosen.label }}{% endif %}">
+</label>
+<fieldset class="kind-tiles">
+<legend>{{ i18n.board_kind }}</legend>
+<label class="kind-tile"><input type="radio" name="kind" value="table" {% if not form_widget or form_widget.kind == "table" %}checked{% endif %}><span>{{ i18n.board_table }}</span></label>
+<label class="kind-tile"><input type="radio" name="kind" value="bar" {% if form_widget and form_widget.kind == "bar" %}checked{% endif %}><span>{{ i18n.board_bar }}</span></label>
+<label class="kind-tile"><input type="radio" name="kind" value="stack" {% if form_widget and form_widget.kind == "stack" %}checked{% endif %}><span>{{ i18n.board_stack }}</span></label>
+<label class="kind-tile"><input type="radio" name="kind" value="line" {% if form_widget and form_widget.kind == "line" %}checked{% endif %}><span>{{ i18n.board_line }}</span></label>
+<label class="kind-tile"><input type="radio" name="kind" value="pie" {% if form_widget and form_widget.kind == "pie" %}checked{% endif %}><span>{{ i18n.board_pie }}</span></label>
+<label class="kind-tile"><input type="radio" name="kind" value="tree" {% if form_widget and form_widget.kind == "tree" %}checked{% endif %}><span>{{ i18n.board_tree }}</span></label>
+<label class="kind-tile"><input type="radio" name="kind" value="card" {% if form_widget and form_widget.kind == "card" %}checked{% endif %}><span>{{ i18n.board_card }}</span></label>
+</fieldset>
+<fieldset class="for-table">
+<legend>{{ i18n.board_fields }}</legend>
+<ul class="checks board-fields">
+{% for field in chosen.fields %}
+<li><label><input type="checkbox" name="field.{{ field.name }}" value="1" {% if form_widget and field.name in form_widget.fields %}checked{% endif %}> {{ field.label }}</label></li>
+{% endfor %}
+</ul>
+</fieldset>
+<label class="for-group" for="widget-group">{{ i18n.board_group }}
+<select id="widget-group" name="group_field">
+<option value="">{{ i18n.board_group_none }}</option>
+{% for field in chosen.fields %}
+<option value="{{ field.name }}" {% if form_widget and form_widget.group_field == field.name %}selected{% endif %}>{{ field.label }}{% if field.date %} · {{ i18n.board_line }}{% endif %}</option>
+{% endfor %}
+</select>
+</label>
+<label class="for-series" for="widget-series">{{ i18n.board_series }}
+<select id="widget-series" name="series_field">
+<option value="">{{ i18n.board_group_none }}</option>
+{% for field in chosen.fields %}
+<option value="{{ field.name }}" {% if form_widget and form_widget.series_field == field.name %}selected{% endif %}>{{ field.label }}</option>
+{% endfor %}
+</select>
+</label>
+<label class="for-measure" for="widget-measure">{{ i18n.board_measure }}
+<select id="widget-measure" name="measure">
+<option value="">{{ i18n.board_group_none }}</option>
+{% for field in chosen.fields %}{% if field.number %}
+<option value="{{ field.name }}" {% if form_widget and form_widget.measure == field.name %}selected{% endif %}>{{ field.label }}</option>
+{% endif %}{% endfor %}
+</select>
+</label>
+<label class="for-trend" for="widget-trend">{{ i18n.board_trend }}
+<select id="widget-trend" name="trend_field">
+<option value="">{{ i18n.board_group_none }}</option>
+{% for field in chosen.fields %}{% if field.date %}
+<option value="{{ field.name }}" {% if form_widget and form_widget.trend_field == field.name %}selected{% endif %}>{{ field.label }}</option>
+{% endif %}{% endfor %}
+</select>
+</label>
+{% if editing %}
+<fieldset class="place-fields">
+<legend>{{ i18n.board_place }}</legend>
+<label>{{ i18n.board_column }}
+<input name="grid_x" type="number" inputmode="numeric" required min="1" max="30" value="{{ form_widget.x }}">
+</label>
+<label>{{ i18n.board_row }}
+<input name="grid_y" type="number" inputmode="numeric" required min="1" max="80" value="{{ form_widget.y }}">
+</label>
+<label>{{ i18n.board_width }}
+<input name="grid_w" type="number" inputmode="numeric" required min="1" max="30" value="{{ form_widget.w }}">
+</label>
+<label>{{ i18n.board_height }}
+<input name="grid_h" type="number" inputmode="numeric" required min="1" max="24" value="{{ form_widget.h }}">
+</label>
+</fieldset>
+{% endif %}
+<button type="submit" class="ghost" formaction="/admin/boards/{{ board.id }}/preview">{{ i18n.board_preview }}</button>
+<button type="submit">{{ i18n.board_save }}</button>
+</form>
+{% else %}
+<form method="post" action="/admin/boards/{{ board.id }}/choose">
+<input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+<label for="widget-model">{{ i18n.board_model }}
+<select id="widget-model" name="model" required>
+{% for model in models %}
+<option value="{{ model.key }}">{{ model.app }} · {{ model.label }}</option>
+{% endfor %}
+</select>
+</label>
+<button type="submit">{{ i18n.board_continue }}</button>
+</form>
+{% endif %}
+</section>
+</div>
+{% if chosen %}
+<section class="card studio-preview" aria-labelledby="board-preview" aria-live="polite">
+<h2 id="board-preview">{{ i18n.board_preview }}</h2>
+<div data-preview-body>
+{% if preview %}
+{% set quiet = true %}
+{% set block = preview %}
+{% include "board_block.html" %}
+{% else %}
+<p class="hint">{{ i18n.board_preview_empty }}</p>
+{% endif %}
+</div>
+</section>
+{% endif %}
+<form method="post" action="/admin/boards/{{ board.id }}/delete">
+<input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+<button type="submit" class="danger">{{ i18n.board_delete }}</button>
+</form>
+{% endblock %}

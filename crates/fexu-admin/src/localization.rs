@@ -1,6 +1,10 @@
-//! Feste Kataloge für die HTML-Oberfläche. Locale-Werte werden nie zu Dateipfaden.
+//! Embedded gettext-compatible admin catalogs, with English as the canonical fallback.
+//! Locale input is resolved against a fixed allowlist, never used as a filesystem path.
 
 use serde_json::{Map, Value};
+
+const EN_PO: &str = include_str!("../locales/en.po");
+const DE_PO: &str = include_str!("../locales/de.po");
 
 pub fn normalize(requested: &str, default_locale: &str, fallback_locale: &str) -> String {
     match requested {
@@ -11,466 +15,44 @@ pub fn normalize(requested: &str, default_locale: &str, fallback_locale: &str) -
     }
 }
 
-pub fn catalog(locale: &str) -> Value {
+/// Parses the fixed three-field PO entries shipped with this crate.
+/// This is not a general-purpose gettext parser; catalog generation validates its input.
+fn parse_catalog(source: &str) -> Map<String, Value> {
     let mut map = Map::new();
-    for (key, german, english) in STRINGS {
-        map.insert(
-            (*key).to_owned(),
-            Value::String(if locale == "de" {
-                (*german).to_owned()
-            } else {
-                (*english).to_owned()
-            }),
-        );
+    let mut key: Option<String> = None;
+    let mut translation: Option<String> = None;
+    for line in source.lines().chain(std::iter::once("")) {
+        if line.is_empty() {
+            if let (Some(key), Some(translation)) = (key.take(), translation.take()) {
+                assert!(
+                    map.insert(key, Value::String(translation)).is_none(),
+                    "duplicate admin translation key"
+                );
+            }
+            continue;
+        }
+        if let Some(value) = line.strip_prefix("msgctxt ") {
+            key = Some(serde_json::from_str(value).expect("valid PO context"));
+        } else if let Some(value) = line.strip_prefix("msgstr ") {
+            translation = Some(serde_json::from_str(value).expect("valid PO translation"));
+        }
     }
-    Value::Object(map)
+    map
 }
 
-const STRINGS: &[(&str, &str, &str)] = &[
-    ("login", "Anmelden", "Sign in"),
-    ("email", "E-Mail", "Email"),
-    ("password", "Passwort", "Password"),
-    (
-        "invalid_credentials",
-        "E-Mail oder Passwort ist ungültig.",
-        "Invalid email or password.",
-    ),
-    (
-        "rate_limited",
-        "Zu viele Versuche. Bitte später erneut versuchen.",
-        "Too many attempts. Try again later.",
-    ),
-    (
-        "csrf",
-        "Die Sicherheitsprüfung ist fehlgeschlagen.",
-        "The security check failed.",
-    ),
-    ("dashboard", "Übersicht", "Dashboard"),
-    ("welcome", "Willkommen", "Welcome"),
-    ("models", "Modelle", "Models"),
-    ("users", "Benutzer", "Users"),
-    ("roles", "Rollen", "Roles"),
-    ("permissions", "Berechtigungen", "Permissions"),
-    ("directory", "Verzeichnis", "Directory"),
-    ("logout", "Abmelden", "Sign out"),
-    ("search", "Suchen", "Search"),
-    ("filter", "Filtern", "Filter"),
-    ("save", "Speichern", "Save"),
-    (
-        "save_continue",
-        "Speichern und weiter bearbeiten",
-        "Save and continue editing",
-    ),
-    (
-        "save_add",
-        "Speichern und weiteren Eintrag erstellen",
-        "Save and add another",
-    ),
-    ("pick_more", "Weiter suchen", "Search further"),
-    (
-        "lookup_truncated",
-        "Die Auswahl zeigt die ersten 100 Treffer. Weitere Werte stehen in der Suche.",
-        "The list shows the first 100 matches. Use search for the rest.",
-    ),
-    ("pick_heading", "Eintrag wählen", "Choose a record"),
-    (
-        "pick_empty",
-        "Kein passender Eintrag.",
-        "No matching record.",
-    ),
-    ("pick_back", "Zurück zum Formular", "Back to the form"),
-    (
-        "invalid_relation",
-        "Wählen Sie einen sichtbaren Eintrag.",
-        "Choose a visible record.",
-    ),
-    (
-        "form_errors",
-        "Bitte korrigieren Sie die markierten Felder.",
-        "Correct the marked fields.",
-    ),
-    (
-        "m2m_hint",
-        "Mehrere vorhandene Einträge können ausgewählt werden. Eine leere Auswahl entfernt die sichtbaren Verbindungen.",
-        "Several existing records can be selected. An empty selection removes the visible links.",
-    ),
-    (
-        "m2m_empty",
-        "Keine auswählbaren Einträge.",
-        "No records are available to select.",
-    ),
-    (
-        "m2m_truncated",
-        "Die Liste zeigt die ersten 100 sichtbaren Einträge. Bereits ausgewählte sichtbare Einträge bleiben erhalten.",
-        "The list shows the first 100 visible records. Already selected visible records stay listed.",
-    ),
-    (
-        "m2m_blocked",
-        "Die verbundenen Einträge können mit diesem Konto nicht gelesen werden.",
-        "This account cannot read the related records.",
-    ),
-    (
-        "m2m_invalid",
-        "Die Auswahl enthält einen ungültigen oder nicht sichtbaren Eintrag.",
-        "The selection contains an invalid or hidden record.",
-    ),
-    (
-        "m2m_size",
-        "Es können höchstens 1000 Verbindungen gespeichert werden.",
-        "At most 1000 links can be saved.",
-    ),
-    ("cancel", "Abbrechen", "Cancel"),
-    ("create", "Anlegen", "Create"),
-    ("edit", "Bearbeiten", "Edit"),
-    ("delete", "Löschen", "Delete"),
-    ("back", "Zurück", "Back"),
-    ("detail", "Details", "Details"),
-    ("empty", "Keine Einträge.", "No records."),
-    (
-        "no_models",
-        "Keine Modelle für dieses Konto.",
-        "No models are available for this account.",
-    ),
-    (
-        "forbidden",
-        "Diese Aktion ist nicht erlaubt.",
-        "This action is not allowed.",
-    ),
-    (
-        "not_found",
-        "Der Eintrag wurde nicht gefunden.",
-        "The record was not found.",
-    ),
-    (
-        "staff_required",
-        "Die Verwaltung verlangt einen Staff-Zugang.",
-        "Administration requires staff access.",
-    ),
-    (
-        "confirm_delete",
-        "Dieser Eintrag wird dauerhaft gelöscht.",
-        "This record will be deleted permanently.",
-    ),
-    (
-        "notice_created",
-        "Der Eintrag wurde angelegt.",
-        "The record was created.",
-    ),
-    (
-        "notice_saved",
-        "Die Änderungen wurden gespeichert.",
-        "The changes were saved.",
-    ),
-    (
-        "notice_deleted",
-        "Der Eintrag wurde gelöscht.",
-        "The record was deleted.",
-    ),
-    (
-        "notice_updated",
-        "Die Änderung wurde gespeichert.",
-        "The change was saved.",
-    ),
-    ("yes", "Ja", "Yes"),
-    ("no", "Nein", "No"),
-    ("active", "Aktiv", "Active"),
-    ("inactive", "Inaktiv", "Inactive"),
-    ("staff", "Staff", "Staff"),
-    ("no_staff", "Kein Staff", "Not staff"),
-    ("superuser", "Superuser", "Superuser"),
-    ("no_superuser", "Kein Superuser", "Not a superuser"),
-    ("actions", "Aktionen", "Actions"),
-    ("required", "Pflichtfeld", "Required"),
-    ("optional", "Optional", "Optional"),
-    ("readonly", "Nur lesen", "Read only"),
-    ("none", "Keine", "None"),
-    ("total", "Gesamt", "Total"),
-    ("previous", "Zurück", "Previous"),
-    ("next", "Weiter", "Next"),
-    ("page", "Seite", "Page"),
-    ("language", "Sprache", "Language"),
-    ("theme", "Darstellung", "Theme"),
-    ("light", "Hell", "Light"),
-    ("dark", "Dunkel", "Dark"),
-    ("system", "System", "System"),
-    ("apply", "Übernehmen", "Apply"),
-    ("assign", "Zuweisen", "Assign"),
-    ("revoke", "Entziehen", "Revoke"),
-    ("grant", "Gewähren", "Grant"),
-    ("role", "Rolle", "Role"),
-    ("add_role", "Rolle anlegen", "Create role"),
-    ("permission_code", "Berechtigungscode", "Permission code"),
-    ("deactivate", "Deaktivieren", "Deactivate"),
-    ("activate", "Aktivieren", "Activate"),
-    ("remove_staff", "Staff entziehen", "Remove staff"),
-    ("make_staff", "Staff geben", "Grant staff"),
-    ("blocked", "Gesperrt", "Blocked"),
-    ("open", "Öffnen", "Open"),
-    ("new_record", "Neuer Eintrag", "New record"),
-    ("results", "Treffer", "Results"),
-    ("skip", "Zum Inhalt", "Skip to content"),
-    ("navigation", "Navigation", "Navigation"),
-    ("breadcrumb", "Pfad", "Breadcrumb"),
-    ("reset", "Zurücksetzen", "Reset"),
-    ("error", "Fehler", "Error"),
-    ("sort_asc", "aufsteigend", "ascending"),
-    ("sort_desc", "absteigend", "descending"),
-    (
-        "hint_select",
-        "Wählen Sie einen vorhandenen Eintrag.",
-        "Choose an existing record.",
-    ),
-    (
-        "hint_flags",
-        "Staff öffnet die Verwaltung. Superuser ersetzt Staff nicht.",
-        "Staff opens administration. Superuser does not replace staff.",
-    ),
-    (
-        "hint_role",
-        "Nur vorhandene Rollen. Eine neue Rolle entsteht auf der Rollenseite.",
-        "Existing roles only. Create a new role on the roles page.",
-    ),
-    (
-        "hint_role_name",
-        "Buchstaben, Ziffern, Punkt oder Unterstrich.",
-        "Letters, digits, dot, or underscore.",
-    ),
-    (
-        "hint_permission",
-        "Buchstaben, Ziffern, Punkt oder Unterstrich. Beispiel: notes.read",
-        "Letters, digits, dot, or underscore. Example: notes.read",
-    ),
-    (
-        "confirm_check",
-        "Ich bestätige diese Änderung.",
-        "I confirm this change.",
-    ),
-    ("assign_heading", "Rolle zuweisen", "Assign role"),
-    (
-        "no_roles",
-        "Es gibt noch keine Rolle.",
-        "There is no role yet.",
-    ),
-    ("existing_roles", "Vorhandene Rollen", "Existing roles"),
-    (
-        "unknown_role",
-        "Diese Rolle gibt es nicht. Legen Sie sie zuerst an.",
-        "That role does not exist. Create it first.",
-    ),
-    ("choose", "Bitte wählen", "Choose"),
-    ("add_user", "Benutzer anlegen", "Add user"),
-    (
-        "password_confirm",
-        "Passwort wiederholen",
-        "Confirm password",
-    ),
-    (
-        "password_rules",
-        "12 bis 128 Zeichen. Das Passwort wird nicht angezeigt.",
-        "12 to 128 characters. The password is not shown.",
-    ),
-    ("password_heading", "Passwort setzen", "Set password"),
-    (
-        "password_mismatch",
-        "Die Passwörter stimmen nicht überein.",
-        "The passwords do not match.",
-    ),
-    (
-        "confirm_required",
-        "Diese Aktion braucht eine Bestätigung.",
-        "This action requires confirmation.",
-    ),
-    (
-        "confirm_invalid",
-        "Die Bestätigung ist ungültig.",
-        "The confirmation is invalid.",
-    ),
-    ("missing_relation", "Nicht vorhanden", "Missing"),
-    ("hidden_relation", "Nicht sichtbar", "Not visible"),
-    ("all", "Alle", "All"),
-    ("view", "Anzeigen", "View"),
-    ("manage_roles", "Rollen", "Roles"),
-    (
-        "email_taken",
-        "Diese E-Mail ist bereits vergeben.",
-        "That email is already registered.",
-    ),
-    (
-        "password_invalid",
-        "Das Passwort muss 12 bis 128 Zeichen haben.",
-        "The password must contain 12 to 128 characters.",
-    ),
-    ("no_permissions", "Keine Berechtigungen.", "No permissions."),
-    (
-        "user_saved",
-        "Der Benutzer wurde gespeichert.",
-        "The user was saved.",
-    ),
-    ("confirm", "Bestätigen", "Confirm"),
-    ("history", "Historie", "History"),
-    ("history_all", "Vollständige Historie", "Full history"),
-    (
-        "history_partial",
-        "Nur Änderungen über die Administration. Direkte Repository-Schreibvorgänge und die Auth-CLI fehlen.",
-        "Only changes made through the admin. Direct repository writes and the auth CLI are absent.",
-    ),
-    (
-        "history_limit",
-        "Die neuesten 8 Ereignisse.",
-        "The latest 8 events.",
-    ),
-    (
-        "history_more",
-        "Weitere Ereignisse stehen in der vollständigen Historie.",
-        "More events are in the full history.",
-    ),
-    (
-        "history_none",
-        "Für diesen Datensatz ist noch kein Eintrag gespeichert.",
-        "No entry is stored for this record yet.",
-    ),
-    ("audit_create", "Angelegt", "Created"),
-    ("audit_update", "Geändert", "Updated"),
-    ("audit_delete", "Gelöscht", "Deleted"),
-    ("audit_bulk_update", "Sammeländerung", "Bulk update"),
-    ("audit_bulk_delete", "Sammellöschung", "Bulk delete"),
-    ("audit_user_create", "Benutzer angelegt", "User created"),
-    ("audit_user_update", "Benutzer geändert", "User updated"),
-    (
-        "audit_password_reset",
-        "Passwort zurückgesetzt",
-        "Password reset",
-    ),
-    ("audit_role_assign", "Rolle zugewiesen", "Role assigned"),
-    ("audit_role_revoke", "Rolle entzogen", "Role revoked"),
-    ("audit_permission_grant", "Recht vergeben", "Permission granted"),
-    (
-        "audit_permission_revoke",
-        "Recht entzogen",
-        "Permission revoked",
-    ),
-    (
-        "dashboard_hint",
-        "Wähle eine Liste. Suche, Filter und Bearbeitung laufen ohne JavaScript.",
-        "Choose a list. Search, filters and editing work without JavaScript.",
-    ),
-    ("open_list", "Liste öffnen", "Open list"),
-    (
-        "empty_filtered",
-        "Keine Treffer für diese Suche oder diese Filter.",
-        "No records match this search or these filters.",
-    ),
-    ("bulk_page", "Gesamte Seite", "Entire page"),
-    ("bulk_action", "Aktion", "Action"),
-    ("bulk_run", "Ausführen", "Run"),
-    ("select", "Auswählen", "Select"),
-    ("bulk_confirm", "Auswahl bestätigen", "Confirm selection"),
-    ("bulk_count", "Betroffene Datensätze", "Affected records"),
-    (
-        "bulk_empty",
-        "Keine Datensätze ausgewählt.",
-        "No records selected.",
-    ),
-    (
-        "bulk_denied",
-        "Die Auswahl enthält einen nicht erlaubten Datensatz. Es wurde nichts geändert.",
-        "The selection contains a record that is not allowed. Nothing was changed.",
-    ),
-    (
-        "bulk_failed",
-        "Die Aktion wurde zurückgerollt. Es wurde nichts geändert.",
-        "The action was rolled back. Nothing was changed.",
-    ),
-    ("inline_add", "Hinzufügen", "Add"),
-    (
-        "inline_empty",
-        "Keine verknüpften Einträge.",
-        "No related records.",
-    ),
-    ("inline_open", "Öffnen", "Open"),
-    ("inline_another", "Weitere Zeile", "Add another row"),
-    ("inline_remove", "Entfernen", "Remove"),
-    (
-        "inline_marked",
-        "Wird beim Speichern entfernt.",
-        "Removed when you save.",
-    ),
-    (
-        "inline_conflict",
-        "Ein anderer Vorgang hat den Datensatz geändert. Es wurde nichts gespeichert.",
-        "Another change updated this record. Nothing was saved.",
-    ),
-    (
-        "inline_failed",
-        "Die Änderung wurde zurückgerollt. Es wurde nichts gespeichert.",
-        "The change was rolled back. Nothing was saved.",
-    ),
-    (
-        "inline_limit",
-        "Die Anzahl der Zeilen ist ungültig.",
-        "The number of rows is invalid.",
-    ),
-    (
-        "inline_foreign",
-        "Die Zeile gehört nicht zu diesem Datensatz.",
-        "The row does not belong to this record.",
-    ),
-    ("audit_empty", "Keine Einträge.", "No entries."),
-    ("when", "Zeitpunkt", "When"),
-    ("actor", "Akteur", "Actor"),
-    ("outcome", "Ergebnis", "Outcome"),
-    ("details", "Details", "Details"),
-    ("record", "Datensatz", "Record"),
-    ("succeeded", "Erfolgreich", "Succeeded"),
-    ("denied", "Verweigert", "Denied"),
-    ("date_hierarchy", "Datum", "Date"),
-    (
-        "utc_hint",
-        "UTC. Der Wert wird nicht in eine lokale Zeitzone umgerechnet.",
-        "UTC. The value is not converted to a local time zone.",
-    ),
-    (
-        "validation_date",
-        "Das Datum ist ungültig.",
-        "The date is invalid.",
-    ),
-    (
-        "validation_time",
-        "Die Uhrzeit ist ungültig.",
-        "The time is invalid.",
-    ),
-    (
-        "validation_datetime",
-        "Der Zeitpunkt ist ungültig. Erwartet wird UTC.",
-        "The timestamp is invalid. UTC is required.",
-    ),
-    ("month_1", "Januar", "January"),
-    ("month_2", "Februar", "February"),
-    ("month_3", "März", "March"),
-    ("month_4", "April", "April"),
-    ("month_5", "Mai", "May"),
-    ("month_6", "Juni", "June"),
-    ("month_7", "Juli", "July"),
-    ("month_8", "August", "August"),
-    ("month_9", "September", "September"),
-    ("month_10", "Oktober", "October"),
-    ("month_11", "November", "November"),
-    ("month_12", "Dezember", "December"),
-    ("applications", "Anwendungen", "Applications"),
-    ("access", "Benutzer und Zugang", "Users and access"),
-    ("system", "System", "System"),
-    (
-        "time_utc",
-        "Zeitpunkte werden in UTC angezeigt. Gespeicherte Werte bleiben unverändert.",
-        "Times are shown in UTC. Stored values stay unchanged.",
-    ),
-    (
-        "time_unavailable",
-        "Zeitpunkt nicht lesbar",
-        "Time unavailable",
-    ),
-    ("menu", "Menü", "Menu"),
-];
+pub fn catalog(locale: &str) -> Value {
+    let english = parse_catalog(EN_PO);
+    if locale != "de" {
+        return Value::Object(english);
+    }
+    let mut translated = english;
+    for (key, value) in parse_catalog(DE_PO) {
+        if value.as_str().is_some_and(|text| !text.is_empty()) && translated.contains_key(&key) {
+            translated.insert(key, value);
+        }
+    }
+    Value::Object(translated)
+}
 
 pub fn notice(locale: &str, code: &str) -> Option<String> {
     let catalog = catalog(locale);
@@ -604,6 +186,13 @@ pub fn validation_text(locale: &str, detail: &str) -> String {
             .unwrap_or(detail)
             .to_owned();
     }
+    if detail.contains("admin.store") {
+        return if german {
+            "Die Datei konnte nicht gespeichert werden.".into()
+        } else {
+            "The file could not be stored.".into()
+        };
+    }
     if detail.contains("admin.relation") {
         return catalog(locale)["m2m_invalid"]
             .as_str()
@@ -623,4 +212,31 @@ pub fn validation_text(locale: &str, detail: &str) -> String {
             .to_owned();
     }
     detail.to_owned()
+}
+
+#[cfg(test)]
+mod catalog_tests {
+    use super::{catalog, normalize, parse_catalog, DE_PO, EN_PO};
+
+    #[test]
+    fn bundled_catalogs_have_matching_keys_and_preserve_existing_labels() {
+        let en = parse_catalog(EN_PO);
+        let de = parse_catalog(DE_PO);
+        assert_eq!(en.len(), 313);
+        assert_eq!(en.keys().collect::<Vec<_>>(), de.keys().collect::<Vec<_>>());
+        assert_eq!(en["save"], "Save");
+        assert_eq!(de["save"], "Speichern");
+        assert_eq!(en["menu"], "Menu");
+        assert_eq!(de["menu"], "Menü");
+        assert_eq!(catalog("en")["login"], "Sign in");
+        assert_eq!(catalog("de")["login"], "Anmelden");
+    }
+
+    #[test]
+    fn unknown_language_falls_back_to_english_without_file_access() {
+        assert_eq!(catalog("fr")["save"], "Save");
+        assert_eq!(normalize("fr", "en", "de"), "en");
+        assert_eq!(normalize("fr", "fr", "fr"), "en");
+        assert_eq!(normalize("de", "en", "en"), "de");
+    }
 }

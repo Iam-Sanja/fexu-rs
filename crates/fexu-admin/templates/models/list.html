@@ -1,48 +1,14 @@
 {% extends "base.html" %}
 {% block content %}
 <nav class="crumbs" aria-label="{{ i18n.breadcrumb }}"><a href="/admin">{{ i18n.dashboard }}</a> / <span>{{ model_label }}</span></nav>
+<div class="list-layout">
+<div class="list-main">
 <div class="toolbar">
 <form class="filters" method="get" action="{{ list_path }}" role="search">
-{% if sort %}<input type="hidden" name="sort" value="{{ sort }}">{% endif %}
-{% if dir %}<input type="hidden" name="dir" value="{{ dir }}">{% endif %}
-<div class="filter-fields">
+{% for item in kept %}{% if item.name != "q" %}<input type="hidden" name="{{ item.name }}" value="{{ item.value }}">{% endif %}{% endfor %}
 <label for="admin-search">{{ i18n.search }} <input id="admin-search" name="q" type="search" value="{{ query }}"></label>
-{% for filter in filters %}
-<label for="filter-{{ filter.name }}">{{ filter.label }}
-{% if filter.kind == "boolean" %}
-<select id="filter-{{ filter.name }}" name="filter.{{ filter.name }}">
-<option value="">{{ i18n.all }}</option>
-<option value="true" {% if filter.value == "true" %}selected{% endif %}>{{ filter.yes }}</option>
-<option value="false" {% if filter.value == "false" %}selected{% endif %}>{{ filter.no }}</option>
-</select>
-{% elif filter.kind == "uuid" %}
-<select id="filter-{{ filter.name }}" name="filter.{{ filter.name }}">
-<option value="">{{ i18n.all }}</option>
-{% for option in filter.options %}
-<option value="{{ option.id }}" {% if option.id == filter.value %}selected{% endif %}>{{ option.label }}</option>
-{% endfor %}
-</select>
-{% elif filter.kind == "choice" %}
-<select id="filter-{{ filter.name }}" name="filter.{{ filter.name }}">
-<option value="">{{ i18n.all }}</option>
-{% for option in filter.options %}
-<option value="{{ option.id }}" {% if option.id == filter.value %}selected{% endif %}>{{ option.label }}</option>
-{% endfor %}
-</select>
-{% elif filter.kind == "number" %}
-<input id="filter-{{ filter.name }}" name="filter.{{ filter.name }}" type="number" inputmode="numeric" value="{{ filter.value }}">
-{% elif filter.kind == "date" or filter.kind == "time" or filter.kind == "datetime" %}
-<input id="filter-{{ filter.name }}" name="filter.{{ filter.name }}" type="{% if filter.kind == "date" %}date{% elif filter.kind == "time" %}time{% else %}datetime-local{% endif %}" value="{{ filter.value }}">
-{% else %}
-<input id="filter-{{ filter.name }}" name="filter.{{ filter.name }}" value="{{ filter.value }}">
-{% endif %}
-</label>
-{% endfor %}
-</div>
-<div class="filter-actions">
 <button class="ghost" type="submit">{{ i18n.filter }}</button>
 {% if filtering %}<a class="button ghost" href="{{ list_path }}">{{ i18n.reset }}</a>{% endif %}
-</div>
 </form>
 {% if can_create %}<a class="button" href="{{ list_path }}/new">{{ i18n.new_record }}</a>{% endif %}
 </div>
@@ -89,38 +55,31 @@
 <button type="submit">{{ i18n.bulk_run }}</button>
 </div>
 {% endif %}
-<div class="table-wrap" tabindex="0" aria-labelledby="list-summary">
+<div class="table-wrap" tabindex="0" aria-labelledby="list-summary" data-model="{{ model_key }}" data-csrf="{{ csrf_token }}">
 <table>
 <caption class="sr-only">{{ model_label }}</caption>
 <thead>
 <tr>
 {% if actions %}<th scope="col">{{ i18n.select }}</th>{% endif %}
+{% if pictures %}<th scope="col" class="is-picture"><span class="sr-only">{{ i18n.image }}</span></th>{% endif %}
 {% for column in columns %}
 <th scope="col" {% if column.sorted %}aria-sort="{{ column.sort_state }}"{% endif %}>
 {% if column.sortable %}<a href="{{ column.sort_href }}">{{ column.label }}{% if column.mark %} <span aria-hidden="true">{{ column.mark }}</span> <span class="sr-only">{% if column.sort_state == "descending" %}{{ i18n.sort_desc }}{% else %}{{ i18n.sort_asc }}{% endif %}</span>{% endif %}</a>{% else %}{{ column.label }}{% endif %}
 {% if column.readonly %}<span class="hint"> {{ i18n.readonly }}</span>{% endif %}
 </th>
 {% endfor %}
-<th scope="col">{{ i18n.actions }}</th>
+{% if editable %}<th scope="col"><span class="sr-only">{{ i18n.save }}</span></th>{% endif %}
 </tr>
 </thead>
 <tbody>
 {% for row in rows %}
 <tr data-record-href="{{ list_path }}/{{ row.id }}">
 {% if actions %}<td><label class="check"><input type="checkbox" name="ids" value="{{ row.id }}"><span class="sr-only">{{ i18n.select }} {% if row.cells %}{{ row.cells.0.text }}{% else %}{{ row.id }}{% endif %}</span></label></td>{% endif %}
+{% if pictures %}<td class="is-picture">{% for cell in row.cells %}{% if cell.image %}<img class="list-image" src="{{ cell.image }}" alt="">{% endif %}{% endfor %}</td>{% endif %}
 {% for cell in row.cells %}
-<td class="{% if cell.lead %}is-lead{% endif %}{% if cell.uuid %} is-uuid{% endif %}">{% if cell.relation %}{% if cell.href %}<a href="{{ cell.href }}">{{ cell.text }}</a>{% elif cell.link %}<a href="{{ list_path }}/{{ row.id }}">{{ cell.text }}</a>{% else %}{{ cell.text }}{% endif %} <span class="uuid" title="{{ cell.ref }}">{{ cell.short }}</span>{% elif cell.link %}<a href="{{ list_path }}/{{ row.id }}">{% if cell.uuid %}<span class="uuid" title="{{ cell.text }}">{{ cell.short }}</span>{% else %}{{ cell.text }}{% endif %}</a>{% elif cell.uuid %}<span class="uuid" title="{{ cell.text }}">{{ cell.short }}</span>{% else %}{{ cell.text }}{% endif %}</td>
+<td class="{% if cell.lead %}is-lead{% endif %}">{% if cell.relation %}{% if cell.href %}<a href="{{ cell.href }}">{{ cell.text }}</a>{% elif cell.link %}<a href="{{ list_path }}/{{ row.id }}">{{ cell.text }}</a>{% else %}{{ cell.text }}{% endif %}{% elif cell.link %}<a href="{{ list_path }}/{{ row.id }}">{{ cell.text }}</a>{% elif not cell.edit %}{{ cell.text }}{% endif %}{% if cell.edit %}{% if cell.edit.input == "select" %}<select class="list-edit" data-list-edit data-field="{{ cell.name }}" data-saved="{{ cell.edit.value }}">{% for option in cell.edit.options %}<option value="{{ option.value }}" {% if option.selected %}selected{% endif %}>{{ option.label }}</option>{% endfor %}</select>{% elif cell.edit.input == "checkbox" %}<input class="list-edit" data-list-edit data-field="{{ cell.name }}" type="checkbox" value="true" data-saved="{% if cell.edit.checked %}true{% else %}false{% endif %}" {% if cell.edit.checked %}checked{% endif %}>{% else %}<input class="list-edit" data-list-edit data-field="{{ cell.name }}" type="{{ cell.edit.input }}" value="{{ cell.edit.value }}" data-saved="{{ cell.edit.value }}">{% endif %}{% endif %}</td>
 {% endfor %}
-<td>
-<details class="menu">
-<summary>{{ i18n.actions }}</summary>
-<div class="menu-panel">
-<a href="{{ list_path }}/{{ row.id }}">{{ i18n.detail }}</a>
-<a href="/admin/audit?model={{ model_key }}&amp;record={{ row.id }}">{{ i18n.history }}</a>
-{% if can_delete %}<a class="danger-link" href="{{ list_path }}/{{ row.id }}/delete">{{ i18n.delete }}</a>{% endif %}
-</div>
-</details>
-</td>
+{% if editable %}<td><button type="button" class="icon-button row-save" hidden data-row-save="{{ row.id }}" aria-label="{{ i18n.save }}" title="{{ i18n.save }}"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="none" stroke="currentColor" stroke-width="2" d="M5 5h11l3 3v11H5z"/><path fill="none" stroke="currentColor" stroke-width="2" d="M8 5v5h8V5M8 19v-5h8v5"/></svg></button><p class="field-error row-error" hidden></p></td>{% endif %}
 </tr>
 {% endfor %}
 </tbody>
@@ -133,4 +92,42 @@
 <span aria-current="page">{{ i18n.page }} {{ page }}</span>
 {% if next_page %}<a href="{{ next_page }}">{{ i18n.next }}</a>{% else %}<span class="hint">{{ i18n.next }}</span>{% endif %}
 </nav>
+</div>
+{% if filters | length > 0 %}
+<aside class="list-filters card" aria-label="{{ i18n.filter_panel }}">
+<h2>{{ i18n.filter_panel }}</h2>
+{% for filter in filters %}
+{% if filter.facet %}
+<section class="facet" aria-labelledby="facet-{{ filter.name }}">
+<h3 id="facet-{{ filter.name }}">{{ i18n.filter_by }} {{ filter.label }}</h3>
+<ul class="facet-list">
+{% for option in filter.options %}
+<li><a href="{{ option.href }}" {% if option.current %}aria-current="true"{% endif %}>{{ option.label }}</a></li>
+{% endfor %}
+</ul>
+</section>
+{% endif %}
+{% endfor %}
+{% if has_value_filters %}
+<form method="get" action="{{ list_path }}">
+{% for item in kept %}{% if not item.typed %}<input type="hidden" name="{{ item.name }}" value="{{ item.value }}">{% endif %}{% endfor %}
+{% for filter in filters %}
+{% if not filter.facet %}
+<label for="filter-{{ filter.name }}">{{ filter.label }}
+{% if filter.kind == "number" %}
+<input id="filter-{{ filter.name }}" name="filter.{{ filter.name }}" type="number" inputmode="numeric" value="{{ filter.value }}">
+{% elif filter.kind == "date" or filter.kind == "time" or filter.kind == "datetime" %}
+<input id="filter-{{ filter.name }}" name="filter.{{ filter.name }}" type="{% if filter.kind == "date" %}date{% elif filter.kind == "time" %}time{% else %}datetime-local{% endif %}" value="{{ filter.value }}">
+{% else %}
+<input id="filter-{{ filter.name }}" name="filter.{{ filter.name }}" value="{{ filter.value }}">
+{% endif %}
+</label>
+{% endif %}
+{% endfor %}
+<button class="ghost" type="submit">{{ i18n.filter }}</button>
+</form>
+{% endif %}
+</aside>
+{% endif %}
+</div>
 {% endblock %}

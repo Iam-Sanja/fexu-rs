@@ -1,4 +1,4 @@
-//! Fehler der Authentifizierung. HTTP-Antworten übernehmen nur die festen Texte.
+//! Authentication errors. HTTP responses expose only predefined messages.
 
 use fexu_core::FexuError;
 

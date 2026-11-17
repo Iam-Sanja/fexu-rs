@@ -41,8 +41,8 @@ struct MemoryState {
     epochs: Epochs,
 }
 
-/// Prozesslokale Marken. Vergessene Marken heben `floor` an, damit ein alter
-/// Token eher abgelehnt als nach einer Löschung noch akzeptiert wird.
+/// Process-local epochs. Forgotten epochs advance `floor`, ensuring stale
+/// tokens are rejected instead of accidentally accepted after deletion.
 struct Epochs {
     clock: u64,
     floor: u64,

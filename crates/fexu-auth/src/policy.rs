@@ -1,5 +1,5 @@
-//! Objektregeln. Der Query-Scope filtert Listen und Schreibzugriffe in SQL.
-//! Neue Datensätze werden vor dem INSERT geprüft.
+//! Object policies. Query scopes filter list and write operations in SQL.
+//! New records are checked before INSERT.
 
 use crate::service::AuthUser;
 use fexu_core::QueryScope;
@@ -10,7 +10,7 @@ pub trait ObjectPolicy<T> {
     fn can_update(user: &AuthUser, object: &T) -> bool;
     fn can_delete(user: &AuthUser, object: &T) -> bool;
 
-    /// Standard ist keine Zeile. Eine Policy muss `All` oder `Equals` ausdrücklich liefern.
+    /// The default scope matches no rows. Policies must explicitly return `All` or `Equals`.
     fn read_scope(_user: &AuthUser) -> QueryScope {
         QueryScope::None
     }
@@ -19,7 +19,7 @@ pub trait ObjectPolicy<T> {
         Self::read_scope(user)
     }
 
-    /// Standard ist Ablehnung. Eine Create-Policy muss fremde Besitzer ausdrücklich zurückweisen.
+    /// Creation is denied by default. A create policy must explicitly reject unauthorized ownership.
     fn can_create(_user: &AuthUser, _input: &<T as ModelRepository>::Create) -> bool
     where
         T: ModelRepository,

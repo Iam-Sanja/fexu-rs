@@ -1,4 +1,4 @@
-//! UTC-Zeitpunkte als Unix-Sekunden. Tests setzen eine Uhr, ohne eine globale Registry.
+//! UTC instants as Unix seconds. Tests inject a clock without a global registry.
 
 use crate::error::JobError;
 use std::sync::{Arc, Mutex};

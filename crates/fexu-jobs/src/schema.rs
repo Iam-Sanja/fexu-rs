@@ -1,4 +1,4 @@
-//! Job-Tabelle. Die Migration hängt an der eigenen Historie `_fexu_job_migrations`.
+//! Job table. Its migrations use the separate `_fexu_job_migrations` history.
 
 use crate::error::JobError;
 use fexu_db::driver::{ConnectionTrait, DatabaseConnection};

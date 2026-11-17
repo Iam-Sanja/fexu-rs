@@ -1,4 +1,4 @@
-//! Registrierte Formular-Widgets. Ein Widget ändert die Darstellung, nicht das Recht.
+//! Registered form widgets. A widget changes presentation, not permissions.
 
 use fexu_core::{is_email, is_http_url, AdminModelMeta, ColumnKind, ColumnSpec};
 use serde_json::{Map, Value};
@@ -8,10 +8,11 @@ use crate::views::{valid_key, ExtensionError};
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum WidgetKind {
     Text,
-    Textarea { max_length: usize },
+    Textarea { max_length: usize, rows: u8 },
     Email,
     Url,
     Number { min: Option<i64>, max: Option<i64> },
+    Image,
     Readonly,
 }
 
@@ -32,10 +33,20 @@ impl AdminWidget {
     }
 
     pub fn textarea(model_key: &'static str, field: &'static str, max_length: usize) -> Self {
+        Self::textarea_rows(model_key, field, max_length, 4)
+    }
+
+    /// `rows` controls the visible textarea height, from 2 to 24.
+    pub fn textarea_rows(
+        model_key: &'static str,
+        field: &'static str,
+        max_length: usize,
+        rows: u8,
+    ) -> Self {
         Self {
             model_key,
             field,
-            kind: WidgetKind::Textarea { max_length },
+            kind: WidgetKind::Textarea { max_length, rows },
         }
     }
 
@@ -68,6 +79,15 @@ impl AdminWidget {
         }
     }
 
+    /// Dateiname bleibt die Textspalte. Die Datei selbst liegt neben dem Datensatz.
+    pub fn image(model_key: &'static str, field: &'static str) -> Self {
+        Self {
+            model_key,
+            field,
+            kind: WidgetKind::Image,
+        }
+    }
+
     pub fn readonly(model_key: &'static str, field: &'static str) -> Self {
         Self {
             model_key,
@@ -88,11 +108,11 @@ pub(crate) fn check_widget(
             "Widget oder Feldname ist ungültig.",
         ));
     }
-    if let WidgetKind::Textarea { max_length } = widget.kind {
-        if max_length == 0 || max_length > 4000 {
+    if let WidgetKind::Textarea { max_length, rows } = widget.kind {
+        if max_length == 0 || max_length > 4000 || !(2..=24).contains(&rows) {
             return Err(ExtensionError::new(
                 "extension.widget",
-                "Ein Textbereich erlaubt 1 bis 4000 Zeichen.",
+                "Ein Textbereich erlaubt 1 bis 4000 Zeichen und 2 bis 24 Zeilen.",
             ));
         }
     }
@@ -131,7 +151,7 @@ pub(crate) fn check_widget(
         }
         let text = matches!(
             widget.kind,
-            WidgetKind::Text | WidgetKind::Textarea { .. } | WidgetKind::Email | WidgetKind::Url
+            WidgetKind::Text | WidgetKind::Email | WidgetKind::Url
         );
         if text && column.kind != ColumnKind::Text {
             return Err(ExtensionError::new(
@@ -139,10 +159,24 @@ pub(crate) fn check_widget(
                 "Text-Widgets passen nur auf Textspalten.",
             ));
         }
+        if matches!(widget.kind, WidgetKind::Textarea { .. })
+            && !matches!(column.kind, ColumnKind::Text | ColumnKind::Json)
+        {
+            return Err(ExtensionError::new(
+                "extension.widget",
+                "Ein Textbereich passt auf Text oder JSON.",
+            ));
+        }
         if matches!(widget.kind, WidgetKind::Number { .. }) && column.kind != ColumnKind::BigInt {
             return Err(ExtensionError::new(
                 "extension.widget",
                 "Ein Zahlen-Widget passt nur auf eine Ganzzahlspalte.",
+            ));
+        }
+        if matches!(widget.kind, WidgetKind::Image) && column.kind != ColumnKind::Text {
+            return Err(ExtensionError::new(
+                "extension.widget",
+                "Ein Bild-Widget passt nur auf eine Textspalte.",
             ));
         }
     }
@@ -156,6 +190,7 @@ pub(crate) fn presentation(kind: WidgetKind) -> (&'static str, &'static str) {
         WidgetKind::Email => ("text", "email"),
         WidgetKind::Url => ("text", "url"),
         WidgetKind::Number { .. } => ("text", "number"),
+        WidgetKind::Image => ("image", "file"),
         WidgetKind::Readonly => ("readonly", "text"),
     }
 }
@@ -194,7 +229,7 @@ pub(crate) fn enforce(
             WidgetKind::Url if !is_http_url(text) => {
                 return Err(format!("field:{}: value must be an http url", widget.field));
             }
-            WidgetKind::Textarea { max_length } if text.chars().count() > max_length => {
+            WidgetKind::Textarea { max_length, .. } if text.chars().count() > max_length => {
                 return Err(format!(
                     "field:{}: value may have at most {max_length} characters",
                     widget.field

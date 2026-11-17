@@ -1,4 +1,4 @@
-//! Laufzeitkonfiguration. `Secure` hängt nicht an `BIND_ADDRESS`.
+//! Runtime configuration. The `Secure` cookie attribute does not depend on `BIND_ADDRESS`.
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Environment {
@@ -16,7 +16,7 @@ pub enum CookieSameSite {
 pub struct AuthConfig {
     pub environment: Environment,
     pub cookie_name: String,
-    /// Getrennt vom Login-Cookie. Der Name ist fest, damit eine App ihn nicht auf das Login-Cookie legt.
+    /// Separate from the login cookie. Its name is fixed so an app cannot reuse the login cookie name.
     pub anonymous_cookie_name: String,
     pub cookie_secure: bool,
     pub same_site: CookieSameSite,
@@ -28,11 +28,11 @@ pub struct AuthConfig {
     pub trusted_proxies: Vec<String>,
     pub login_max_attempts: u32,
     pub login_window_secs: i64,
-    /// HMAC-Schlüssel für sitzungsgebundene CSRF-Tokens.
-    /// `try_from_env` behält ihn über `FEXU_CSRF_SECRET` oder `.fexu/csrf.key`.
-    /// `development` zieht bei jedem Aufruf einen neuen Schlüssel.
+    /// HMAC key for session-bound CSRF tokens.
+    /// `try_from_env` loads the persistent key from `FEXU_CSRF_SECRET` or `.fexu/csrf.key`.
+    /// `development` generates a new key on each call.
     pub csrf_secret: [u8; 32],
-    /// AES-256-GCM-Schlüssel für TOTP. 32 Byte, unabhängig vom CSRF-Geheimnis.
+    /// AES-256-GCM key for TOTP. A separate 32-byte key independent of the CSRF secret.
     pub mfa_key: [u8; 32],
 }
 
@@ -59,8 +59,8 @@ impl std::fmt::Debug for AuthConfig {
 }
 
 impl AuthConfig {
-    /// Lokale Voreinstellung. Jeder Aufruf erhält ein eigenes CSRF-Geheimnis.
-    /// Ein laufender Prozess liest den dauerhaften Schlüssel über [`Self::try_from_env`].
+    /// Local development defaults. Each call generates a new CSRF secret.
+    /// Running processes load the persistent key through [`Self::try_from_env`].
     pub fn development() -> Self {
         Self {
             environment: Environment::Development,
@@ -137,7 +137,7 @@ impl AuthConfig {
         Ok(config)
     }
 
-    /// Dateiwerte gelten nur, wenn die Umgebung sie nicht bereits gesetzt hat.
+    /// File values apply only when the environment does not already provide them.
     pub fn apply_project_session(&mut self, session_hours: u32, idle_minutes: u32) {
         if !alias_present("FEXU_SESSION_HOURS") {
             self.session_ttl_secs = i64::from(session_hours) * 3600;
@@ -148,7 +148,7 @@ impl AuthConfig {
     }
 
     /// Ersetzt die Entwicklungsliste durch die Loopback-Origins der Prozessadresse.
-    /// `FEXU_ALLOWED_ORIGINS` bleibt unverändert. Der Host-Header einer Anfrage wird nicht gelesen.
+    /// `FEXU_ALLOWED_ORIGINS` remains unchanged. Request Host headers are not read.
     pub fn apply_bound_address(&mut self, address: &str) {
         if alias_present("FEXU_ALLOWED_ORIGINS") {
             return;
@@ -157,7 +157,7 @@ impl AuthConfig {
     }
 
     /// Setzt die erlaubten Origins auf die Loopback-Namen des Ports.
-    /// Öffentliche Hosts werden nicht übernommen. `0.0.0.0` und `::` werden nur als Bind gelesen
+    /// Public hosts are not inferred. `0.0.0.0` and `::` are treated only as bind addresses
     /// und ergeben `127.0.0.1` sowie `localhost`, nie sich selbst als Origin.
     pub fn with_loopback_address(&mut self, address: &str) -> bool {
         let Some(origins) = loopback_http_origins(address) else {

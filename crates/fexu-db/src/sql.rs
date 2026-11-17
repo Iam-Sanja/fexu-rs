@@ -24,7 +24,7 @@ pub fn kind_of(backend: DatabaseBackend) -> Result<DatabaseKind, FexuError> {
     }
 }
 
-/// Spalte für DDL. CRUD und Migrationen nutzen dieselbe Typabbildung.
+/// DDL column. CRUD and migrations share this type mapping.
 #[derive(Debug, Clone, Copy)]
 pub struct PhysicalColumn<'a> {
     pub name: &'a str,
@@ -464,7 +464,7 @@ pub async fn query_admin_page(
     })
 }
 
-/// Eine begrenzte Abfrage je 100 Bezeichner. Tabelle und Spalte müssen registrierte Identifier sein.
+/// Bounded query in batches of 100 identifiers. Tables and columns must be registered identifiers.
 pub async fn query_labels(
     db: &DatabaseConnection,
     table: &str,
@@ -583,9 +583,13 @@ pub async fn date_buckets(
         .map_err(FexuError::database)?;
     let mut buckets = Vec::new();
     for row in rows.into_iter().take(100) {
-        let label = row
-            .try_get::<String>("", "bucket")
-            .map_err(FexuError::database)?;
+        let Some(label) = row
+            .try_get::<Option<String>>("", "bucket")
+            .map_err(FexuError::database)?
+            .filter(|label| !label.is_empty())
+        else {
+            continue;
+        };
         let count = row
             .try_get::<i64>("", "bucket_count")
             .or_else(|_| row.try_get::<i32>("", "bucket_count").map(i64::from))

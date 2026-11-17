@@ -25,7 +25,7 @@ pub fn parse_time(value: &str) -> Result<NaiveTime, &'static str> {
         .map_err(|_| "validation.time")
 }
 
-/// Nur UTC. Andere Offsets werden abgelehnt, nicht umgerechnet.
+/// UTC only. Other offsets are rejected rather than converted.
 pub fn parse_datetime_utc(value: &str) -> Result<DateTime<Utc>, &'static str> {
     if value.is_empty() {
         return Err("validation.required");
@@ -37,7 +37,7 @@ pub fn parse_datetime_utc(value: &str) -> Result<DateTime<Utc>, &'static str> {
     Ok(parsed.with_timezone(&Utc))
 }
 
-/// `datetime-local` ohne Zeitzone. Der Wert gilt als UTC, weil das Feld das ausdrücklich sagt.
+/// Timezone-free `datetime-local`. Its value is treated as UTC by explicit field contract.
 pub fn parse_datetime_local(value: &str) -> Result<DateTime<Utc>, &'static str> {
     if value.is_empty() {
         return Err("validation.required");

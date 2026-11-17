@@ -1,4 +1,4 @@
-//! Dateien liegen unter `{root}/{owner}/{id}`. Der Client-Dateiname wird nie zum Pfad.
+//! Files reside under `{root}/{owner}/{id}`. Client filenames never become paths.
 
 use crate::Storage;
 use async_trait::async_trait;
@@ -86,7 +86,7 @@ impl LocalStorage {
         })
     }
 
-    /// `max_files` oder `max_owner_bytes` mit 0 hebt diese Grenze auf. Die Dateigrenze bleibt.
+    /// Setting `max_files` or `max_owner_bytes` to 0 disables that limit; the file-size limit remains.
     pub fn with_quota(mut self, max_files: u32, max_owner_bytes: u64) -> Self {
         self.max_files = max_files;
         self.max_owner_bytes = max_owner_bytes;

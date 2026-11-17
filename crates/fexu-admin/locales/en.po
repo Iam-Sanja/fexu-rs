@@ -1,0 +1,1258 @@
+msgid ""
+msgstr ""
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Language: en\n"
+
+msgctxt "login"
+msgid "Sign in"
+msgstr "Sign in"
+
+msgctxt "email"
+msgid "Email"
+msgstr "Email"
+
+msgctxt "password"
+msgid "Password"
+msgstr "Password"
+
+msgctxt "invalid_credentials"
+msgid "Invalid email or password."
+msgstr "Invalid email or password."
+
+msgctxt "rate_limited"
+msgid "Too many attempts. Try again later."
+msgstr "Too many attempts. Try again later."
+
+msgctxt "csrf"
+msgid "The security check failed."
+msgstr "The security check failed."
+
+msgctxt "dashboard"
+msgid "Dashboards"
+msgstr "Dashboards"
+
+msgctxt "dashboards"
+msgid "Dashboards"
+msgstr "Dashboards"
+
+msgctxt "general"
+msgid "General"
+msgstr "General"
+
+msgctxt "board_config"
+msgid "Configuration"
+msgstr "Configuration"
+
+msgctxt "superuser_role"
+msgid "Admin"
+msgstr "Admin"
+
+msgctxt "staff_role"
+msgid "Staff"
+msgstr "Staff"
+
+msgctxt "welcome"
+msgid "Welcome"
+msgstr "Welcome"
+
+msgctxt "models"
+msgid "Models"
+msgstr "Models"
+
+msgctxt "users"
+msgid "Users"
+msgstr "Users"
+
+msgctxt "roles"
+msgid "Roles"
+msgstr "Roles"
+
+msgctxt "permissions"
+msgid "Permissions"
+msgstr "Permissions"
+
+msgctxt "directory"
+msgid "Directory"
+msgstr "Directory"
+
+msgctxt "logout"
+msgid "Sign out"
+msgstr "Sign out"
+
+msgctxt "account"
+msgid "Account"
+msgstr "Account"
+
+msgctxt "settings"
+msgid "Settings"
+msgstr "Settings"
+
+msgctxt "set_password"
+msgid "Set a new password"
+msgstr "Set a new password"
+
+msgctxt "account_menu"
+msgid "Account menu"
+msgstr "Account menu"
+
+msgctxt "account_record"
+msgid "Your user record"
+msgstr "Your user record"
+
+msgctxt "account_hint"
+msgid "Language and appearance apply to this admin. More personal settings will live on this page."
+msgstr "Language and appearance apply to this admin. More personal settings will live on this page."
+
+msgctxt "search"
+msgid "Search"
+msgstr "Search"
+
+msgctxt "search_title"
+msgid "Search"
+msgstr "Search"
+
+msgctxt "search_admin"
+msgid "Search pages and records"
+msgstr "Search pages and records"
+
+msgctxt "search_prompt"
+msgid "Enter a search term."
+msgstr "Enter a search term."
+
+msgctxt "search_pages"
+msgid "Pages"
+msgstr "Pages"
+
+msgctxt "theme_toggle"
+msgid "Switch appearance"
+msgstr "Switch appearance"
+
+msgctxt "filter"
+msgid "Filter"
+msgstr "Filter"
+
+msgctxt "filter_panel"
+msgid "Filter"
+msgstr "Filter"
+
+msgctxt "filter_by"
+msgid "By"
+msgstr "By"
+
+msgctxt "save"
+msgid "Save"
+msgstr "Save"
+
+msgctxt "save_continue"
+msgid "Save and continue editing"
+msgstr "Save and continue editing"
+
+msgctxt "save_add"
+msgid "Save and add another"
+msgstr "Save and add another"
+
+msgctxt "pick_more"
+msgid "Search further"
+msgstr "Search further"
+
+msgctxt "lookup_truncated"
+msgid "The list shows the first 100 matches. Use search for the rest."
+msgstr "The list shows the first 100 matches. Use search for the rest."
+
+msgctxt "pick_heading"
+msgid "Choose a record"
+msgstr "Choose a record"
+
+msgctxt "pick_empty"
+msgid "No matching record."
+msgstr "No matching record."
+
+msgctxt "pick_back"
+msgid "Back to the form"
+msgstr "Back to the form"
+
+msgctxt "invalid_relation"
+msgid "Choose a visible record."
+msgstr "Choose a visible record."
+
+msgctxt "form_errors"
+msgid "Correct the marked fields."
+msgstr "Correct the marked fields."
+
+msgctxt "m2m_hint"
+msgid "Several existing records can be selected. An empty selection removes the visible links."
+msgstr "Several existing records can be selected. An empty selection removes the visible links."
+
+msgctxt "m2m_empty"
+msgid "No records are available to select."
+msgstr "No records are available to select."
+
+msgctxt "m2m_truncated"
+msgid "The list shows the first 100 visible records. Already selected visible records stay listed."
+msgstr "The list shows the first 100 visible records. Already selected visible records stay listed."
+
+msgctxt "m2m_blocked"
+msgid "This account cannot read the related records."
+msgstr "This account cannot read the related records."
+
+msgctxt "m2m_invalid"
+msgid "The selection contains an invalid or hidden record."
+msgstr "The selection contains an invalid or hidden record."
+
+msgctxt "m2m_size"
+msgid "At most 1000 links can be saved."
+msgstr "At most 1000 links can be saved."
+
+msgctxt "cancel"
+msgid "Cancel"
+msgstr "Cancel"
+
+msgctxt "create"
+msgid "Create"
+msgstr "Create"
+
+msgctxt "edit"
+msgid "Edit"
+msgstr "Edit"
+
+msgctxt "delete"
+msgid "Delete"
+msgstr "Delete"
+
+msgctxt "back"
+msgid "Back"
+msgstr "Back"
+
+msgctxt "detail"
+msgid "Details"
+msgstr "Details"
+
+msgctxt "empty"
+msgid "No records."
+msgstr "No records."
+
+msgctxt "no_models"
+msgid "No models are available for this account."
+msgstr "No models are available for this account."
+
+msgctxt "forbidden"
+msgid "This action is not allowed."
+msgstr "This action is not allowed."
+
+msgctxt "not_found"
+msgid "The record was not found."
+msgstr "The record was not found."
+
+msgctxt "staff_required"
+msgid "Administration requires staff access."
+msgstr "Administration requires staff access."
+
+msgctxt "confirm_delete"
+msgid "This record will be deleted permanently."
+msgstr "This record will be deleted permanently."
+
+msgctxt "notice_created"
+msgid "The record was created."
+msgstr "The record was created."
+
+msgctxt "notice_saved"
+msgid "The changes were saved."
+msgstr "The changes were saved."
+
+msgctxt "notice_deleted"
+msgid "The record was deleted."
+msgstr "The record was deleted."
+
+msgctxt "notice_updated"
+msgid "The change was saved."
+msgstr "The change was saved."
+
+msgctxt "yes"
+msgid "Yes"
+msgstr "Yes"
+
+msgctxt "no"
+msgid "No"
+msgstr "No"
+
+msgctxt "active"
+msgid "Active"
+msgstr "Active"
+
+msgctxt "inactive"
+msgid "Inactive"
+msgstr "Inactive"
+
+msgctxt "staff"
+msgid "Staff"
+msgstr "Staff"
+
+msgctxt "no_staff"
+msgid "Not staff"
+msgstr "Not staff"
+
+msgctxt "superuser"
+msgid "Superuser"
+msgstr "Superuser"
+
+msgctxt "no_superuser"
+msgid "Not a superuser"
+msgstr "Not a superuser"
+
+msgctxt "actions"
+msgid "Actions"
+msgstr "Actions"
+
+msgctxt "image"
+msgid "Image"
+msgstr "Image"
+
+msgctxt "required"
+msgid "Required"
+msgstr "Required"
+
+msgctxt "optional"
+msgid "Optional"
+msgstr "Optional"
+
+msgctxt "readonly"
+msgid "Read only"
+msgstr "Read only"
+
+msgctxt "none"
+msgid "None"
+msgstr "None"
+
+msgctxt "total"
+msgid "Total"
+msgstr "Total"
+
+msgctxt "previous"
+msgid "Previous"
+msgstr "Previous"
+
+msgctxt "next"
+msgid "Next"
+msgstr "Next"
+
+msgctxt "page"
+msgid "Page"
+msgstr "Page"
+
+msgctxt "language"
+msgid "Language"
+msgstr "Language"
+
+msgctxt "theme"
+msgid "Theme"
+msgstr "Theme"
+
+msgctxt "light"
+msgid "Light"
+msgstr "Light"
+
+msgctxt "dark"
+msgid "Dark"
+msgstr "Dark"
+
+msgctxt "system"
+msgid "System"
+msgstr "System"
+
+msgctxt "apply"
+msgid "Apply"
+msgstr "Apply"
+
+msgctxt "assign"
+msgid "Assign"
+msgstr "Assign"
+
+msgctxt "revoke"
+msgid "Revoke"
+msgstr "Revoke"
+
+msgctxt "grant"
+msgid "Grant"
+msgstr "Grant"
+
+msgctxt "role"
+msgid "Role"
+msgstr "Role"
+
+msgctxt "add_role"
+msgid "Create role"
+msgstr "Create role"
+
+msgctxt "permission_code"
+msgid "Permission code"
+msgstr "Permission code"
+
+msgctxt "deactivate"
+msgid "Deactivate"
+msgstr "Deactivate"
+
+msgctxt "activate"
+msgid "Activate"
+msgstr "Activate"
+
+msgctxt "remove_staff"
+msgid "Remove staff"
+msgstr "Remove staff"
+
+msgctxt "make_staff"
+msgid "Grant staff"
+msgstr "Grant staff"
+
+msgctxt "blocked"
+msgid "Blocked"
+msgstr "Blocked"
+
+msgctxt "open"
+msgid "Open"
+msgstr "Open"
+
+msgctxt "new_record"
+msgid "New record"
+msgstr "New record"
+
+msgctxt "results"
+msgid "Results"
+msgstr "Results"
+
+msgctxt "skip"
+msgid "Skip to content"
+msgstr "Skip to content"
+
+msgctxt "navigation"
+msgid "Navigation"
+msgstr "Navigation"
+
+msgctxt "breadcrumb"
+msgid "Breadcrumb"
+msgstr "Breadcrumb"
+
+msgctxt "reset"
+msgid "Reset"
+msgstr "Reset"
+
+msgctxt "error"
+msgid "Error"
+msgstr "Error"
+
+msgctxt "sort_asc"
+msgid "ascending"
+msgstr "ascending"
+
+msgctxt "sort_desc"
+msgid "descending"
+msgstr "descending"
+
+msgctxt "hint_select"
+msgid "Choose an existing record."
+msgstr "Choose an existing record."
+
+msgctxt "hint_flags"
+msgid "Staff opens administration. Superuser does not replace staff."
+msgstr "Staff opens administration. Superuser does not replace staff."
+
+msgctxt "hint_role"
+msgid "Existing roles only. Create a new role on the roles page."
+msgstr "Existing roles only. Create a new role on the roles page."
+
+msgctxt "hint_role_name"
+msgid "Up to 80 characters. Spaces are allowed, for example Read only."
+msgstr "Up to 80 characters. Spaces are allowed, for example Read only."
+
+msgctxt "hint_permission"
+msgid "For each table, choose whether the role may create, read, update, or delete."
+msgstr "For each table, choose whether the role may create, read, update, or delete."
+
+msgctxt "name"
+msgid "Name"
+msgstr "Name"
+
+msgctxt "hint_name"
+msgid "One name. No separate first and last name."
+msgstr "One name. No separate first and last name."
+
+msgctxt "profile_heading"
+msgid "Your record"
+msgstr "Your record"
+
+msgctxt "password_current"
+msgid "Current password"
+msgstr "Current password"
+
+msgctxt "password_signout"
+msgid "A new password signs you out."
+msgstr "A new password signs you out."
+
+msgctxt "profile_invalid"
+msgid "The name or email is invalid."
+msgstr "The name or email is invalid."
+
+msgctxt "password_current_invalid"
+msgid "The current password is wrong."
+msgstr "The current password is wrong."
+
+msgctxt "appearance"
+msgid "Appearance"
+msgstr "Appearance"
+
+msgctxt "project"
+msgid "Project"
+msgstr "Project"
+
+msgctxt "project_hint"
+msgid "The browser shows the title, header, color, and icons. Currency and languages apply to the whole administration."
+msgstr "The browser shows the title, header, color, and icons. Currency and languages apply to the whole administration."
+
+msgctxt "site_title_label"
+msgid "Site title"
+msgstr "Site title"
+
+msgctxt "hint_site_title"
+msgid "Shown in the browser tab title."
+msgstr "Shown in the browser tab title."
+
+msgctxt "site_header_label"
+msgid "Header"
+msgstr "Header"
+
+msgctxt "hint_site_header"
+msgid "Shown at the top of the sidebar."
+msgstr "Shown at the top of the sidebar."
+
+msgctxt "app_name_label"
+msgid "Application"
+msgstr "Application"
+
+msgctxt "hint_app_name"
+msgid "Application name for the browser."
+msgstr "Application name for the browser."
+
+msgctxt "primary_color_label"
+msgid "Brand color"
+msgstr "Brand color"
+
+msgctxt "favicon_label"
+msgid "Favicon"
+msgstr "Favicon"
+
+msgctxt "apple_touch_label"
+msgid "Apple touch icon"
+msgstr "Apple touch icon"
+
+msgctxt "hint_icon"
+msgid "PNG, JPEG, GIF, WebP, or ICO. Without a new file the current icon stays."
+msgstr "PNG, JPEG, GIF, WebP, or ICO. Without a new file the current icon stays."
+
+msgctxt "icon_clear"
+msgid "Remove"
+msgstr "Remove"
+
+msgctxt "hint_image"
+msgid "PNG, JPEG, GIF, WebP, or ICO. Without a new file the current image stays."
+msgstr "PNG, JPEG, GIF, WebP, or ICO. Without a new file the current image stays."
+
+msgctxt "currency_label"
+msgid "Currency"
+msgstr "Currency"
+
+msgctxt "hint_currency"
+msgid "Three letters, for example EUR."
+msgstr "Three letters, for example EUR."
+
+msgctxt "project_locale_label"
+msgid "Default language"
+msgstr "Default language"
+
+msgctxt "project_fallback_label"
+msgid "Fallback language"
+msgstr "Fallback language"
+
+msgctxt "project_invalid"
+msgid "The project details are invalid."
+msgstr "The project details are invalid."
+
+msgctxt "roles_grant"
+msgid "Role assignment"
+msgstr "Role assignment"
+
+msgctxt "hint_role_grant"
+msgid "Only someone with this permission can assign and change roles. A superuser always can."
+msgstr "Only someone with this permission can assign and change roles. A superuser always can."
+
+msgctxt "action_create"
+msgid "Create"
+msgstr "Create"
+
+msgctxt "action_read"
+msgid "Read"
+msgstr "Read"
+
+msgctxt "action_update"
+msgid "Update"
+msgstr "Update"
+
+msgctxt "action_delete"
+msgid "Delete"
+msgstr "Delete"
+
+msgctxt "matrix_table"
+msgid "Table"
+msgstr "Table"
+
+msgctxt "confirm_check"
+msgid "I confirm this change."
+msgstr "I confirm this change."
+
+msgctxt "assign_heading"
+msgid "Assign role"
+msgstr "Assign role"
+
+msgctxt "no_roles"
+msgid "There is no role yet."
+msgstr "There is no role yet."
+
+msgctxt "existing_roles"
+msgid "Existing roles"
+msgstr "Existing roles"
+
+msgctxt "unknown_role"
+msgid "That role does not exist. Create it first."
+msgstr "That role does not exist. Create it first."
+
+msgctxt "choose"
+msgid "Choose"
+msgstr "Choose"
+
+msgctxt "add_user"
+msgid "Add user"
+msgstr "Add user"
+
+msgctxt "password_confirm"
+msgid "Confirm password"
+msgstr "Confirm password"
+
+msgctxt "password_rules"
+msgid "12 to 128 characters. The password is not shown."
+msgstr "12 to 128 characters. The password is not shown."
+
+msgctxt "password_heading"
+msgid "Set password"
+msgstr "Set password"
+
+msgctxt "password_mismatch"
+msgid "The passwords do not match."
+msgstr "The passwords do not match."
+
+msgctxt "confirm_required"
+msgid "This action requires confirmation."
+msgstr "This action requires confirmation."
+
+msgctxt "confirm_invalid"
+msgid "The confirmation is invalid."
+msgstr "The confirmation is invalid."
+
+msgctxt "missing_relation"
+msgid "Missing"
+msgstr "Missing"
+
+msgctxt "hidden_relation"
+msgid "Not visible"
+msgstr "Not visible"
+
+msgctxt "all"
+msgid "All"
+msgstr "All"
+
+msgctxt "view"
+msgid "View"
+msgstr "View"
+
+msgctxt "manage_roles"
+msgid "Roles"
+msgstr "Roles"
+
+msgctxt "email_taken"
+msgid "That email is already registered."
+msgstr "That email is already registered."
+
+msgctxt "password_invalid"
+msgid "The password must contain 12 to 128 characters."
+msgstr "The password must contain 12 to 128 characters."
+
+msgctxt "no_permissions"
+msgid "No permissions."
+msgstr "No permissions."
+
+msgctxt "user_saved"
+msgid "The user was saved."
+msgstr "The user was saved."
+
+msgctxt "confirm"
+msgid "Confirm"
+msgstr "Confirm"
+
+msgctxt "history"
+msgid "History"
+msgstr "History"
+
+msgctxt "history_all"
+msgid "Full history"
+msgstr "Full history"
+
+msgctxt "history_partial"
+msgid "Only changes made through the admin. Direct repository writes and the auth CLI are absent."
+msgstr "Only changes made through the admin. Direct repository writes and the auth CLI are absent."
+
+msgctxt "history_limit"
+msgid "The latest 8 events."
+msgstr "The latest 8 events."
+
+msgctxt "history_more"
+msgid "More events are in the full history."
+msgstr "More events are in the full history."
+
+msgctxt "history_none"
+msgid "No entry is stored for this record yet."
+msgstr "No entry is stored for this record yet."
+
+msgctxt "audit_create"
+msgid "Created"
+msgstr "Created"
+
+msgctxt "audit_update"
+msgid "Updated"
+msgstr "Updated"
+
+msgctxt "audit_delete"
+msgid "Deleted"
+msgstr "Deleted"
+
+msgctxt "audit_bulk_update"
+msgid "Bulk update"
+msgstr "Bulk update"
+
+msgctxt "audit_bulk_delete"
+msgid "Bulk delete"
+msgstr "Bulk delete"
+
+msgctxt "audit_user_create"
+msgid "User created"
+msgstr "User created"
+
+msgctxt "audit_user_update"
+msgid "User updated"
+msgstr "User updated"
+
+msgctxt "audit_password_reset"
+msgid "Password reset"
+msgstr "Password reset"
+
+msgctxt "audit_role_assign"
+msgid "Role assigned"
+msgstr "Role assigned"
+
+msgctxt "audit_role_revoke"
+msgid "Role revoked"
+msgstr "Role revoked"
+
+msgctxt "audit_permission_grant"
+msgid "Permission granted"
+msgstr "Permission granted"
+
+msgctxt "audit_permission_revoke"
+msgid "Permission revoked"
+msgstr "Permission revoked"
+
+msgctxt "dashboard_hint"
+msgid "The lists are in the side navigation."
+msgstr "The lists are in the side navigation."
+
+msgctxt "dashboard_activity"
+msgid "Recent activity"
+msgstr "Recent activity"
+
+msgctxt "dashboard_activity_hint"
+msgid "These events come from the admin history. An account sees the events it is allowed to see."
+msgstr "These events come from the admin history. An account sees the events it is allowed to see."
+
+msgctxt "dashboard_activity_error"
+msgid "The activity could not be read."
+msgstr "The activity could not be read."
+
+msgctxt "dashboard_empty_activity"
+msgid "No activity yet."
+msgstr "No activity yet."
+
+msgctxt "dashboard_widgets"
+msgid "Figures"
+msgstr "Figures"
+
+msgctxt "board_new"
+msgid "New menu"
+msgstr "New menu"
+
+msgctxt "board_name"
+msgid "Name"
+msgstr "Name"
+
+msgctxt "board_create"
+msgid "Create menu"
+msgstr "Create menu"
+
+msgctxt "board_edit"
+msgid "Edit menu"
+msgstr "Edit menu"
+
+msgctxt "board_open"
+msgid "Open"
+msgstr "Open"
+
+msgctxt "board_delete"
+msgid "Delete menu"
+msgstr "Delete menu"
+
+msgctxt "board_add"
+msgid "Add block"
+msgstr "Add block"
+
+msgctxt "board_continue"
+msgid "Choose fields"
+msgstr "Choose fields"
+
+msgctxt "board_kind"
+msgid "Display"
+msgstr "Display"
+
+msgctxt "board_table"
+msgid "Table"
+msgstr "Table"
+
+msgctxt "board_bar"
+msgid "Bar"
+msgstr "Bar"
+
+msgctxt "board_line"
+msgid "Line"
+msgstr "Line"
+
+msgctxt "board_pie"
+msgid "Donut"
+msgstr "Donut"
+
+msgctxt "board_stack"
+msgid "Stacked"
+msgstr "Stacked"
+
+msgctxt "board_tree"
+msgid "Treemap"
+msgstr "Treemap"
+
+msgctxt "board_card"
+msgid "Card"
+msgstr "Card"
+
+msgctxt "board_home"
+msgid "Open at start"
+msgstr "Open at start"
+
+msgctxt "board_start"
+msgid "Start view"
+msgstr "Start view"
+
+msgctxt "board_apply"
+msgid "Apply"
+msgstr "Apply"
+
+msgctxt "board_preview"
+msgid "Preview"
+msgstr "Preview"
+
+msgctxt "board_preview_empty"
+msgid "The preview shows the block once the display is set."
+msgstr "The preview shows the block once the display is set."
+
+msgctxt "board_home_on"
+msgid "This menu opens at start."
+msgstr "This menu opens at start."
+
+msgctxt "board_series"
+msgid "Series"
+msgstr "Series"
+
+msgctxt "board_trend"
+msgid "Trend"
+msgstr "Trend"
+
+msgctxt "board_layout_hint"
+msgid "The grid is the view. Move sets the block on a free spot, Size changes the cells. Both apply at once."
+msgstr "The grid is the view. Move sets the block on a free spot, Size changes the cells. Both apply at once."
+
+msgctxt "board_drag"
+msgid "Move"
+msgstr "Move"
+
+msgctxt "board_resize"
+msgid "Size"
+msgstr "Size"
+
+msgctxt "board_place"
+msgid "Place"
+msgstr "Place"
+
+msgctxt "board_column"
+msgid "Column"
+msgstr "Column"
+
+msgctxt "board_row"
+msgid "Row"
+msgstr "Row"
+
+msgctxt "board_width"
+msgid "Width"
+msgstr "Width"
+
+msgctxt "board_height"
+msgid "Height"
+msgstr "Height"
+
+msgctxt "board_place_busy"
+msgid "That spot is already taken."
+msgstr "That spot is already taken."
+
+msgctxt "board_span"
+msgid "Width"
+msgstr "Width"
+
+msgctxt "board_span_half"
+msgid "Half row"
+msgstr "Half row"
+
+msgctxt "board_span_full"
+msgid "Full row"
+msgstr "Full row"
+
+msgctxt "board_move_up"
+msgid "Move up"
+msgstr "Move up"
+
+msgctxt "board_move_down"
+msgid "Move down"
+msgstr "Move down"
+
+msgctxt "board_widget_edit"
+msgid "Edit"
+msgstr "Edit"
+
+msgctxt "board_model"
+msgid "Model"
+msgstr "Model"
+
+msgctxt "board_fields"
+msgid "Fields"
+msgstr "Fields"
+
+msgctxt "board_group"
+msgid "Grouping"
+msgstr "Grouping"
+
+msgctxt "board_group_none"
+msgid "None"
+msgstr "None"
+
+msgctxt "board_measure"
+msgid "Summed value"
+msgstr "Summed value"
+
+msgctxt "board_title"
+msgid "Title"
+msgstr "Title"
+
+msgctxt "board_save"
+msgid "Save block"
+msgstr "Save block"
+
+msgctxt "board_remove"
+msgid "Remove block"
+msgstr "Remove block"
+
+msgctxt "board_empty"
+msgid "This menu has no block yet."
+msgstr "This menu has no block yet."
+
+msgctxt "board_none"
+msgid "No menu yet."
+msgstr "No menu yet."
+
+msgctxt "board_hint"
+msgid "A table shows the chosen fields. A chart groups by one field and counts the records or sums a number. A line needs a date field."
+msgstr "A table shows the chosen fields. A chart groups by one field and counts the records or sums a number. A line needs a date field."
+
+msgctxt "board_chart_limit"
+msgid "The chart shows the 12 largest groups."
+msgstr "The chart shows the 12 largest groups."
+
+msgctxt "board_line_limit"
+msgid "The line shows the 12 latest groups."
+msgstr "The line shows the 12 latest groups."
+
+msgctxt "board_locked"
+msgid "This model is locked for this account."
+msgstr "This model is locked for this account."
+
+msgctxt "board_missing"
+msgid "The model or a field is no longer available."
+msgstr "The model or a field is no longer available."
+
+msgctxt "board_read_error"
+msgid "The menus could not be read."
+msgstr "The menus could not be read."
+
+msgctxt "board_name_invalid"
+msgid "The name needs 1 to 48 characters."
+msgstr "The name needs 1 to 48 characters."
+
+msgctxt "board_title_invalid"
+msgid "The title needs 1 to 60 characters."
+msgstr "The title needs 1 to 60 characters."
+
+msgctxt "board_limit"
+msgid "At most 24 menus are possible."
+msgstr "At most 24 menus are possible."
+
+msgctxt "board_widget_limit"
+msgid "A menu has at most 12 blocks."
+msgstr "A menu has at most 12 blocks."
+
+msgctxt "board_fields_required"
+msgid "A table needs at least one field."
+msgstr "A table needs at least one field."
+
+msgctxt "board_group_required"
+msgid "A chart needs a grouping field."
+msgstr "A chart needs a grouping field."
+
+msgctxt "board_line_date"
+msgid "A line needs a date field."
+msgstr "A line needs a date field."
+
+msgctxt "board_bad_kind"
+msgid "This display does not exist."
+msgstr "This display does not exist."
+
+msgctxt "board_bad_model"
+msgid "This model is not available."
+msgstr "This model is not available."
+
+msgctxt "dashboard_widgets_empty"
+msgid "Tables and charts are created under Dashboards in Configuration. There you choose the model, fields and display."
+msgstr "Tables and charts are created under Dashboards in Configuration. There you choose the model, fields and display."
+
+msgctxt "open_list"
+msgid "Open list"
+msgstr "Open list"
+
+msgctxt "empty_filtered"
+msgid "No records match this search or these filters."
+msgstr "No records match this search or these filters."
+
+msgctxt "bulk_page"
+msgid "Entire page"
+msgstr "Entire page"
+
+msgctxt "bulk_action"
+msgid "Action"
+msgstr "Action"
+
+msgctxt "bulk_run"
+msgid "Run"
+msgstr "Run"
+
+msgctxt "select"
+msgid "Select"
+msgstr "Select"
+
+msgctxt "bulk_confirm"
+msgid "Confirm selection"
+msgstr "Confirm selection"
+
+msgctxt "bulk_count"
+msgid "Affected records"
+msgstr "Affected records"
+
+msgctxt "bulk_empty"
+msgid "No records selected."
+msgstr "No records selected."
+
+msgctxt "bulk_denied"
+msgid "The selection contains a record that is not allowed. Nothing was changed."
+msgstr "The selection contains a record that is not allowed. Nothing was changed."
+
+msgctxt "bulk_failed"
+msgid "The action was rolled back. Nothing was changed."
+msgstr "The action was rolled back. Nothing was changed."
+
+msgctxt "inline_add"
+msgid "Add"
+msgstr "Add"
+
+msgctxt "inline_empty"
+msgid "No related records."
+msgstr "No related records."
+
+msgctxt "inline_open"
+msgid "Open"
+msgstr "Open"
+
+msgctxt "inline_another"
+msgid "Add another row"
+msgstr "Add another row"
+
+msgctxt "inline_remove"
+msgid "Remove"
+msgstr "Remove"
+
+msgctxt "inline_marked"
+msgid "Removed when you save."
+msgstr "Removed when you save."
+
+msgctxt "inline_conflict"
+msgid "Another change updated this record. Nothing was saved."
+msgstr "Another change updated this record. Nothing was saved."
+
+msgctxt "inline_failed"
+msgid "The change was rolled back. Nothing was saved."
+msgstr "The change was rolled back. Nothing was saved."
+
+msgctxt "inline_limit"
+msgid "The number of rows is invalid."
+msgstr "The number of rows is invalid."
+
+msgctxt "inline_foreign"
+msgid "The row does not belong to this record."
+msgstr "The row does not belong to this record."
+
+msgctxt "audit_empty"
+msgid "No entries."
+msgstr "No entries."
+
+msgctxt "when"
+msgid "When"
+msgstr "When"
+
+msgctxt "actor"
+msgid "Actor"
+msgstr "Actor"
+
+msgctxt "outcome"
+msgid "Outcome"
+msgstr "Outcome"
+
+msgctxt "details"
+msgid "Details"
+msgstr "Details"
+
+msgctxt "record"
+msgid "Record"
+msgstr "Record"
+
+msgctxt "succeeded"
+msgid "Succeeded"
+msgstr "Succeeded"
+
+msgctxt "denied"
+msgid "Denied"
+msgstr "Denied"
+
+msgctxt "date_hierarchy"
+msgid "Date"
+msgstr "Date"
+
+msgctxt "utc_hint"
+msgid "UTC. The value is not converted to a local time zone."
+msgstr "UTC. The value is not converted to a local time zone."
+
+msgctxt "validation_date"
+msgid "The date is invalid."
+msgstr "The date is invalid."
+
+msgctxt "validation_time"
+msgid "The time is invalid."
+msgstr "The time is invalid."
+
+msgctxt "validation_datetime"
+msgid "The timestamp is invalid. UTC is required."
+msgstr "The timestamp is invalid. UTC is required."
+
+msgctxt "month_1"
+msgid "January"
+msgstr "January"
+
+msgctxt "month_2"
+msgid "February"
+msgstr "February"
+
+msgctxt "month_3"
+msgid "March"
+msgstr "March"
+
+msgctxt "month_4"
+msgid "April"
+msgstr "April"
+
+msgctxt "month_5"
+msgid "May"
+msgstr "May"
+
+msgctxt "month_6"
+msgid "June"
+msgstr "June"
+
+msgctxt "month_7"
+msgid "July"
+msgstr "July"
+
+msgctxt "month_8"
+msgid "August"
+msgstr "August"
+
+msgctxt "month_9"
+msgid "September"
+msgstr "September"
+
+msgctxt "month_10"
+msgid "October"
+msgstr "October"
+
+msgctxt "month_11"
+msgid "November"
+msgstr "November"
+
+msgctxt "month_12"
+msgid "December"
+msgstr "December"
+
+msgctxt "applications"
+msgid "Applications"
+msgstr "Applications"
+
+msgctxt "access"
+msgid "Users and access"
+msgstr "Users and access"
+
+msgctxt "time_utc"
+msgid "Times are shown in UTC. Stored values stay unchanged."
+msgstr "Times are shown in UTC. Stored values stay unchanged."
+
+msgctxt "time_unavailable"
+msgid "Time unavailable"
+msgstr "Time unavailable"
+
+msgctxt "menu"
+msgid "Menu"
+msgstr "Menu"
+

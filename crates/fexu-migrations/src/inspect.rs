@@ -1,6 +1,6 @@
 //! Read-only migration diagnostics for authentication and app directories.
 //!
-//! Diese Funktionen legen keine Historientabellen an und wenden keine Migration an.
+//! These functions neither create migration history tables nor apply migrations.
 
 use crate::error::MigrationError;
 use crate::history::{self, AUTH_HISTORY_TABLE, HISTORY_TABLE};

@@ -1,8 +1,8 @@
-//! Beziehungsauswahl und Mengenänderungen auf der bestehenden Abfrage-API.
+//! Relation selection and bulk updates using the existing query API.
 //!
-//! Fremdschlüssel und eindeutige Eins-zu-eins-Spalten nutzen dieselbe seitenweise
-//! Suche. Many-to-Many schreibt nur die Verbindungstabelle und nur in einer
-//! Transaktion. Ein Objekt-Scope bleibt ein Parameter des Aufrufers.
+//! Foreign keys and unique one-to-one columns use the same paginated
+//! lookup. Many-to-many writes only to the join table, within a single
+//! transaction. The caller supplies the object scope.
 
 use fexu_core::{ColumnKind, ColumnSpec, FexuError, QueryScope};
 use fexu_db::driver::sea_query::{Alias, Expr, PostgresQueryBuilder, Query, SqliteQueryBuilder};
@@ -37,9 +37,9 @@ pub struct LookupPage {
     pub has_more: bool,
 }
 
-/// Sucht Anzeigewerte in `label`. `page_size` bleibt bei höchstens 100.
+/// Searches display values in `label`. `page_size` is capped at 100.
 ///
-/// `scope` kommt aus der Objektregel. [`QueryScope::None`] liefert keine Zeile.
+/// `scope` comes from the object policy. [`QueryScope::None`] returns no rows.
 #[allow(clippy::too_many_arguments)]
 pub async fn lookup_page(
     db: &impl ConnectionTrait,
@@ -98,7 +98,7 @@ pub async fn lookup_page(
     })
 }
 
-/// Prüft wiederholte Formularwerte. Leer ist eine gültige Auswahl.
+/// Validates repeated form values. An empty selection is valid.
 pub fn posted_members(values: &[String]) -> Result<Vec<Uuid>, &'static str> {
     if values.len() > 1000 {
         return Err("admin.relation.size");
@@ -114,10 +114,10 @@ pub fn posted_members(values: &[String]) -> Result<Vec<Uuid>, &'static str> {
     Ok(ids)
 }
 
-/// Behält unsichtbare Verbindungen und übernimmt nur angeforderte Ids aus `visible`.
+/// Retains hidden links and accepts requested IDs only from `visible`.
 ///
-/// Eine leere Anfrage entfernt die sichtbaren Verbindungen. Ids außerhalb von
-/// `visible` werden abgelehnt und nicht geschrieben.
+/// An empty request removes visible links. IDs outside
+/// `visible` are rejected without writing.
 pub fn scoped_membership(
     current: &[Uuid],
     visible: &[Uuid],
@@ -147,7 +147,7 @@ pub fn scoped_membership(
     Ok(next)
 }
 
-/// Liest die Kind-Ids einer Verbindungstabelle. Die Abfrage ist gebunden.
+/// Reads child IDs from a join table using a parameterized query.
 pub async fn current_members(
     db: &impl ConnectionTrait,
     link: ManyToMany,
@@ -188,7 +188,7 @@ pub async fn current_members(
     Ok(ids)
 }
 
-/// Lehnt eine Sammelauswahl ab, sobald eine Id außerhalb der sichtbaren Menge liegt.
+/// Rejects a bulk selection if any ID falls outside the visible set.
 pub fn bulk_targets(visible: &[Uuid], requested: &[Uuid]) -> Result<Vec<Uuid>, &'static str> {
     if requested.len() > 1000 {
         return Err("admin.bulk.size");
@@ -203,10 +203,21 @@ pub fn bulk_targets(visible: &[Uuid], requested: &[Uuid]) -> Result<Vec<Uuid>, &
     Ok(chosen)
 }
 
-/// Ersetzt die Kindzeilen eines Elternteils. Die vorherigen Verbindungen bleiben,
-/// wenn ein Schreibvorgang fehlschlägt.
+/// Replaces a parent's child links. The previous links remain intact
+/// if the write fails.
 pub async fn replace_links(
     db: &DatabaseConnection,
+    link: ManyToMany,
+    parent: Uuid,
+    children: &[Uuid],
+) -> Result<(), FexuError> {
+    let tx = db.begin().await.map_err(FexuError::database)?;
+    let result = replace_links_in(&tx, link, parent, children).await;
+    fexu_db::conclude(tx, result, FexuError::database).await
+}
+
+pub(crate) async fn replace_links_in(
+    db: &impl ConnectionTrait,
     link: ManyToMany,
     parent: Uuid,
     children: &[Uuid],
@@ -229,12 +240,11 @@ pub async fn replace_links(
         }
         unique.push(*child);
     }
-    let tx = db.begin().await.map_err(FexuError::database)?;
     let mut delete = Query::delete();
     delete.from_table(Alias::new(link.join_table)).and_where(
         Expr::col(Alias::new(link.parent_column)).eq(Value::Uuid(Some(Box::new(parent)))),
     );
-    tx.execute(statement(&tx, &delete)?)
+    db.execute(statement(db, &delete)?)
         .await
         .map_err(FexuError::database)?;
     for child in unique {
@@ -249,11 +259,10 @@ pub async fn replace_links(
                 Value::Uuid(Some(Box::new(parent))).into(),
                 Value::Uuid(Some(Box::new(child))).into(),
             ]);
-        tx.execute(statement(&tx, &insert)?)
+        db.execute(statement(db, &insert)?)
             .await
             .map_err(FexuError::database)?;
     }
-    tx.commit().await.map_err(FexuError::database)?;
     Ok(())
 }
 
