@@ -20,7 +20,7 @@ The local backend performs brief blocking `std::fs` operations. This is a known 
 
 ## Data flow
 
-`save` checks size and content, creates a UUID and writes `{root}/{owner}/{id}.partial`. Only then will the file be moved exclusively to `{id}`. Metadata is next to it in `{id}.json`. An error deletes the incomplete file. There is no new SQL migration. The existing checksums remain valid.
+`save` checks size and content, creates a UUID and writes `{root}/{owner}/{id}.partial`. Only then will the file be moved exclusively to `{id}`. Metadata is next to it in `{id}.json`. If any step fails, the partial file, the data file and the sidecar are removed. `read` returns the bytes only when their length matches `size`. A stored `sha256` must match too. An older sidecar without `sha256` stays readable when the length still matches. There is no new SQL migration. The existing checksums remain valid.
 
 ## Configuration
 
@@ -35,7 +35,7 @@ max_upload_size_mb = 10
 
 ## Security
 
-Paths are canonicalized and must stay inside the owner’s directory. A symlinked owner directory is refused, and a symlinked file is not opened. Cleanup unlinks those symlinks without deleting their targets. `create_new` prevents silent overwrites. The original filename is sanitized to ASCII letters, digits, periods, hyphens and underscores. A name that is only dots is rejected. When the name has an extension, it must match the detected media type. HTML, SVG, scripts, `MZ` and `ELF` are rejected as text uploads. Requests from another owner return 404. Downloads use `Content-Disposition: attachment`, `application/octet-stream`, `nosniff` and `Content-Security-Policy: sandbox; default-src 'none'`. `save_until` sets an expiry. `cleanup_orphans` removes partial files, mismatched sidecars and expired files without following symlinks. Quotas are per process. Signed URLs and the S3 plan are described in [storage-remote.md](storage-remote.md).
+Paths are canonicalized and must stay inside the owner’s directory. A symlinked owner directory is refused, and a symlinked file is not opened. Cleanup unlinks those symlinks without deleting their targets. `create_new` prevents silent overwrites. The original filename is sanitized to ASCII letters, digits, periods, hyphens and underscores before it is stored and again when the download header is built. A name that is only dots is rejected. Quotes and line breaks cannot add a second HTTP header. When the name has an extension, it must match the type detected from the bytes. A client `Content-Type` is not accepted as proof. HTML, SVG, scripts, `MZ` and `ELF` are rejected as text uploads. `OwnerAccess` allows an action only when the actor is the owner. HTTP requests from another owner return 404. Downloads use `Content-Disposition: attachment`, `application/octet-stream`, `nosniff` and `Content-Security-Policy: sandbox; default-src 'none'`. `save_until` sets an expiry. `cleanup_orphans` removes partial files, mismatched sidecars and expired files without following symlinks. `purge_owner` removes one owner's directory. Quotas are per process. Signed URLs and the S3 plan are described in [storage-remote.md](storage-remote.md).
 
 ## Error cases
 
@@ -54,11 +54,13 @@ let (_meta, bytes) = storage.read(user_id, stored.id).await?;
 
 ## Image checks
 
-`detect_type` only recognizes a signature. `inspect_image` additionally checks PNG chunk framing or JPEG markers, the declared width and height, and `ImageLimits` (`max_bytes`, `max_width`, `max_height`, `max_pixels`). It does not inflate PNG pixels or decode a JPEG scan. A later decoder can still allocate more memory than the declared size. `LocalStorage::with_check` runs a `BeforeSave` hook before creating a file. `ImageHeaderCheck` uses `inspect_image`. Files that fail the hook are not written. Uploads without a hook keep the previous behavior.
+`detect_type` only recognizes a signature. A short `GIF89a` or a PNG prefix is enough for that function, and `save` still accepts those bytes when the allowlist contains the detected type. That is not image decoding. `inspect_image` additionally checks PNG chunk framing or JPEG markers, the declared width and height, and `ImageLimits` (`max_bytes`, `max_width`, `max_height`, `max_pixels`). It does not inflate PNG pixels or decode a JPEG scan, and it rejects GIF and PDF bytes. A later decoder can still allocate more memory than the declared size. `LocalStorage::with_check` runs a `BeforeSave` hook before creating a file. `ImageHeaderCheck` uses `inspect_image`. Files that fail the hook are not written. Uploads without a hook keep the signature check.
 
 ## Limitations
 
-S3 has no network client. See [storage-remote.md](storage-remote.md). Malware scanning is missing. Content recognition does not replace a virus scanner. Header checks do not decode image pixels. Metadata is Sidecar JSON, not a database table. `StoredFile` accepts older sidecars that omit `created_at`, `expires_at` and `sha256`.
+S3 has no network client. See [storage-remote.md](storage-remote.md). Malware scanning is missing. Content recognition does not replace a virus scanner. Header checks do not decode image pixels. A mismatched `sha256` or length makes `read` return `Failed` and leaves the file on disk. Metadata is Sidecar JSON, not a database table. `StoredFile` accepts older sidecars that omit `created_at`, `expires_at` and `sha256`.
+
+Account close and admin record deletion do not call `purge_owner` or `delete`. Auth does not depend on this crate. A later change in forms or admin has to delete the owner's files when a user or record is removed, and image fields that need a container check have to pass `ImageHeaderCheck`. This crate does not mount that hook for them. `fexu-forms::store_upload` can still store a PNG signature prefix.
 
 ## Extension
 

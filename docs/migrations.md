@@ -110,7 +110,7 @@ The same schemas shall be considered as unchanged even if only the column order 
 | Add a foreign key on an existing column | `add_foreign_key` | Executed after existing values are checked. SQLite rebuilds the table; PostgreSQL uses `ADD CONSTRAINT`. Invalid values roll the migration back. |
 | Remove a foreign key or change its delete rule | `drop_foreign_key` | Blocked; no file is written. |
 
-`migrate make` does not write a file when renaming is suspected. The message contains “not renaming” and refers to `rename-column` or `rename-table`.
+`migrate make` does not write a file when a removed name and a new name could be a rename. The message says “not interpreted as a rename” and refers to `rename-column` or `rename-table`. Similar names are never paired automatically. A declared rename that leaves more than one name changed is rejected as ambiguous and writes no file.
 
 ## 4.1 Explicit renaming
 
@@ -132,7 +132,17 @@ ALTER TABLE "products" RENAME COLUMN "name" TO "title"
 ALTER TABLE "products" RENAME TO "items"
 ```
 
-A renaming does not copy the table. If a unique index or a secondary index is attached to the renamed column or table, follow `DROP INDEX` and `CREATE INDEX` with the new deterministic name. Foreign key definitions follow the column renaming of the dialect. Your deletion rule is not changed. An existing index, trigger, view or foreign key blocks a later table conversion.
+A renaming does not copy the table and does not rewrite stored values. If a unique index or a secondary index is attached to the renamed column or table, follow `DROP INDEX` and `CREATE INDEX` with the new deterministic name. Foreign key definitions follow the column renaming of the dialect. The delete rule is not changed. An existing index, trigger, view or foreign key blocks a later table conversion.
+
+Identifiers are checked again immediately before any statement runs. A name that is not a letter or underscore followed by letters, digits, and underscores is rejected, and the error does not repeat a name that contains quotes or other SQL text. A rename whose old and new names are equal is rejected. No migration file is written and no statement runs.
+
+Changing a Boolean default, or removing it, does not rewrite existing rows. A later insert uses the new default. After the default is removed, a `NOT NULL` column without a value fails the insert. Adding or dropping a secondary index keeps every row. A new unique index is not rewritten when existing values collide: the statement fails, the transaction rolls back, and no history row is stored.
+
+`ALTER COLUMN` accepts a Boolean default or nullability change, `string` ↔ `i64`, and `string` → `choice` only when the existing values already fit. Other type changes, including decimal, JSON, and choice rewrites, are refused. There is no automatic cast and no replacement value. Dropping a table or column, and reverting an added column, requires `--allow-destructive` because those steps discard data and `down` cannot restore the discarded rows. Planning reads the catalog and executes no schema SQL. Checksums of applied files stay unchanged, and drift does not write a baseline or reset the schema.
+
+SQLite applies a default or nullability change by rebuilding the table and copying each stored value. `PRAGMA foreign_keys` is turned off only for that rebuild and turned back on before the connection returns to the pool. If that restore fails after `COMMIT`, the migration and its history row stay saved. The error says so, and the connection is closed instead of being reused with enforcement off. PostgreSQL uses `SET DEFAULT`, `DROP DEFAULT`, and `SET/DROP NOT NULL` and does not update existing values. Both dialects use the same `ALTER TABLE ... RENAME` statement for an explicit rename. PostgreSQL can add a foreign key with `ADD CONSTRAINT`; SQLite rebuilds the table after checking the existing values. A unique violation on PostgreSQL reports a duplicate key; SQLite reports `UNIQUE constraint failed`. In both cases the migration history is unchanged.
+
+`crates/fexu-migrations/tests/schema_evolution.rs` covers these cases on a temporary SQLite file. The same rename, default, and duplicate-unique checks run on PostgreSQL only through `DisposablePostgres`, which creates and drops `fexu_test_` plus 32 hexadecimal characters. That test is ignored unless `DATABASE_URL` points at an approved admin database. Issue #83 stays open: older migration snapshots are not yet part of CI, and a down migration still cannot restore rows removed by an approved destructive operation.
 
 A file not yet applied may be edited. Thereafter:
 
@@ -167,7 +177,7 @@ Table `_fexu_migrations`:
 
 The row is written in the same transaction as the schema change. If the migration fails, there is neither the schema change nor the history entry. There is no stored error status. An applied ID is not executed again. A missing file or a different checksum stops `migrate up`.
 
-A history entry does not guarantee that no one has changed the schema from the outside afterwards. `fexu migrate status` compares the history with the files and the model snapshot. `fexu migrate plan` additionally reads the live SQLite or PostgreSQL catalog and compares it with the last applied migration target. The plan opens a read-only URL when the CLI can make one, and the library function itself does not create or alter objects.
+A history entry does not guarantee that no one has changed the schema from the outside afterwards. `fexu migrate status` compares the history with the files and the model snapshot. `fexu migrate plan` additionally reads the live SQLite or PostgreSQL catalog and compares it with the last applied migration target. Without `--migrations-dir`, the same read-only command also reports declared app dependency conflicts and live drift for the embedded auth and job snapshots. Pending framework IDs are printed as `Auth:<id>` and `Job:<id>`. The plan opens a read-only URL when the CLI can make one, and the library function itself does not create or alter objects. The fulfilled and still open parts of that contract are listed in [migration-diagnostics.md](migration-diagnostics.md).
 
 ## 7. CLI
 
@@ -191,7 +201,7 @@ The installed binary is called `fexu`. `make` does not create a file without a s
 cargo run -p fexu-cli -- migrate up --allow-destructive
 ```
 
-`status` shows backend, auth migrations and app migrations separately, applied or pending, checksums and conflicts. If the model schema could be loaded, it indicates whether it fits the last app migration target. Pending migrations leave the command successful. Checksum, unknown IDs and sequence errors terminate it with Exitcode 1. The diagnosis opens SQLite with `mode=ro` and does not create a missing file. The database URL is not output. `--database-url` and `--migrations-dir` overwrite project and environment. Without URL, `DATABASE_URL` applies, otherwise `sqlite://db.sqlite3?mode=rwc` in the working directory. The joint report is published in [migration-diagnostics.md](migration-diagnostics.md).
+`status` shows backend, auth migrations and app migrations separately, applied or pending, checksums and conflicts. If the model schema could be loaded, it indicates whether it fits the last app migration target. Pending migrations leave the command successful. Checksum, unknown IDs and sequence errors terminate it with Exitcode 1. The diagnosis opens SQLite with `mode=ro` and does not create a missing file. The database URL is not output. `--database-url` replaces the environment and the project file. Without that option, `DATABASE_URL` applies, otherwise `database.url` from `fexu.toml`. A relative SQLite path in that file is resolved from the project root. Outside a project, the documented default remains `sqlite://db.sqlite3?mode=rwc`. The selected target is printed redacted on stderr. The joint report is published in [migration-diagnostics.md](migration-diagnostics.md).
 
 Deletion risks (`drop_table`, `drop_column`) indicate `--allow-destructive` to the CLI before `up`. A `rebuild_column` risk is not a deletion release. A failed check ends with exit code 1 and is not issued as a success. `baseline` without `--confirm` is such a case, even if the schema fits.
 

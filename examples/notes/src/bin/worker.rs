@@ -13,8 +13,13 @@ fn main() {
             std::process::exit(2);
         }
     };
-    let mut host =
-        fexu::jobs::WorkerHost::from_project(&project).with_mail(fexu::mail_for(&project));
+    let mut host = match fexu::jobs::WorkerHost::from_project(&project) {
+        Ok(host) => host.with_mail(fexu::mail_for(&project)),
+        Err(error) => {
+            eprintln!("{} {}", error.code(), error.detail());
+            std::process::exit(2);
+        }
+    };
     if let Err(error) = notes::NotesApp.register_jobs(host.registry_mut()) {
         eprintln!("{} {}", error.code, error.detail);
         std::process::exit(1);

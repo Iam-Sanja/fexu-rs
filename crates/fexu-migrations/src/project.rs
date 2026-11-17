@@ -170,12 +170,16 @@ impl ProjectConfig {
         self.storage_max_upload_mb.saturating_mul(1024 * 1024)
     }
 
-    /// `DATABASE_URL` overrides the configured file URL without logging it.
-    pub fn resolved_database_url(&self) -> String {
-        match std::env::var("DATABASE_URL") {
-            Ok(value) if !value.is_empty() => value,
-            _ => self.database_url.clone(),
-        }
+    /// The database selected for this project, without a CLI override.
+    ///
+    /// `DATABASE_URL` replaces the file URL. A relative SQLite path from
+    /// `fexu.toml` is anchored at the project root. The value is not logged.
+    pub fn resolved_database_url(&self) -> Result<String, MigrationError> {
+        Ok(self.database_target()?.url)
+    }
+
+    pub fn database_target(&self) -> Result<DatabaseTarget, MigrationError> {
+        resolve_database_target(None, Some(self), MissingDatabase::DocumentedSqlite)
     }
 
     pub fn is_production(&self) -> bool {
@@ -276,6 +280,154 @@ impl Settings {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DatabaseUrlSource {
+    Override,
+    Environment,
+    Project,
+    Default,
+}
+
+impl std::fmt::Display for DatabaseUrlSource {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(match self {
+            Self::Override => "override",
+            Self::Environment => "environment",
+            Self::Project => "project",
+            Self::Default => "default",
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DatabaseTarget {
+    pub url: String,
+    pub source: DatabaseUrlSource,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MissingDatabase {
+    /// `sqlite://db.sqlite3?mode=rwc` when no project file supplies a URL.
+    DocumentedSqlite,
+    /// Fail closed. Job commands already refused an implicit file.
+    Required,
+}
+
+/// Selects one database URL.
+///
+/// Precedence is the CLI override, then `DATABASE_URL`, then `fexu.toml`,
+/// then the documented SQLite default when that default is allowed. An empty
+/// or unsupported value is an error and does not select another database.
+/// Relative SQLite paths from the project file are resolved from `project.root`.
+/// Override and environment values stay as written. The returned URL is not logged.
+pub fn resolve_database_target(
+    override_url: Option<&str>,
+    project: Option<&ProjectConfig>,
+    missing: MissingDatabase,
+) -> Result<DatabaseTarget, MigrationError> {
+    if let Some(url) = override_url {
+        let url = require_database_url(url, "--database-url needs a non-empty value.")?;
+        return Ok(DatabaseTarget {
+            url,
+            source: DatabaseUrlSource::Override,
+        });
+    }
+    match std::env::var("DATABASE_URL") {
+        Ok(url) => {
+            let url = require_database_url(&url, "DATABASE_URL is empty.")?;
+            return Ok(DatabaseTarget {
+                url,
+                source: DatabaseUrlSource::Environment,
+            });
+        }
+        Err(std::env::VarError::NotPresent) => {}
+        Err(std::env::VarError::NotUnicode(_)) => {
+            return Err(MigrationError::new(
+                "DATABASE_URL is not valid Unicode. No database was selected.".to_owned(),
+            ));
+        }
+    }
+    if let Some(project) = project {
+        let url = require_database_url(&project.database_url, "database.url is empty.")?;
+        return Ok(DatabaseTarget {
+            url: anchor_project_sqlite(&url, &project.root)?,
+            source: DatabaseUrlSource::Project,
+        });
+    }
+    match missing {
+        MissingDatabase::DocumentedSqlite => Ok(DatabaseTarget {
+            url: fexu_db::DEFAULT_SQLITE_URL.to_owned(),
+            source: DatabaseUrlSource::Default,
+        }),
+        MissingDatabase::Required => Err(MigrationError::new(
+            "job.database No database URL was provided. Set DATABASE_URL or use --database-url. No database was selected.".to_owned(),
+        )),
+    }
+}
+
+fn require_database_url(url: &str, empty_message: &str) -> Result<String, MigrationError> {
+    let url = url.trim();
+    if url.is_empty() {
+        return Err(MigrationError::new(format!(
+            "{empty_message} No database was selected."
+        )));
+    }
+    if url
+        .chars()
+        .any(|char| char.is_whitespace() || char.is_control())
+    {
+        return Err(MigrationError::new(
+            "The database URL contains whitespace or a control character. No database was selected."
+                .to_owned(),
+        ));
+    }
+    let supported = url.starts_with("sqlite://")
+        || url.starts_with("sqlite::memory:")
+        || url.starts_with("postgres://")
+        || url.starts_with("postgresql://");
+    if !supported {
+        return Err(MigrationError::new(
+            "The database URL must start with sqlite://, sqlite::memory:, postgres://, or postgresql://. No database was selected.".to_owned(),
+        ));
+    }
+    if let Some(rest) = url.strip_prefix("sqlite://") {
+        let path = rest.split('?').next().unwrap_or("");
+        if path.is_empty() {
+            return Err(MigrationError::new(
+                "The SQLite URL is missing a file path. No database was selected.".to_owned(),
+            ));
+        }
+    }
+    Ok(url.to_owned())
+}
+
+fn anchor_project_sqlite(url: &str, root: &Path) -> Result<String, MigrationError> {
+    let Some(rest) = url.strip_prefix("sqlite://") else {
+        return Ok(url.to_owned());
+    };
+    let (path, query) = rest
+        .split_once('?')
+        .map(|(path, query)| (path, Some(query)))
+        .unwrap_or((rest, None));
+    if path == ":memory:" || sqlite_file_is_absolute(path) {
+        return Ok(url.to_owned());
+    }
+    let absolute = root.join(path);
+    let rendered = absolute.to_string_lossy().replace('\\', "/");
+    let mut anchored = format!("sqlite://{rendered}");
+    if let Some(query) = query {
+        if !query.is_empty() {
+            anchored.push('?');
+            anchored.push_str(query);
+        }
+    }
+    Ok(anchored)
+}
+
+fn sqlite_file_is_absolute(path: &str) -> bool {
+    Path::new(path).is_absolute() || path.starts_with('/') || path.starts_with('\\')
+}
+
 pub fn redact_database_url(value: &str) -> String {
     if let Some(rest) = value.split_once("://").map(|(_, rest)| rest) {
         if let Some((userinfo, host)) = rest.split_once('@') {
@@ -346,6 +498,7 @@ fn parse_manifest(path: &Path) -> Result<ProjectConfig, MigrationError> {
     let mut layout_version = 1;
     let mut apps_dir = "apps".to_owned();
     let mut database_url = fexu_db::DEFAULT_SQLITE_URL.to_owned();
+    let mut saw_database_url = false;
     let mut host = "127.0.0.1".to_owned();
     let mut port = 3000_u16;
     let mut allow_wildcard_bind = false;
@@ -579,7 +732,22 @@ fn parse_manifest(path: &Path) -> Result<ProjectConfig, MigrationError> {
             }
             "project.default_locale" => default_locale = value,
             "project.fallback_locale" => fallback_locale = value,
-            "database.url" => database_url = value,
+            "database.url" => {
+                if saw_database_url {
+                    return Err(MigrationError::new(format!(
+                        "{}:{line_number}: database.url is set more than once. No database was selected.",
+                        path.display()
+                    )));
+                }
+                if value.trim().is_empty() {
+                    return Err(MigrationError::new(format!(
+                        "{}:{line_number}: database.url is empty. No database was selected.",
+                        path.display()
+                    )));
+                }
+                saw_database_url = true;
+                database_url = value;
+            }
             "server.host" => host = value,
             "server.allow_wildcard_bind" => allow_wildcard_bind = parse_bool(&value)?,
             "server.port" => {
@@ -1561,5 +1729,208 @@ access = "session"
             assert!(parse_manifest(&rejected).is_err(), "{text}");
             fs::remove_dir_all(rejected.parent().unwrap()).unwrap();
         }
+    }
+
+    fn with_database_env<T>(value: Option<&str>, action: impl FnOnce() -> T) -> T {
+        let _guard = ENV_LOCK.lock().expect("env lock");
+        let previous = std::env::var("DATABASE_URL").ok();
+        match value {
+            Some(value) => unsafe { std::env::set_var("DATABASE_URL", value) },
+            None => unsafe { std::env::remove_var("DATABASE_URL") },
+        }
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(action));
+        match previous {
+            Some(value) => unsafe { std::env::set_var("DATABASE_URL", value) },
+            None => unsafe { std::env::remove_var("DATABASE_URL") },
+        }
+        match result {
+            Ok(value) => value,
+            Err(panic) => std::panic::resume_unwind(panic),
+        }
+    }
+
+    fn shop_manifest(url: &str) -> std::path::PathBuf {
+        write_manifest(&format!(
+            "migrations_dir = \"migrations\"\nschema_command = \"cargo run --quiet -- --print-schema\"\n[project]\nname = \"shop\"\ntemplate = \"api\"\nlayout_version = 2\n[database]\nurl = \"{url}\"\n"
+        ))
+    }
+
+    #[test]
+    fn database_resolution_follows_override_environment_and_project_file() {
+        let path = shop_manifest("sqlite://var/shop.sqlite3?mode=rwc");
+        let root = path.parent().unwrap().to_path_buf();
+        let nested = root.join("apps").join("shop");
+        fs::create_dir_all(&nested).unwrap();
+        let project = super::discover_project(&nested).unwrap();
+        let runtime = with_database_env(None, || project.resolved_database_url().unwrap());
+        let cli = with_database_env(None, || {
+            super::resolve_database_target(
+                None,
+                Some(&project),
+                super::MissingDatabase::DocumentedSqlite,
+            )
+            .unwrap()
+            .url
+        });
+        assert_eq!(runtime, cli);
+        let expected = root.join("var").join("shop.sqlite3");
+        assert!(runtime.contains(&expected.to_string_lossy().replace('\\', "/")));
+        assert!(!runtime.contains("db.sqlite3"));
+        assert!(!expected.exists());
+        assert!(!root.join("db.sqlite3").exists());
+        let read_only = crate::readonly_database_url(&runtime).unwrap_err();
+        assert!(read_only.0.contains("does not exist"));
+        assert!(!expected.exists());
+
+        let environment = with_database_env(Some("sqlite://env.sqlite3?mode=rwc"), || {
+            project.database_target().unwrap()
+        });
+        assert_eq!(environment.source, super::DatabaseUrlSource::Environment);
+        assert_eq!(environment.url, "sqlite://env.sqlite3?mode=rwc");
+        let override_url = with_database_env(Some("sqlite://env.sqlite3?mode=rwc"), || {
+            super::resolve_database_target(
+                Some("sqlite://override.sqlite3?mode=rwc"),
+                Some(&project),
+                super::MissingDatabase::DocumentedSqlite,
+            )
+            .unwrap()
+        });
+        assert_eq!(override_url.source, super::DatabaseUrlSource::Override);
+        assert_eq!(override_url.url, "sqlite://override.sqlite3?mode=rwc");
+        let postgres = with_database_env(
+            Some("postgres://fexu:secret@127.0.0.1:5432/fexu_test_isolated"),
+            || project.database_target().unwrap(),
+        );
+        assert_eq!(
+            postgres.url,
+            "postgres://fexu:secret@127.0.0.1:5432/fexu_test_isolated"
+        );
+        assert_eq!(
+            super::redact_database_url(&postgres.url),
+            "postgres://[redacted]@127.0.0.1:5432/fexu_test_isolated"
+        );
+        assert!(!super::redact_database_url(&postgres.url).contains("secret"));
+        let empty_override = with_database_env(None, || {
+            super::resolve_database_target(
+                Some("  "),
+                Some(&project),
+                super::MissingDatabase::DocumentedSqlite,
+            )
+            .unwrap_err()
+            .0
+        });
+        assert!(empty_override.contains("--database-url"));
+        assert!(empty_override.contains("No database was selected"));
+        let empty_env = with_database_env(Some("   "), || project.database_target().unwrap_err().0);
+        assert!(empty_env.contains("DATABASE_URL is empty"));
+        let invalid = with_database_env(Some("mysql://localhost/shop"), || {
+            project.database_target().unwrap_err().0
+        });
+        assert!(invalid.contains("must start with"));
+        assert!(!invalid.contains("mysql"));
+        let required = with_database_env(None, || {
+            super::resolve_database_target(None, None, super::MissingDatabase::Required)
+                .unwrap_err()
+                .0
+        });
+        assert!(required.contains("job.database"));
+        let default_url = with_database_env(None, || {
+            super::resolve_database_target(None, None, super::MissingDatabase::DocumentedSqlite)
+                .unwrap()
+        });
+        assert_eq!(default_url.source, super::DatabaseUrlSource::Default);
+        assert_eq!(default_url.url, fexu_db::DEFAULT_SQLITE_URL);
+        let duplicate = write_manifest(
+            "migrations_dir = \"migrations\"\n[database]\nurl = \"sqlite://a.sqlite3?mode=rwc\"\nurl = \"sqlite://b.sqlite3?mode=rwc\"\n",
+        );
+        let error = parse_manifest(&duplicate).unwrap_err().0;
+        assert!(error.contains("more than once"));
+        assert!(!error.contains("b.sqlite3"));
+        fs::remove_dir_all(&root).unwrap();
+        fs::remove_dir_all(duplicate.parent().unwrap()).unwrap();
+    }
+
+    #[tokio::test]
+    async fn resolved_sqlite_file_does_not_create_the_default_database() {
+        let path = shop_manifest("sqlite://var/shop.sqlite3?mode=rwc");
+        let root = path.parent().unwrap().to_path_buf();
+        let project = parse_manifest(&path).unwrap();
+        let url = with_database_env(None, || project.resolved_database_url().unwrap());
+        let decoy = root.join("db.sqlite3");
+        fs::create_dir_all(root.join("var")).unwrap();
+        assert!(!root.join("var").join("shop.sqlite3").exists());
+        use fexu_db::driver::ConnectionTrait;
+        let db = fexu_db::connect(&url).await.unwrap();
+        db.execute(fexu_db::driver::Statement::from_string(
+            fexu_db::driver::DatabaseBackend::Sqlite,
+            "CREATE TABLE marker (id integer PRIMARY KEY)",
+        ))
+        .await
+        .unwrap();
+        drop(db);
+        assert!(root.join("var").join("shop.sqlite3").is_file());
+        assert!(!decoy.exists());
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[tokio::test]
+    #[ignore = "requires DATABASE_URL pointing at an approved PostgreSQL admin database"]
+    async fn postgres_override_writes_only_the_disposable_database() {
+        let admin = std::env::var("DATABASE_URL").expect("DATABASE_URL");
+        let isolated = fexu_db::DisposablePostgres::create(&admin)
+            .await
+            .expect("isolated database");
+        let isolated_url = isolated.url().to_owned();
+        let path = shop_manifest("sqlite://var/decoy.sqlite3?mode=rwc");
+        let root = path.parent().unwrap().to_path_buf();
+        let project = parse_manifest(&path).unwrap();
+        let result = async {
+            let selected = with_database_env(
+                Some("postgres://fexu:secret@127.0.0.1:1/not_this_database"),
+                || {
+                    super::resolve_database_target(
+                        Some(&isolated_url),
+                        Some(&project),
+                        super::MissingDatabase::DocumentedSqlite,
+                    )
+                    .map_err(|error| error.0)
+                },
+            )?;
+            if selected.url != isolated_url || selected.source != super::DatabaseUrlSource::Override
+            {
+                return Err(
+                    "override did not select the disposable database. No other database was changed."
+                        .to_owned(),
+                );
+            }
+            let db = fexu_db::connect(&isolated_url)
+                .await
+                .map_err(|error| error.to_string())?;
+            use fexu_db::driver::ConnectionTrait;
+            let rows = db
+                .query_all(fexu_db::driver::Statement::from_string(
+                    fexu_db::driver::DatabaseBackend::Postgres,
+                    "SELECT current_database() AS name",
+                ))
+                .await
+                .map_err(|error| error.to_string())?;
+            let name = rows
+                .first()
+                .ok_or("current_database returned no row")?
+                .try_get::<String>("", "name")
+                .map_err(|error| error.to_string())?;
+            if !name.starts_with("fexu_test_") {
+                return Err(format!("connected to {name}"));
+            }
+            if root.join("var").join("decoy.sqlite3").exists() {
+                return Err("project sqlite file was created".to_owned());
+            }
+            Ok(())
+        }
+        .await;
+        let dropped = isolated.drop_database().await;
+        result.expect("postgres target");
+        dropped.expect("drop isolated database");
+        fs::remove_dir_all(&root).unwrap();
     }
 }
