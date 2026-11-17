@@ -100,28 +100,44 @@ pub fn doctor() -> ExitCode {
                     );
                 }
             }
-            if std::env::var("DATABASE_URL").is_ok() {
-                report(
-                    "OK",
-                    "DATABASE_URL overrides the URL from fexu.toml. Its value is hidden.",
-                );
-            }
-            if project.database_url.starts_with("sqlite:") {
-                report(
-                    "OK",
-                    "SQLite is configured. No database server is required.",
-                );
-            } else if project.database_url.starts_with("postgres:") {
-                report(
-                    "OK",
-                    "PostgreSQL is configured and remains optional. Diagnostics use a read-only connection.",
-                );
-            } else {
-                errors += 1;
-                report(
-                    "ERROR",
-                    "The database URL must start with sqlite: or postgres:.",
-                );
+            match project.database_target() {
+                Ok(target) => {
+                    if target.source == fexu_migrations::DatabaseUrlSource::Environment {
+                        report(
+                            "OK",
+                            "DATABASE_URL overrides the URL from fexu.toml. Its value is hidden.",
+                        );
+                    }
+                    report(
+                        "OK",
+                        &format!(
+                            "database.target {} ({})",
+                            fexu_migrations::redact_database_url(&target.url),
+                            target.source
+                        ),
+                    );
+                    if target.url.starts_with("sqlite:") {
+                        report(
+                            "OK",
+                            "SQLite is configured. No database server is required.",
+                        );
+                    } else if target.url.starts_with("postgres:") {
+                        report(
+                            "OK",
+                            "PostgreSQL is configured and remains optional. Diagnostics use a read-only connection.",
+                        );
+                    } else {
+                        errors += 1;
+                        report(
+                            "ERROR",
+                            "The database URL must start with sqlite: or postgres:.",
+                        );
+                    }
+                }
+                Err(error) => {
+                    errors += 1;
+                    report("ERROR", &error.0);
+                }
             }
             let counts = migration_lines(&project, false, false);
             errors += counts.errors;
@@ -499,7 +515,16 @@ fn migration_lines(project: &ProjectConfig, compare_schema: bool, deploy: bool) 
     if !project.apps.is_empty() {
         report("OK", fexu_migrations::runtime_contract_note());
     }
-    let url = project.resolved_database_url();
+    let url = match project.resolved_database_url() {
+        Ok(url) => url,
+        Err(error) => {
+            report("ERROR", &error.0);
+            return Counts {
+                errors: 1,
+                warnings: 0,
+            };
+        }
+    };
     let readonly = match readonly_database_url(&url) {
         Ok(url) => url,
         Err(error) => {

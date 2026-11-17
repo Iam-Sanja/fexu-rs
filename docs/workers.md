@@ -8,7 +8,7 @@
 
 ```rust
 let project = fexu::migrations::discover_project(&root)?;
-let mut host = fexu::jobs::WorkerHost::from_project(&project)
+let mut host = fexu::jobs::WorkerHost::from_project(&project)?
     .with_mail(fexu::mail_for(&project));
 NotesApp.register_jobs(host.registry_mut())?;
 host.run_until_ctrl_c()?;

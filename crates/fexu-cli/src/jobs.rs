@@ -28,7 +28,13 @@ pub fn worker(
     poll_ms: Option<u64>,
 ) -> ExitCode {
     let mut config = match project {
-        Some(project) => WorkerConfig::from_project(project),
+        Some(project) => match WorkerConfig::from_project(project) {
+            Ok(config) => config,
+            Err(error) => {
+                eprintln!("{} {}", error.code(), error.detail());
+                return ExitCode::from(2);
+            }
+        },
         None => WorkerConfig {
             database_url: url.clone(),
             enabled: true,

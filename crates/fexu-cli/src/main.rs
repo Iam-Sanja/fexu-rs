@@ -947,19 +947,12 @@ pub(crate) fn jobs_database_url(
     override_url: Option<String>,
     project: Option<&fexu_migrations::ProjectConfig>,
 ) -> Result<String, String> {
-    if let Some(url) = override_url {
-        return Ok(url);
-    }
-    if let Some(project) = project {
-        return Ok(project.resolved_database_url());
-    }
-    match std::env::var("DATABASE_URL") {
-        Ok(url) if !url.is_empty() => Ok(url),
-        _ => Err(
-            "job.database No database URL was provided. Set DATABASE_URL or use --database-url."
-                .to_owned(),
-        ),
-    }
+    let missing = if project.is_some() {
+        fexu_migrations::MissingDatabase::DocumentedSqlite
+    } else {
+        fexu_migrations::MissingDatabase::Required
+    };
+    selected_database(override_url.as_deref(), project, missing)
 }
 
 fn parse_backfill(text: &str) -> Result<ColumnBackfill, String> {
@@ -1370,15 +1363,27 @@ fn auth_message(error: fexu_auth::AuthError) -> String {
 }
 
 fn resolve_database_url(override_url: Option<String>) -> Result<String, String> {
-    if let Some(url) = override_url {
-        return Ok(url);
-    }
-    if let Ok(url) = std::env::var("DATABASE_URL") {
-        if !url.is_empty() {
-            return Ok(url);
-        }
-    }
-    Ok(fexu_db::DEFAULT_SQLITE_URL.to_owned())
+    let project = optional_project()?;
+    selected_database(
+        override_url.as_deref(),
+        project.as_ref(),
+        fexu_migrations::MissingDatabase::DocumentedSqlite,
+    )
+}
+
+fn selected_database(
+    override_url: Option<&str>,
+    project: Option<&fexu_migrations::ProjectConfig>,
+    missing: fexu_migrations::MissingDatabase,
+) -> Result<String, String> {
+    let target = fexu_migrations::resolve_database_target(override_url, project, missing)
+        .map_err(|error| error.0)?;
+    eprintln!(
+        "database: {} ({})",
+        fexu_migrations::redact_database_url(&target.url),
+        target.source
+    );
+    Ok(target.url)
 }
 
 #[cfg(test)]

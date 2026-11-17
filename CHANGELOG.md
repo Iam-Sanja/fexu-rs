@@ -14,6 +14,10 @@
 
 - Disposable PostgreSQL fixtures clone `template0` and keep administrative sessions off `template0` and `template1`. Concurrent `STRATEGY FILE_COPY` is not used; those copies stalled on Windows PostgreSQL 18. `drop_database` still drops only `fexu_test_` plus 32 hexadecimal characters, and only when the current role owns that database (#117).
 
+## Unreleased — configured database target
+
+- CLI migrations, status, plan, check, doctor, auth, fixtures, and workers use the same database as the generated runtime: `--database-url`, then `DATABASE_URL`, then `database.url`, then the documented SQLite default only when no project file is available. Empty and unsupported values fail instead of selecting another database. Relative SQLite paths in `fexu.toml` are resolved from the project root. The chosen target is printed redacted (#141).
+
 ## Unreleased — embedded framework migrations
 
 - Auth and job migrations stay embedded in the binary. A relocated `embedded-migrate` process no longer needs the crate `migrations/` directories. `scripts/cold-start-embedded.sh` hides those directories, and CI runs that check for SQLite and for `fexu_test_relocated`.
