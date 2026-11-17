@@ -33,7 +33,7 @@ The CLI worker only registers `fexu_mail_notice`. Handlers of an app start `src/
 
 If the SQLite file is missing, it is not created. If `_fexu_jobs` is missing, the process ends with Exitcode 2 and `job.migration.missing`. `jobs.enabled = false` also terminates the worker with Exitcode 2. A clean stop signal ends with 0. A database error ends with 1.
 
-Ctrl+C sets a stop flag on Windows and Linux. The worker does not claim a new job afterwards and ends the current execution. A handler is not rolled back in the middle of an external effect.
+Ctrl+C sets a stop flag on Windows and Linux. The worker does not claim a new job afterwards and ends the current execution. A poll wait notices the flag within 50ms and does not sit out the full `poll_ms`. A handler is not rolled back in the middle of an external effect. A killed process keeps its lease until `lease_expires_at`; the next worker claims that row and `JobContext::is_redelivery` is true. The previous token cannot mark the job succeeded.
 
 ## Lease
 

@@ -261,6 +261,19 @@ pub fn require_embedded_migrations(
             "Required framework migration resources for `{component}` are missing. The embedded package is empty, so those migrations were not applied."
         )));
     }
+    let mut seen = std::collections::BTreeSet::new();
+    for (id, _) in sources {
+        if !seen.insert(*id) {
+            return Err(MigrationError::new(format!(
+                "Required framework migration `{id}` for `{component}` is duplicated in the embedded package. Those migrations were not applied."
+            )));
+        }
+        if !expected_ids.iter().any(|expected| expected == id) {
+            return Err(MigrationError::new(format!(
+                "Required framework migration `{id}` for `{component}` is not part of the expected package. Those migrations were not applied."
+            )));
+        }
+    }
     let mut files = Vec::with_capacity(sources.len());
     for (id, text) in sources {
         let file = load_migration_text(id, text).map_err(|error| {
@@ -721,5 +734,28 @@ mod tests {
         assert!(mismatch.contains("fexu-auth"), "{mismatch}");
         assert!(mismatch.contains("Checksum mismatch"), "{mismatch}");
         assert!(mismatch.contains("corrupted"), "{mismatch}");
+        let duplicate = super::require_embedded_migrations(
+            "fexu-auth",
+            &["0001_alpha"],
+            &[("0001_alpha", text.as_str()), ("0001_alpha", text.as_str())],
+        )
+        .unwrap_err()
+        .0;
+        assert!(duplicate.contains("fexu-auth"), "{duplicate}");
+        assert!(duplicate.contains("0001_alpha"), "{duplicate}");
+        assert!(duplicate.contains("duplicated"), "{duplicate}");
+        let unexpected = super::require_embedded_migrations(
+            "fexu-jobs",
+            &["0001_alpha"],
+            &[("0001_alpha", text.as_str()), ("0002_extra", text.as_str())],
+        )
+        .unwrap_err()
+        .0;
+        assert!(unexpected.contains("fexu-jobs"), "{unexpected}");
+        assert!(unexpected.contains("0002_extra"), "{unexpected}");
+        assert!(
+            unexpected.contains("not part of the expected package"),
+            "{unexpected}"
+        );
     }
 }
