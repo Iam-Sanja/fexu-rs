@@ -15,7 +15,7 @@ A Django-inspired, experimental web framework built with **Axum**, **Tera**, **S
 [**Quick start**](#quick-start) · [**Features**](#why-fexu) · [**Docs**](docs/index.md) · [**Contribute**](#help-build-fexu) · [**Roadmap**](docs/roadmap.md)
 
 > [!IMPORTANT]
-> **Fexu 0.1.2 is experimental, not production-ready.** APIs, configuration and migrations may change. The version badges show what crates.io currently lists. This checkout prepares `0.1.2` for all 16 crates; `0.1.0` and `fexu-cli` `0.1.1` remain the versions already on crates.io until that release is published. Do not expose a demo application directly to the public internet.
+> **Fexu 0.1.2 is published on crates.io but remains experimental and is not production-ready.** APIs, configuration and migrations may change. The version badges show the latest crates.io releases. The `main` branch may contain newer, unreleased changes; features added after the `v0.1.2` tag are not part of the published 0.1.2 packages. Do not expose a demo application directly to the public internet.
 
 ## Why Fexu?
 
@@ -34,7 +34,7 @@ These features have **documented limitations**. In particular, public model rout
 
 ## Workspace crates
 
-Fexu is developed as a **16-crate Rust workspace**. Each version badge below reflects the latest version reported by crates.io; a missing version badge does **not** mean that the crate has already been published. Workspace crate versions and registry releases may differ while the initial publication is in progress.
+Fexu is developed as a **16-crate Rust workspace**. Each version badge below reflects the latest version reported by crates.io. The `main` branch is the development version and can contain changes not yet released to the registry.
 
 | Crate | Purpose | Latest on crates.io |
 |---|---|---|
@@ -55,7 +55,7 @@ Fexu is developed as a **16-crate Rust workspace**. Each version badge below ref
 | [`fexu-mail`](crates/fexu-mail/) | Email utilities | [![fexu-mail version](https://img.shields.io/crates/v/fexu-mail.svg?label=version)](https://crates.io/crates/fexu-mail) |
 | [`fexu-jobs`](crates/fexu-jobs/) | Persistent background jobs | [![fexu-jobs version](https://img.shields.io/crates/v/fexu-jobs.svg?label=version)](https://crates.io/crates/fexu-jobs) |
 
-All 16 packages are maintained together; **not every package is necessarily available on crates.io yet**. Before installing, verify that its package page lists the required release. The CLI and umbrella framework may have different released versions until the synchronized release is published.
+All 16 workspace crates have a published `0.1.2` release on crates.io. Use compatible published versions when building an independent project. Features merged into `main` after `v0.1.2` require a source checkout until the next release.
 
 ## Quick start
 
@@ -81,10 +81,10 @@ SQLite defaults to `sqlite://db.sqlite3?mode=rwc` in the current working directo
 
 ### Create your own application
 
-Install a published CLI only after its crates.io page lists that version. This checkout's `fexu-cli` 0.1.2 writes a crates.io dependency on `fexu` 0.1.2. The already published `fexu-cli` 0.1.1 still writes `fexu` 0.1.0. `fexu-cli` 0.1.0 expects a source checkout.
+Install the published Fexu CLI 0.1.2 from crates.io. It generates standalone projects using the published `fexu` 0.1.2 dependency; no local framework checkout is needed.
 
 ```powershell
-cargo install fexu-cli --version 0.1.1 --locked
+cargo install fexu-cli --version 0.1.2 --locked
 fexu new project demo
 Set-Location demo
 fexu migrate up
@@ -92,7 +92,7 @@ fexu admin create-user --email admin@example.com --staff --superuser
 fexu dev
 ```
 
-`fexu new demo` is the same command. In this checkout the fullstack template writes `fexu = { version = "=0.1.2", features = ["admin-ui"] }`. `--template api` writes `fexu = "=0.1.2"`. Those pins resolve only after `fexu` 0.1.2 is on crates.io. Until then, pass `--fexu-path`.
+`fexu new demo` is the same command. The 0.1.2 fullstack template writes `fexu = { version = "=0.1.2", features = ["admin-ui"] }`; `--template api` writes `fexu = "=0.1.2"`. Both resolve from crates.io. To try unreleased framework changes from `main`, use a local checkout and `--fexu-path`.
 
 To compile against a local Fexu checkout, pass the workspace root or `crates/fexu`:
 
@@ -138,13 +138,15 @@ Learn more: [models](docs/models.md) · [database](docs/database.md) · [relatio
 
 Fexu includes a **server-rendered admin**, built with Axum and Tera. No separate JavaScript frontend build is needed for basic administration.
 
-Admin screenshots and a visual walkthrough will be added as the project matures. Until then, the [admin documentation](docs/admin.md) describes the supported workflows and restrictions.
+The published `0.1.2` release includes the native admin. The current `main` branch also contains the newer modular admin merged in [PR #140](https://github.com/Iam-Sanja/fexu-rs/pull/140), including configurable dashboard boards, account management, roles, branding, inline list editing and record image uploads. These post-release features are **not** included in crates.io `0.1.2`.
+
+Verified admin screenshots and a visual walkthrough are planned. For now, see the [admin documentation](docs/admin.md) for workflows and restrictions.
 
 ## Current status
 
 Fexu is a **work in progress**, not a drop-in Django replacement.
 
-`main` includes model-derived OpenAPI, keyset pagination, many-to-many loading, `migrate down`, and the SQLite/PostgreSQL driver without a vendor patch. The [Django capability matrix](docs/django-capability-matrix.md) and [roadmap](docs/roadmap.md) remain the map of what is still missing. The experimental framework has **not** been declared production-ready, and the full set of `0.1.0` crates is not yet confirmed published.
+The published `0.1.2` release is available on crates.io. The development branch `main` also includes newer, unreleased admin improvements. Model-derived OpenAPI, keyset pagination, many-to-many loading, `migrate down`, and SQLite/PostgreSQL support remain part of the framework. See the [Django capability matrix](docs/django-capability-matrix.md) and [roadmap](docs/roadmap.md) for known gaps. Fexu has **not** been declared production-ready.
 
 ## Help build Fexu
 

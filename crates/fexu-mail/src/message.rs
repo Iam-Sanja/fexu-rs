@@ -1,4 +1,4 @@
-//! Eine Nachricht. Adressen und Betreff werden vor dem Versand geprüft.
+//! A mail message. Addresses and subjects are validated before sending.
 
 use crate::error::MailError;
 

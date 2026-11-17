@@ -1,4 +1,4 @@
-//! Argon2id im PHC-Format. Die Parameter stehen im Hash und bleiben prüfbar.
+//! Argon2id in PHC format. Parameters are included in the hash for verification.
 
 use crate::error::AuthError;
 use argon2::{
@@ -23,7 +23,7 @@ pub fn verify_password(password: &str, encoded: &str) -> Result<bool, AuthError>
         .is_ok())
 }
 
-/// Gleiche Rechenzeit, wenn die E-Mail nicht existiert.
+/// Maintains comparable computational cost when the email address does not exist.
 pub fn verify_against_dummy(password: &str) {
     let dummy = dummy_hash();
     let _ = verify_password(password, dummy);

@@ -1,7 +1,7 @@
 //! Versionierte Migrationen aus Fexu-Modellmetadaten.
 //!
-//! Die Engine liest keine Rust-Quellen. Anwendungen registrieren ihre Modelle
-//! explizit und stellen das Schema der CLI über `fexu.toml` oder eine Schema-Datei bereit.
+//! The engine does not read Rust source files. Apps register models
+//! explicitly and expose their schema to the CLI through `fexu.toml` or a schema file.
 
 mod baseline;
 mod diff;

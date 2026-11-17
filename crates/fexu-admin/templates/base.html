@@ -4,36 +4,40 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{{ title }} · {{ site_title }}</title>
+<meta name="application-name" content="{{ app_name }}">
+<meta name="theme-color" content="{{ project_color }}">
+{% if favicon %}<link rel="icon" href="{{ favicon }}">{% endif %}
+{% if apple_touch_icon %}<link rel="apple-touch-icon" href="{{ apple_touch_icon }}">{% endif %}
 <link rel="stylesheet" href="/admin/assets/admin.css">
 <style>:root { --brand: {{ primary_color }}; }</style>
 </head>
-<body>
+<body{% if popup %} class="is-popup"{% endif %}>
 <a class="skip" href="#content">{{ i18n.skip }}</a>
 <div class="shell">
 {% if signed_in and nav %}
 <aside class="sidebar" aria-label="{{ i18n.navigation }}">
-<p class="brand">{{ app_name }}</p>
-<p class="brand-note">{{ site_header }}</p>
+<div class="brand-block">
+<span class="brand-mark" aria-hidden="true">{{ brand_mark }}</span>
+<p class="brand">{{ site_header }}</p>
+</div>
 <input class="nav-switch" id="admin-nav" type="checkbox" aria-controls="admin-nav-panel">
 <label class="nav-switch-label" for="admin-nav">{{ i18n.navigation }}</label>
 <nav id="admin-nav-panel" aria-label="{{ i18n.navigation }}">
 {% for section in nav_sections %}
 {% if section.label %}<p class="nav-label" id="nav-{{ section.key }}">{{ section.label }}</p>{% endif %}
-{% if section.key == "apps" %}
 {% if section.empty %}<p class="nav-empty">{{ i18n.no_models }}</p>{% endif %}
-<ul {% if section.label %}aria-labelledby="nav-{{ section.key }}"{% endif %}>
 {% for group in section.groups %}
-<li>
-<p class="nav-app" id="nav-{{ section.key }}-{{ loop.index }}">{{ group.label }}</p>
-<ul aria-labelledby="nav-{{ section.key }}-{{ loop.index }}">
+<details class="nav-fold" {% if group.open %}open{% endif %}>
+<summary>{{ group.label }}</summary>
+{% if group.error %}<p class="nav-empty">{{ i18n.board_read_error }}</p>{% endif %}
+<ul>
 {% for item in group.items %}
 <li><a class="nav-child" href="{{ item.href | safe }}" {% if item.current %}aria-current="page"{% endif %}>{{ item.label }}</a></li>
 {% endfor %}
 </ul>
-</li>
+</details>
 {% endfor %}
-</ul>
-{% else %}
+{% if section.items %}
 <ul {% if section.label %}aria-labelledby="nav-{{ section.key }}"{% endif %}>
 {% for item in section.items %}
 <li><a href="{{ item.href | safe }}" {% if item.current %}aria-current="page"{% endif %}>{{ item.label }}</a></li>
@@ -42,42 +46,50 @@
 {% endif %}
 {% endfor %}
 </nav>
+<div class="nav-user-bar">
+<a class="nav-user" href="/admin/account">
+<span class="avatar" aria-hidden="true">{{ user_initial }}</span>
+<span class="nav-user-text">
+<span class="nav-user-mail">{% if user_name %}{{ user_name }}{% else %}{{ user_email }}{% endif %}</span>
+<span class="nav-user-role">{% if superuser %}{{ i18n.superuser_role }}{% else %}{{ i18n.staff_role }}{% endif %}</span>
+</span>
+</a>
+</div>
 </aside>
 {% endif %}
 <div class="main">
 <header class="top">
-<div>
 <h1>{{ title }}</h1>
-</div>
 {% if signed_in %}
-<div class="tools">
-<div>
-{% if user_email %}<p class="who">{{ user_email }}</p>{% endif %}
-{% if nav %}
-<form class="prefs" method="post" action="/admin/preferences" data-track-dirty="prefs">
-<input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-<input type="hidden" name="next" value="{{ current_path }}">
-<label for="pref-locale">{{ i18n.language }}
-<select id="pref-locale" name="locale">
-<option value="de" {% if locale == "de" %}selected{% endif %}>Deutsch</option>
-<option value="en" {% if locale == "en" %}selected{% endif %}>English</option>
-</select>
-</label>
-<label for="pref-theme">{{ i18n.theme }}
-<select id="pref-theme" name="theme">
-<option value="system" {% if theme == "system" %}selected{% endif %}>{{ i18n.system }}</option>
-<option value="light" {% if theme == "light" %}selected{% endif %}>{{ i18n.light }}</option>
-<option value="dark" {% if theme == "dark" %}selected{% endif %}>{{ i18n.dark }}</option>
-</select>
-</label>
-<button type="submit" class="ghost js-save">{{ i18n.apply }}</button>
+<form class="command" method="get" action="/admin/search" role="search">
+<label class="sr-only" for="admin-search">{{ i18n.search_admin }}</label>
+<input id="admin-search" type="search" name="q" maxlength="200" placeholder="{{ i18n.search_admin }}" value="{{ query }}">
+<button type="submit">{{ i18n.search }}</button>
 </form>
-{% endif %}
-</div>
+<div class="top-tools">
+<form method="post" action="/admin/preferences">
+<input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+<input type="hidden" name="locale" value="{{ locale }}">
+<input type="hidden" name="next" value="{{ current_path }}" data-keep-query>
+<input type="hidden" name="theme" value="{% if theme == 'dark' %}light{% else %}dark{% endif %}">
+<button type="submit" class="icon-button" aria-label="{{ i18n.theme_toggle }}">{% if theme == "dark" %}<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>{% else %}<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9z"/></svg>{% endif %}</button>
+</form>
+<a class="icon-button" href="/admin/audit" aria-label="{{ i18n.history }}" {% if nav_audit %}aria-current="page"{% endif %}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10.268 21a2 2 0 0 0 3.464 0"/><path d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326"/></svg></a>
+<details class="account">
+<summary class="account-button" aria-label="{{ i18n.account_menu }}">
+<span class="avatar" aria-hidden="true">{{ user_initial }}</span>
+</summary>
+<div class="account-panel">
+{% if user_name %}<p class="account-name">{{ user_name }}</p>{% endif %}
+{% if user_email %}<p class="account-mail">{{ user_email }}</p>{% endif %}
+<a class="account-link" href="/admin/account">{{ i18n.account }}</a>
+<a class="account-link" href="/admin/settings">{{ i18n.settings }}</a>
 <form method="post" action="/admin/logout">
 <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
 <button type="submit" class="ghost">{{ i18n.logout }}</button>
 </form>
+</div>
+</details>
 </div>
 {% endif %}
 </header>

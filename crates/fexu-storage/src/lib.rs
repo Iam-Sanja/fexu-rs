@@ -1,8 +1,8 @@
-//! Lokaler Dateispeicher. Öffentliche Auslieferung bleibt aus.
+//! Local file storage. Public delivery is disabled by default.
 //!
-//! [`s3`] prüft nur die Form eines entfernten Speichers und öffnet keine Verbindung.
-//! Malware-Scanning ist nicht enthalten. Die Inhaltsprüfung ersetzt keinen Virenscanner
-//! und dekodiert keine Bildpixel.
+//! [`s3`] validates remote-storage configuration without opening a connection.
+//! Malware scanning is not included. Content validation does not replace antivirus scanning
+//! and does not decode image pixels.
 
 mod access;
 mod http;
@@ -12,11 +12,12 @@ mod signed;
 
 pub use access::{OwnerAccess, StorageAccess, StorageAction};
 pub use http::{
-    multipart_text_field, read_multipart, routes, FormPart, MultipartError, MULTIPART_BODY_LIMIT,
+    multipart_text_field, read_multipart, read_multipart_repeated, routes, FormPart,
+    MultipartError, MULTIPART_BODY_LIMIT,
 };
 pub use local::{
-    detect_type, inspect_image, BeforeSave, CleanupReport, ImageHeaderCheck, ImageInfo,
-    ImageLimits, LocalStorage, StorageError, StoredFile,
+    detect_type, inspect_image, sanitize_name, BeforeSave, CleanupReport, ImageHeaderCheck,
+    ImageInfo, ImageLimits, LocalStorage, StorageError, StoredFile,
 };
 pub use s3::{
     credentials_from_env, prepare as prepare_s3, S3Credentials, S3Plan, ACCESS_KEY_ENV,
@@ -40,7 +41,7 @@ pub trait Storage: Send + Sync {
     async fn exists(&self, owner: Uuid, id: Uuid) -> Result<bool, StorageError>;
     async fn metadata(&self, owner: Uuid, id: Uuid) -> Result<StoredFile, StorageError>;
 
-    /// Der Besitzer bleibt der Eigentümer. Ein anderer Akteur wird abgelehnt.
+    /// The original owner retains ownership. Other actors are rejected.
     async fn save_for(
         &self,
         actor: Uuid,

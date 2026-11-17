@@ -473,7 +473,7 @@ name = "{name}"
 template = "{template_name}"
 layout_version = 2
 apps_dir = "{apps_dir}"
-default_locale = "de"
+default_locale = "en"
 fallback_locale = "en"
 
 [database]
@@ -717,6 +717,17 @@ mod tests {
         PUBLISHED_FEXU_VERSION,
     };
     use std::path::PathBuf;
+
+    #[test]
+    fn new_project_manifest_defaults_to_english() {
+        let fullstack = super::manifest("demo", super::Template::Fullstack, "apps");
+        let api = super::manifest("demo", super::Template::Api, "apps");
+        for source in [fullstack, api] {
+            assert!(source.contains("default_locale = \"en\""));
+            assert!(source.contains("fallback_locale = \"en\""));
+            assert!(!source.contains("default_locale = \"de\""));
+        }
+    }
 
     #[test]
     fn rejects_unsafe_project_names() {

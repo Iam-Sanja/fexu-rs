@@ -39,7 +39,7 @@ pub struct IssuedSession {
     pub token: String,
     pub csrf_token: String,
     pub cookie: String,
-    /// Cookies, die der Browser zusätzlich verwerfen soll. Login löscht damit die anonyme Sitzung.
+    /// Additional cookies to clear in the browser. Login uses this to clear the anonymous session.
     pub clear_cookies: Vec<String>,
     pub user: PublicUser,
 }
@@ -125,7 +125,7 @@ impl AuthService {
             .map(public_user))
     }
 
-    /// Admin-Anlage. Superuser bleibt der CLI vorbehalten. Der Hash entsteht vor dem Schreibvorgang.
+    /// Admin-driven account creation. Superuser creation remains CLI-only. Hashing precedes the write.
     pub async fn create_directory_user(
         &self,
         email: &str,
@@ -149,9 +149,6 @@ impl AuthService {
         let user = store::find_user_by_id(&self.db, id)
             .await?
             .ok_or_else(|| AuthError::Validation("user was not found".into()))?;
-        if user.is_superuser {
-            return Err(AuthError::Forbidden);
-        }
         let email = normalize_email(email)?;
         if let Some(existing) = store::find_user_by_email(&self.db, &email).await? {
             if existing.id != user.id {
@@ -168,11 +165,11 @@ impl AuthService {
             email,
             is_active,
             is_staff,
-            is_superuser: false,
+            is_superuser: user.is_superuser,
         })
     }
 
-    /// Setzt das Passwort ohne das bisherige zu kennen und widerruft alle Sitzungen dieses Benutzers.
+    /// Resets a password without the previous password and revokes all of the user's sessions.
     pub async fn reset_password(&self, id: Uuid, password: &str) -> Result<(), AuthError> {
         validate_new_password(password)?;
         let hash = hash_password(password)?;
@@ -217,8 +214,8 @@ impl AuthService {
         self.login_replacing(email, password, client, None).await
     }
 
-    /// Login legt immer eine neue Benutzer-Sitzung an. Eine mitgeschickte anonyme Sitzung wird
-    /// in derselben Transaktion widerrufen und nicht zur Benutzer-Sitzung umgewidmet.
+    /// Login always creates a new user session. A presented anonymous session is
+    /// revoked in the same transaction, never promoted to a user session.
     pub async fn login_replacing(
         &self,
         email: &str,
@@ -368,7 +365,7 @@ impl AuthService {
         }
     }
 
-    /// Prüft einen vollständigen Code wie `orders.read`. Superuser bestehen, inaktive Benutzer nicht.
+    /// Checks a full permission code such as `orders.read`. Superusers pass; inactive users do not.
     pub async fn holds(&self, user: &AuthUser, code: &str) -> Result<bool, AuthError> {
         if !user.is_active || code.is_empty() || code.len() > 80 {
             return Ok(false);
@@ -380,7 +377,7 @@ impl AuthService {
     }
 
     pub async fn ensure_role(&self, name: &str) -> Result<Uuid, AuthError> {
-        let name = require_ident(name, "role")?;
+        let name = role_label(name)?;
         store::ensure_named_row(&self.db, ROLES, "name", &name).await
     }
 
@@ -404,7 +401,7 @@ impl AuthService {
     }
 
     pub async fn revoke_permission(&self, role: &str, code: &str) -> Result<(), AuthError> {
-        let role_name = require_ident(role, "role")?;
+        let role_name = role_label(role)?;
         validate_permission_code(code)?;
         let Some(role_id) = store::find_named_row(&self.db, ROLES, "name", &role_name).await?
         else {
@@ -440,7 +437,7 @@ impl AuthService {
         let user = store::find_user_by_email(&self.db, &email)
             .await?
             .ok_or_else(|| AuthError::Validation("user was not found".into()))?;
-        let role_name = require_ident(role, "role")?;
+        let role_name = role_label(role)?;
         let Some(role_id) = store::find_named_row(&self.db, ROLES, "name", &role_name).await?
         else {
             return Ok(());
@@ -487,7 +484,7 @@ impl AuthService {
         self.db.begin().await.map_err(AuthError::database)
     }
 
-    /// Prüft Staff-Superuser erneut auf derselben Verbindung wie die folgende Schreiboperation.
+    /// Revalidates staff superuser status on the same connection as the subsequent write.
     pub async fn require_directory_actor(
         &self,
         db: &impl ConnectionTrait,
@@ -501,6 +498,67 @@ impl AuthService {
         } else {
             Err(AuthError::Forbidden)
         }
+    }
+
+    /// Requires a superuser or the `roles.update` permission.
+    pub async fn require_role_manager(
+        &self,
+        db: &impl ConnectionTrait,
+        id: Uuid,
+    ) -> Result<(), AuthError> {
+        let user = store::find_user_by_id(db, id)
+            .await?
+            .ok_or(AuthError::Forbidden)?;
+        if !user.is_active || !user.is_staff {
+            return Err(AuthError::Forbidden);
+        }
+        if user.is_superuser || store::user_has_code(db, id, "roles.update").await? {
+            Ok(())
+        } else {
+            Err(AuthError::Forbidden)
+        }
+    }
+
+    pub async fn display_name(&self, id: Uuid) -> Result<String, AuthError> {
+        store::profile_name(&self.db, id).await
+    }
+
+    pub async fn display_names(&self) -> Result<Vec<(Uuid, String)>, AuthError> {
+        store::profile_names(&self.db).await
+    }
+
+    pub async fn set_display_name(&self, id: Uuid, name: &str) -> Result<(), AuthError> {
+        let name = clean_display_name(name)?;
+        store::find_user_by_id(&self.db, id)
+            .await?
+            .ok_or_else(|| AuthError::Validation("user was not found".into()))?;
+        store::set_profile_name(&self.db, id, &name).await
+    }
+
+    /// Changes only the email, including for the current superuser. Flags remain unchanged.
+    pub async fn update_own_email(&self, id: Uuid, email: &str) -> Result<(), AuthError> {
+        let user = store::find_user_by_id(&self.db, id)
+            .await?
+            .ok_or_else(|| AuthError::Validation("user was not found".into()))?;
+        let email = normalize_email(email)?;
+        if let Some(existing) = store::find_user_by_email(&self.db, &email).await? {
+            if existing.id != user.id {
+                return Err(AuthError::Validation("email is already registered".into()));
+            }
+        }
+        if email == user.email {
+            return Ok(());
+        }
+        let now = unix_now()?;
+        store::update_profile(
+            &self.db,
+            user.id,
+            &email,
+            user.is_active,
+            user.is_staff,
+            now,
+        )
+        .await
     }
 
     pub async fn authorize_on(
@@ -567,7 +625,7 @@ impl AuthService {
     pub async fn update_profile_on(
         &self,
         db: &impl ConnectionTrait,
-        actor: Uuid,
+        _actor: Uuid,
         id: Uuid,
         email: &str,
         is_active: bool,
@@ -576,9 +634,6 @@ impl AuthService {
         let user = store::find_user_by_id(db, id)
             .await?
             .ok_or_else(|| AuthError::Validation("user was not found".into()))?;
-        if user.is_superuser || (actor == id && (!is_active || !is_staff)) {
-            return Err(AuthError::Forbidden);
-        }
         let email = normalize_email(email)?;
         if let Some(existing) = store::find_user_by_email(db, &email).await? {
             if existing.id != user.id {
@@ -595,7 +650,7 @@ impl AuthService {
             email,
             is_active,
             is_staff,
-            is_superuser: false,
+            is_superuser: user.is_superuser,
         })
     }
 
@@ -608,9 +663,6 @@ impl AuthService {
         let user = store::find_user_by_id(db, id)
             .await?
             .ok_or_else(|| AuthError::Validation("user was not found".into()))?;
-        if user.is_superuser {
-            return Err(AuthError::Forbidden);
-        }
         let now = unix_now()?;
         store::update_password(db, user.id, password_hash, now).await?;
         store::revoke_user_sessions(db, user.id, now).await?;
@@ -626,9 +678,6 @@ impl AuthService {
         let user = store::find_user_by_id(db, id)
             .await?
             .ok_or_else(|| AuthError::Validation("user was not found".into()))?;
-        if user.is_superuser {
-            return Err(AuthError::Forbidden);
-        }
         let now = unix_now()?;
         store::set_active(db, user.id, active, now).await?;
         if !active {
@@ -640,16 +689,13 @@ impl AuthService {
     pub async fn set_staff_on(
         &self,
         db: &impl ConnectionTrait,
-        actor: Uuid,
+        _actor: Uuid,
         id: Uuid,
         staff: bool,
     ) -> Result<(), AuthError> {
-        let user = store::find_user_by_id(db, id)
+        store::find_user_by_id(db, id)
             .await?
             .ok_or_else(|| AuthError::Validation("user was not found".into()))?;
-        if user.is_superuser || (actor == id && !staff) {
-            return Err(AuthError::Forbidden);
-        }
         let now = unix_now()?;
         store::set_staff(db, id, staff, now).await
     }
@@ -664,7 +710,7 @@ impl AuthService {
         let user = store::find_user_by_email(db, &email)
             .await?
             .ok_or_else(|| AuthError::Validation("user was not found".into()))?;
-        let role_name = require_ident(role, "role")?;
+        let role_name = role_label(role)?;
         let role_id = store::ensure_named_row(db, ROLES, "name", &role_name).await?;
         store::link_rows(db, USER_ROLES, "user_id", user.id, "role_id", role_id).await?;
         Ok(user.id)
@@ -680,7 +726,7 @@ impl AuthService {
         let user = store::find_user_by_email(db, &email)
             .await?
             .ok_or_else(|| AuthError::Validation("user was not found".into()))?;
-        let role_name = require_ident(role, "role")?;
+        let role_name = role_label(role)?;
         let Some(role_id) = store::find_named_row(db, ROLES, "name", &role_name).await? else {
             return Ok(user.id);
         };
@@ -694,7 +740,7 @@ impl AuthService {
         role: &str,
         code: &str,
     ) -> Result<(), AuthError> {
-        let role_name = require_ident(role, "role")?;
+        let role_name = role_label(role)?;
         validate_permission_code(code)?;
         let role_id = store::ensure_named_row(db, ROLES, "name", &role_name).await?;
         let permission_id = store::ensure_named_row(db, PERMISSIONS, "code", code).await?;
@@ -715,7 +761,7 @@ impl AuthService {
         role: &str,
         code: &str,
     ) -> Result<(), AuthError> {
-        let role_name = require_ident(role, "role")?;
+        let role_name = role_label(role)?;
         validate_permission_code(code)?;
         let Some(role_id) = store::find_named_row(db, ROLES, "name", &role_name).await? else {
             return Ok(());
@@ -740,7 +786,7 @@ impl AuthService {
     }
 
     pub async fn list_role_permissions(&self, role: &str) -> Result<Vec<String>, AuthError> {
-        let role_name = require_ident(role, "role")?;
+        let role_name = role_label(role)?;
         let Some(role_id) = store::find_named_row(&self.db, ROLES, "name", &role_name).await?
         else {
             return Err(AuthError::Validation("role was not found".into()));
@@ -769,9 +815,9 @@ impl AuthService {
         self.allow_presented(headers)
     }
 
-    /// Origin oder Referer müssen exakt auf der Liste stehen. Der Host-Header wird nicht gelesen.
-    /// `Origin: null` gilt nur zusammen mit `Sec-Fetch-Site: same-origin`: Browser setzen genau
-    /// diese Kombination bei einem Same-Origin-Formular, wenn `Referrer-Policy: no-referrer` gilt.
+    /// Origin or Referer must exactly match the allowlist. The Host header is not read.
+    /// `Origin: null` is accepted only with `Sec-Fetch-Site: same-origin`: browsers send
+    /// this combination for same-origin forms under `Referrer-Policy: no-referrer`.
     fn allow_presented(&self, headers: &HeaderMap) -> Result<(), AuthError> {
         let Some(origin) = presented_origin(headers) else {
             return Ok(());
@@ -797,7 +843,7 @@ impl AuthService {
         self.authenticate_csrf(headers, method, supplied).await
     }
 
-    /// Dieselbe HMAC-Prüfung wie der Header. HTML-Formulare übergeben das Token als Feld.
+    /// Uses the same HMAC verification as the header. HTML forms submit the token as a field.
     pub async fn authenticate_csrf(
         &self,
         headers: &HeaderMap,
@@ -941,6 +987,29 @@ pub fn normalize_email(input: &str) -> Result<String, AuthError> {
         return Err(AuthError::Validation("email is invalid".into()));
     }
     Ok(email)
+}
+
+pub fn clean_display_name(value: &str) -> Result<String, AuthError> {
+    let value = value.trim();
+    if value.is_empty() {
+        return Ok(String::new());
+    }
+    if value.chars().count() > 80 || value.chars().any(|character| character.is_control()) {
+        return Err(AuthError::Validation("name is invalid".into()));
+    }
+    Ok(value.to_owned())
+}
+
+fn role_label(value: &str) -> Result<String, AuthError> {
+    let value = value.trim();
+    let valid = (1..=80).contains(&value.chars().count())
+        && value.chars().all(|character| {
+            character.is_alphanumeric() || matches!(character, ' ' | '_' | '.' | '-')
+        });
+    if !valid {
+        return Err(AuthError::Validation("role is invalid".into()));
+    }
+    Ok(value.to_owned())
 }
 
 fn require_ident(value: &str, label: &str) -> Result<String, AuthError> {

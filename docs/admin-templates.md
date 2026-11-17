@@ -10,9 +10,10 @@ Tera renders the admin from fixed templates embedded in the crate. Requests cann
 
 | Template | Page |
 |---|---|
-| `templates/base.html` | Document layout, sidebar, language, theme and logout |
+| `templates/base.html` | Document layout, sidebar and account menu |
 | `templates/login.html` | Login |
-| `templates/dashboard.html` |Summary|
+| `templates/dashboard.html` | Overview with recent admin activity |
+| `templates/account.html` | Account page for language, theme and later personal settings |
 | `templates/models/list.html` | List, search, filters, sorting, pagination and bulk actions |
 | `templates/models/bulk.html` | Bulk-action confirmation, registered as `bulk.html` |
 | `templates/audit.html` |Change history|
@@ -32,7 +33,7 @@ Tera renders the admin from fixed templates embedded in the crate. Requests cann
 
 ## Context
 
-Every page receives `locale`, `theme`, `title`, branding, the `i18n` catalog, `signed_in`, `superuser`, `user_email`, `csrf_token`, `current_path`, `notice` and `alert`. Handlers add page-specific fields such as `sections`, `rows` or `models`. Model forms group fields in `sections`. User forms provide `email`, `email_error`, `password_error` and `role_checks`. Password fields are never prefilled.
+Every page receives `locale`, `theme`, `title`, branding, the `i18n` catalog, `signed_in`, `superuser`, `user_email`, `user_id`, `user_initial`, `csrf_token`, `current_path`, `notice` and `alert`. Handlers add page-specific fields such as `sections`, `rows` or `models`. Model forms group fields in `sections`. User forms provide `email`, `email_error`, `password_error` and `role_checks`. Password fields are never prefilled.
 
 Messages after a POST do not appear as free text in the URL. The codes `created`, `saved`, `deleted`, `updated` and `changed` are permitted. `changed` additionally requires a number `changed` from 0 to 100. The handler translates the code.
 

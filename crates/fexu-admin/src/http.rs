@@ -65,8 +65,13 @@ struct ListParams {
     q: Option<String>,
 }
 
-async fn public_config(Extension(registry): Extension<AdminRegistry>) -> Json<Value> {
+async fn public_config(
+    State(state): State<AppState>,
+    Extension(registry): Extension<AdminRegistry>,
+) -> Json<Value> {
+    crate::project::ensure(&registry, &state.db).await;
     let branding = registry.branding();
+    let icons = registry.icons();
     Json(json!({
         "site_title": branding.site_title,
         "site_header": branding.site_header,
@@ -75,7 +80,9 @@ async fn public_config(Extension(registry): Extension<AdminRegistry>) -> Json<Va
         "default_locale": branding.default_locale,
         "fallback_locale": branding.fallback_locale,
         "supported_locales": ["de", "en"],
-        "currency": branding.currency
+        "currency": branding.currency,
+        "favicon": icons.favicon,
+        "apple_touch_icon": icons.apple_touch_icon
     }))
 }
 

@@ -1,4 +1,4 @@
-//! Inverse einer gespeicherten Migration. Datenverlust bleibt abgelehnt, bis er ausdrücklich erlaubt ist.
+//! Reverses a stored migration. Destructive changes remain blocked unless explicitly authorized.
 
 use crate::diff::{alter_is_supported, MigrationOperation};
 use crate::error::MigrationError;

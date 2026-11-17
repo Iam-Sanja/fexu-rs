@@ -114,8 +114,8 @@ pub fn home_context_for(settings: &ProjectConfig, locale: &str) -> Context {
     context
 }
 
-/// Reihenfolge: gültiger `lang`-Parameter, unterstütztes `Accept-Language`, Projektstandard, Fallback.
-/// Der Wert wird nie als Dateipfad verwendet.
+/// Precedence: valid `lang` parameter, supported `Accept-Language`, project default, fallback.
+/// Locale values are never used as filesystem paths.
 pub fn negotiate_locale(
     explicit: Option<&str>,
     accept_language: Option<&str>,
@@ -132,12 +132,12 @@ pub fn negotiate_locale(
         .unwrap_or_else(|| "en".to_owned())
 }
 
-/// Hängt Startseite und Fehlerseiten an den Router, wenn Vorlagen aktiv sind.
+/// Mounts the home and error pages when templates are enabled.
 pub fn mount_pages(router: Router, settings: &ProjectConfig) -> Result<Router, PageError> {
     mount_pages_with(router, settings, &crate::urls::RouteMap::default())
 }
 
-/// Wie `mount_pages`, und die Projektvorlagen erhalten dieselbe `url`-Funktion wie App-Vorlagen.
+/// Like `mount_pages`, but project templates share the `url` function with app templates.
 pub fn mount_pages_with(
     router: Router,
     settings: &ProjectConfig,
@@ -253,8 +253,8 @@ static INSTALLED_ERRORS: std::sync::Mutex<Option<InstalledErrors>> = std::sync::
 /// Serializes tests that read or replace the process-wide error site.
 pub static ERROR_SITE_TESTS: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
-/// Projektfehlerseiten für `views::fail`, wenn der Aufrufer kein `Site` übergibt.
-/// Der Rückgabewert stellt den vorherigen Stand wieder her.
+/// Project error pages for `views::fail` when the caller does not provide a `Site`.
+/// The return value restores the previous state.
 pub struct ErrorSiteGuard {
     previous: Option<InstalledErrors>,
 }

@@ -10,9 +10,11 @@
 
 ## Scope
 
-The layout is a grid with a `16rem` sidebar and a content area. The sidebar shows branding, the dashboard and registered apps with their models. Superusers also see users, roles and audit history under System. The current item uses `aria-current="page"`, font weight 650 and a violet background. Models are grouped under their app name rather than a single “Models” link.
+The layout is a grid with a `16rem` sidebar and a content area. The sidebar shows branding, then collapsible groups. Dashboards contains the saved menus and configuration. `/admin` opens the first saved menu, or configuration when none exists. Each app folds its models. Superusers also see users and roles. Audit history stays under System and behind the history link on a record. A record page does not repeat that timeline beside the form. A signed-in user sees an account link at the bottom of the sidebar. The current item uses `aria-current="page"`. Groups use a native `<details>` element, so they open and close without JavaScript. The group that contains the current page starts open.
 
-The header shows the page title, email address, language, theme and logout control. Language and theme changes use POST on `/admin/preferences`; logout is a CSRF-protected POST. A skip link targets `#content`.
+The header shows the page title and, for a signed-in user, an account menu. The menu is a native `<details>` control: the summary is an avatar with the first letter of the email, and the panel shows the email, a link to `/admin/account`, and logout. Superusers also see a link to their own user record. Language and theme live on the account page and POST to `/admin/preferences`. Logout is a CSRF-protected POST. A skip link targets `#content`.
+
+Tables and charts live in the saved dashboard menus. Configuration stores the model, the fields and the display with each block. A chart counts the records of that model and groups them by the chosen field. A line uses a date field. The framework does not invent figures. A model list keeps search above the table. Choice, boolean and relation filters sit in a column on the right. Each value is a link that keeps the other query parameters. Date, time and number filters stay inputs in that same column.
 
 Below 800 pixels, the grid becomes one column. The sidebar starts collapsed behind a checkbox labelled Navigation. The links stay out of the tab order until that control is checked. No script is required. At 801 pixels and above the control is removed and the sidebar stays open. Wide tables can be focused and scrolled from the keyboard. The record name stays visible while a table scrolls sideways.
 
@@ -41,6 +43,8 @@ The basic level is `0.25rem`.
 Colors represent roles rather than individual surfaces. `--ink`, `--muted`, `--paper`, `--card`, `--focus`, `--danger` and `--ok` change with `data-theme`. `--line` is the control border (`#6d7b90` in light mode, `#8aa0bd` in dark mode), with at least 3:1 contrast against its background. `--divider` provides quieter separators between rows and cards. `--danger-ink` is white in light mode and `#0f172a` in dark mode because white on `#fb7185` falls below 4.5:1.
 
 `--focus` and `--action` use violet: `#5b21b6` and `#6d28d9` in light mode, and `#ddd6fe` in dark mode. Text on dark-mode action buttons is `#1e1033`. `--brand` colors the light-mode sidebar only when white text reaches at least 4.5:1 contrast; otherwise it stays `#0f172a`. Dark-mode sidebars do not use the project color.
+
+A resting card has no border. Its fill separates it from the page, and light mode adds the rest shadow. `--line` frames controls. `--divider` separates rows inside a table. Notices and errors keep a colored edge because that edge carries the state. Neighboring blocks in `main` sit `--space-6` apart. A breadcrumb and the hint directly under it may use `--space-3`. Cards inside `.board-list` use the same `--space-6` gap. Two surfaces never share an edge.
 
 Focus uses a 3px ring offset 2px from the control, shown only for `:focus-visible`. Sidebar focus rings use the sidebar text color. Checkboxes remain 1.2rem. Sidebar links are 2rem high, increasing to 2.75rem below 800 pixels.
 

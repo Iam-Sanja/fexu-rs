@@ -1,20 +1,23 @@
-//! Admin-API und serverseitige HTML-Oberfläche.
+//! Admin API and server-rendered HTML interface.
 //!
-//! Datenzugriff, Validierung und Sitzungen bleiben in den vorhandenen Fexu-Crates.
+//! Data access, validation, and sessions remain in the existing Fexu crates.
 
 mod actions;
 mod assets;
 mod audit;
+mod boards;
 mod compose;
 mod configure;
 mod directory;
 mod drafts;
+mod files;
 mod filters;
 mod html;
 mod http;
 mod localization;
 mod nav;
 mod pages;
+mod project;
 mod registry;
 mod relations;
 mod rendering;

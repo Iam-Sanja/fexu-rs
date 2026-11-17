@@ -1,4 +1,4 @@
-//! Expliziter Fragment- und View-Cache. Er hängt sich nicht an das Template-System.
+//! Explicit fragment and view cache. It does not hook into the template system.
 
 use crate::backend::{validate_key, validate_namespace, CacheBackend};
 use crate::error::CacheError;
@@ -42,26 +42,26 @@ impl<B: CacheBackend> FragmentCache<B> {
     }
 }
 
-/// Wer eine gerenderte View oder ein Template sehen darf.
+/// Who may see a rendered view or template.
 ///
-/// `Anonymous` ist ein gemeinsamer Eintrag und lehnt angemeldete Betrachter ab.
-/// `User` speichert unter einer kodierten Nutzer-ID und lehnt anonyme Betrachter
-/// ab. Die Anwendung muss die echte Sitzung und die dazu passende Nutzer-ID
-/// übergeben. `viewer_is_authenticated` ist kein Authentifizierungsnachweis.
+/// `Anonymous` is shared and rejects authenticated viewers.
+/// `User` stores data under an encoded user ID and rejects anonymous viewers.
+/// The application must supply a verified session and its matching user ID.
+/// `viewer_is_authenticated` is not proof of authentication.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ViewScope {
     Anonymous,
     User { user_id: String },
 }
 
-/// Opt-in-Cache für fertiges HTML. Tera und `views::render` rufen ihn nicht auf.
+/// Opt-in cache for rendered HTML. Tera and `views::render` do not invoke it.
 ///
-/// Anonyme Einträge liegen in `a{länge}.{name}`, nutzerbezogene in `u{länge}.{name}`.
-/// Die Länge macht `notes` und `notes.user` zu verschiedenen Namensräumen.
-/// `invalidate_anonymous` löscht keine Nutzereinträge. Ein gemeinsamer Eintrag
-/// wird nie für einen angemeldeten Betrachter geschrieben. Ein Nutzer-Scope ohne
-/// angemeldeten Betrachter wird vor dem Lesen abgelehnt. Das Boolean ist kein
-/// Nachweis der Sitzung: die Anwendung muss Sitzung und Nutzer-ID selbst prüfen.
+/// Anonymous entries use `a{length}.{name}`; user entries use `u{length}.{name}`.
+/// Encoding the length distinguishes namespaces `notes` and `notes.user`.
+/// `invalidate_anonymous` does not delete user entries. Shared entries
+/// are never stored for authenticated viewers. A user scope without
+/// an authenticated viewer is rejected before reads. The boolean is not
+/// proof of a session: applications must verify sessions and user IDs themselves.
 pub struct ViewCache<B> {
     cache: TypedCache<B>,
     anonymous: String,
@@ -128,8 +128,8 @@ impl<B: CacheBackend> ViewCache<B> {
 
 fn scope_namespace(view: &str, scope_tag: char) -> Result<String, CacheError> {
     validate_namespace(view)?;
-    // Vier Zeichen für Kennung, Länge und Punkt. Der Name bleibt bei höchstens 60,
-    // damit der Namensraum die Grenze von 64 Zeichen einhält.
+    // Reserve four characters for the prefix, length, and dot. Limit names to 60
+    // so namespaces remain within the 64-character limit.
     if view.len() > 60 {
         return Err(CacheError::InvalidKey);
     }

@@ -60,26 +60,55 @@ pub(crate) async fn navigation(
             });
         }
     }
-    compose(
+    let manage_roles = match state.auth.as_ref() {
+        Some(auth) => auth.holds(user, "roles.update").await.unwrap_or(false),
+        None => false,
+    };
+    let listed = crate::boards::list_boards(&state.db).await;
+    let (boards, boards_error) = match listed {
+        Ok(rows) => (rows, false),
+        Err(_) => (Vec::new(), true),
+    };
+    compose(Sidebar {
         locale,
         path,
-        user.is_superuser,
-        registry.branding().app_name.as_str(),
-        registry.app_catalog(),
-        &models,
-        &views,
-    )
+        superuser: manage_roles,
+        host_label: registry.branding().app_name.as_str(),
+        apps: registry.app_catalog(),
+        models: &models,
+        views: &views,
+        boards: &boards
+            .iter()
+            .map(|board| (board.id.to_string(), board.name.clone()))
+            .collect::<Vec<_>>(),
+        boards_error,
+    })
 }
 
-fn compose(
-    locale: &str,
-    path: &str,
+struct Sidebar<'a> {
+    locale: &'a str,
+    path: &'a str,
     superuser: bool,
-    host_label: &str,
-    apps: &[(String, String)],
-    models: &[Item],
-    views: &[Item],
-) -> Navigation {
+    host_label: &'a str,
+    apps: &'a [(String, String)],
+    models: &'a [Item],
+    views: &'a [Item],
+    boards: &'a [(String, String)],
+    boards_error: bool,
+}
+
+fn compose(sidebar: Sidebar<'_>) -> Navigation {
+    let Sidebar {
+        locale,
+        path,
+        superuser,
+        host_label,
+        apps,
+        models,
+        views,
+        boards,
+        boards_error,
+    } = sidebar;
     let text = |key: &str| {
         catalog(locale)
             .get(key)
@@ -101,13 +130,21 @@ fn compose(
         })
         .cloned()
         .collect();
+    let mut dashboard_items = Vec::new();
+    for (id, name) in boards {
+        dashboard_items.push(link(&format!("/admin/boards/{id}"), name, path));
+    }
+    dashboard_items.push(link("/admin/boards/config", &text("board_config"), path));
     let mut sections = vec![json!({
-        "key": "home",
-        "label": "",
-        "items": [{
-            "href": "/admin",
-            "label": text("dashboard"),
-            "current": path == "/admin" || path == "/admin/"
+        "key": "general",
+        "label": text("general"),
+        "items": [],
+        "groups": [{
+            "key": "dashboards",
+            "label": text("dashboards"),
+            "open": path == "/admin" || path == "/admin/" || path.starts_with("/admin/boards"),
+            "error": boards_error,
+            "items": dashboard_items
         }]
     })];
     sections.push(json!({
@@ -115,11 +152,13 @@ fn compose(
         "label": text("applications"),
         "empty": groups.is_empty(),
         "groups": groups,
+        "items": []
     }));
     if superuser {
         sections.push(json!({
             "key": "access",
             "label": text("access"),
+            "groups": [],
             "items": [
                 {
                     "href": "/admin/directory/users",
@@ -138,6 +177,7 @@ fn compose(
     sections.push(json!({
         "key": "system",
         "label": text("system"),
+        "groups": [],
         "items": [{
             "href": "/admin/audit",
             "label": text("history"),
@@ -171,9 +211,12 @@ fn push_group(
     if items.is_empty() {
         return;
     }
+    let open = items.iter().any(|item| item["current"] == true);
     groups.push(json!({
         "key": key,
         "label": label,
+        "open": open,
+        "error": false,
         "items": items,
         "models": model_rows
     }));
@@ -211,15 +254,18 @@ mod tests {
             item("/admin/models/loose", "Lose", ""),
         ];
         let views = vec![item("/admin/pages/stock", "Bestand", "shop")];
-        let nav = compose(
-            "de",
-            "/admin/models/product",
-            false,
-            "Fexu",
-            &apps,
-            &models,
-            &views,
-        );
+        let boards = vec![("board-1".to_owned(), "Menü 1".to_owned())];
+        let nav = compose(super::Sidebar {
+            locale: "de",
+            path: "/admin/models/product",
+            superuser: false,
+            host_label: "Fexu",
+            apps: &apps,
+            models: &models,
+            views: &views,
+            boards: &boards,
+            boards_error: false,
+        });
         let body = nav.sections.to_string();
         assert!(body.contains("\"label\":\"Shop\""));
         assert!(body.contains("\"label\":\"Notizen\""));
@@ -228,16 +274,33 @@ mod tests {
         assert!(body.contains("\"href\":\"/admin/pages/stock\""));
         assert!(body.contains("\"current\":true"));
         assert!(body.contains("\"href\":\"/admin/audit\""));
+        assert!(body.contains("\"label\":\"Dashboards\""));
+        assert!(!body.contains("\"label\":\"Übersicht\""));
+        assert!(body.contains("\"label\":\"Menü 1\""));
+        assert!(body.contains("\"href\":\"/admin/boards/config\""));
+        assert!(body.contains("\"open\":true"));
         assert!(!body.contains("\"href\":\"/admin/models\""));
         assert!(!body.contains("Benutzer und Zugang"));
         let groups = nav.groups.to_string();
         assert!(groups.contains("\"key\":\"product\""));
         assert!(!groups.contains("\"key\":\"stock\""));
-        let root = compose("en", "/admin/audit", true, "Fexu", &[], &[], &[]);
+        let root = compose(super::Sidebar {
+            locale: "en",
+            path: "/admin/audit",
+            superuser: true,
+            host_label: "Fexu",
+            apps: &[],
+            models: &[],
+            views: &[],
+            boards: &[],
+            boards_error: true,
+        });
         let root_body = root.sections.to_string();
         assert!(root_body.contains("Users and access"));
         assert!(root_body.contains("\"empty\":true"));
         assert!(root_body.contains("\"href\":\"/admin/audit\""));
         assert!(root_body.contains("\"current\":true"));
+        assert!(root_body.contains("\"error\":true"));
+        assert!(root_body.contains("Configuration"));
     }
 }

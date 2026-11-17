@@ -1,0 +1,1258 @@
+msgid ""
+msgstr ""
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Language: de\n"
+
+msgctxt "login"
+msgid "Sign in"
+msgstr "Anmelden"
+
+msgctxt "email"
+msgid "Email"
+msgstr "E-Mail"
+
+msgctxt "password"
+msgid "Password"
+msgstr "Passwort"
+
+msgctxt "invalid_credentials"
+msgid "Invalid email or password."
+msgstr "E-Mail oder Passwort ist ungültig."
+
+msgctxt "rate_limited"
+msgid "Too many attempts. Try again later."
+msgstr "Zu viele Versuche. Bitte später erneut versuchen."
+
+msgctxt "csrf"
+msgid "The security check failed."
+msgstr "Die Sicherheitsprüfung ist fehlgeschlagen."
+
+msgctxt "dashboard"
+msgid "Dashboards"
+msgstr "Dashboards"
+
+msgctxt "dashboards"
+msgid "Dashboards"
+msgstr "Dashboards"
+
+msgctxt "general"
+msgid "General"
+msgstr "Allgemein"
+
+msgctxt "board_config"
+msgid "Configuration"
+msgstr "Konfiguration"
+
+msgctxt "superuser_role"
+msgid "Admin"
+msgstr "Admin"
+
+msgctxt "staff_role"
+msgid "Staff"
+msgstr "Mitarbeiter"
+
+msgctxt "welcome"
+msgid "Welcome"
+msgstr "Willkommen"
+
+msgctxt "models"
+msgid "Models"
+msgstr "Modelle"
+
+msgctxt "users"
+msgid "Users"
+msgstr "Benutzer"
+
+msgctxt "roles"
+msgid "Roles"
+msgstr "Rollen"
+
+msgctxt "permissions"
+msgid "Permissions"
+msgstr "Berechtigungen"
+
+msgctxt "directory"
+msgid "Directory"
+msgstr "Verzeichnis"
+
+msgctxt "logout"
+msgid "Sign out"
+msgstr "Abmelden"
+
+msgctxt "account"
+msgid "Account"
+msgstr "Konto"
+
+msgctxt "settings"
+msgid "Settings"
+msgstr "Einstellungen"
+
+msgctxt "set_password"
+msgid "Set a new password"
+msgstr "Neues Passwort setzen"
+
+msgctxt "account_menu"
+msgid "Account menu"
+msgstr "Kontomenü"
+
+msgctxt "account_record"
+msgid "Your user record"
+msgstr "Eigener Benutzerdatensatz"
+
+msgctxt "account_hint"
+msgid "Language and appearance apply to this admin. More personal settings will live on this page."
+msgstr "Sprache und Darstellung gelten für diese Verwaltung. Weitere persönliche Einstellungen kommen auf diese Seite."
+
+msgctxt "search"
+msgid "Search"
+msgstr "Suchen"
+
+msgctxt "search_title"
+msgid "Search"
+msgstr "Suche"
+
+msgctxt "search_admin"
+msgid "Search pages and records"
+msgstr "Seiten und Datensätze suchen"
+
+msgctxt "search_prompt"
+msgid "Enter a search term."
+msgstr "Suchbegriff eingeben."
+
+msgctxt "search_pages"
+msgid "Pages"
+msgstr "Seiten"
+
+msgctxt "theme_toggle"
+msgid "Switch appearance"
+msgstr "Darstellung wechseln"
+
+msgctxt "filter"
+msgid "Filter"
+msgstr "Filtern"
+
+msgctxt "filter_panel"
+msgid "Filter"
+msgstr "Filter"
+
+msgctxt "filter_by"
+msgid "By"
+msgstr "Nach"
+
+msgctxt "save"
+msgid "Save"
+msgstr "Speichern"
+
+msgctxt "save_continue"
+msgid "Save and continue editing"
+msgstr "Speichern und weiter bearbeiten"
+
+msgctxt "save_add"
+msgid "Save and add another"
+msgstr "Speichern und weiteren Eintrag erstellen"
+
+msgctxt "pick_more"
+msgid "Search further"
+msgstr "Weiter suchen"
+
+msgctxt "lookup_truncated"
+msgid "The list shows the first 100 matches. Use search for the rest."
+msgstr "Die Auswahl zeigt die ersten 100 Treffer. Weitere Werte stehen in der Suche."
+
+msgctxt "pick_heading"
+msgid "Choose a record"
+msgstr "Eintrag wählen"
+
+msgctxt "pick_empty"
+msgid "No matching record."
+msgstr "Kein passender Eintrag."
+
+msgctxt "pick_back"
+msgid "Back to the form"
+msgstr "Zurück zum Formular"
+
+msgctxt "invalid_relation"
+msgid "Choose a visible record."
+msgstr "Wählen Sie einen sichtbaren Eintrag."
+
+msgctxt "form_errors"
+msgid "Correct the marked fields."
+msgstr "Bitte korrigieren Sie die markierten Felder."
+
+msgctxt "m2m_hint"
+msgid "Several existing records can be selected. An empty selection removes the visible links."
+msgstr "Mehrere vorhandene Einträge können ausgewählt werden. Eine leere Auswahl entfernt die sichtbaren Verbindungen."
+
+msgctxt "m2m_empty"
+msgid "No records are available to select."
+msgstr "Keine auswählbaren Einträge."
+
+msgctxt "m2m_truncated"
+msgid "The list shows the first 100 visible records. Already selected visible records stay listed."
+msgstr "Die Liste zeigt die ersten 100 sichtbaren Einträge. Bereits ausgewählte sichtbare Einträge bleiben erhalten."
+
+msgctxt "m2m_blocked"
+msgid "This account cannot read the related records."
+msgstr "Die verbundenen Einträge können mit diesem Konto nicht gelesen werden."
+
+msgctxt "m2m_invalid"
+msgid "The selection contains an invalid or hidden record."
+msgstr "Die Auswahl enthält einen ungültigen oder nicht sichtbaren Eintrag."
+
+msgctxt "m2m_size"
+msgid "At most 1000 links can be saved."
+msgstr "Es können höchstens 1000 Verbindungen gespeichert werden."
+
+msgctxt "cancel"
+msgid "Cancel"
+msgstr "Abbrechen"
+
+msgctxt "create"
+msgid "Create"
+msgstr "Anlegen"
+
+msgctxt "edit"
+msgid "Edit"
+msgstr "Bearbeiten"
+
+msgctxt "delete"
+msgid "Delete"
+msgstr "Löschen"
+
+msgctxt "back"
+msgid "Back"
+msgstr "Zurück"
+
+msgctxt "detail"
+msgid "Details"
+msgstr "Details"
+
+msgctxt "empty"
+msgid "No records."
+msgstr "Keine Einträge."
+
+msgctxt "no_models"
+msgid "No models are available for this account."
+msgstr "Keine Modelle für dieses Konto."
+
+msgctxt "forbidden"
+msgid "This action is not allowed."
+msgstr "Diese Aktion ist nicht erlaubt."
+
+msgctxt "not_found"
+msgid "The record was not found."
+msgstr "Der Eintrag wurde nicht gefunden."
+
+msgctxt "staff_required"
+msgid "Administration requires staff access."
+msgstr "Die Verwaltung verlangt einen Staff-Zugang."
+
+msgctxt "confirm_delete"
+msgid "This record will be deleted permanently."
+msgstr "Dieser Eintrag wird dauerhaft gelöscht."
+
+msgctxt "notice_created"
+msgid "The record was created."
+msgstr "Der Eintrag wurde angelegt."
+
+msgctxt "notice_saved"
+msgid "The changes were saved."
+msgstr "Die Änderungen wurden gespeichert."
+
+msgctxt "notice_deleted"
+msgid "The record was deleted."
+msgstr "Der Eintrag wurde gelöscht."
+
+msgctxt "notice_updated"
+msgid "The change was saved."
+msgstr "Die Änderung wurde gespeichert."
+
+msgctxt "yes"
+msgid "Yes"
+msgstr "Ja"
+
+msgctxt "no"
+msgid "No"
+msgstr "Nein"
+
+msgctxt "active"
+msgid "Active"
+msgstr "Aktiv"
+
+msgctxt "inactive"
+msgid "Inactive"
+msgstr "Inaktiv"
+
+msgctxt "staff"
+msgid "Staff"
+msgstr "Staff"
+
+msgctxt "no_staff"
+msgid "Not staff"
+msgstr "Kein Staff"
+
+msgctxt "superuser"
+msgid "Superuser"
+msgstr "Superuser"
+
+msgctxt "no_superuser"
+msgid "Not a superuser"
+msgstr "Kein Superuser"
+
+msgctxt "actions"
+msgid "Actions"
+msgstr "Aktionen"
+
+msgctxt "image"
+msgid "Image"
+msgstr "Bild"
+
+msgctxt "required"
+msgid "Required"
+msgstr "Pflichtfeld"
+
+msgctxt "optional"
+msgid "Optional"
+msgstr "Optional"
+
+msgctxt "readonly"
+msgid "Read only"
+msgstr "Nur lesen"
+
+msgctxt "none"
+msgid "None"
+msgstr "Keine"
+
+msgctxt "total"
+msgid "Total"
+msgstr "Gesamt"
+
+msgctxt "previous"
+msgid "Previous"
+msgstr "Zurück"
+
+msgctxt "next"
+msgid "Next"
+msgstr "Weiter"
+
+msgctxt "page"
+msgid "Page"
+msgstr "Seite"
+
+msgctxt "language"
+msgid "Language"
+msgstr "Sprache"
+
+msgctxt "theme"
+msgid "Theme"
+msgstr "Darstellung"
+
+msgctxt "light"
+msgid "Light"
+msgstr "Hell"
+
+msgctxt "dark"
+msgid "Dark"
+msgstr "Dunkel"
+
+msgctxt "system"
+msgid "System"
+msgstr "System"
+
+msgctxt "apply"
+msgid "Apply"
+msgstr "Übernehmen"
+
+msgctxt "assign"
+msgid "Assign"
+msgstr "Zuweisen"
+
+msgctxt "revoke"
+msgid "Revoke"
+msgstr "Entziehen"
+
+msgctxt "grant"
+msgid "Grant"
+msgstr "Gewähren"
+
+msgctxt "role"
+msgid "Role"
+msgstr "Rolle"
+
+msgctxt "add_role"
+msgid "Create role"
+msgstr "Rolle anlegen"
+
+msgctxt "permission_code"
+msgid "Permission code"
+msgstr "Berechtigungscode"
+
+msgctxt "deactivate"
+msgid "Deactivate"
+msgstr "Deaktivieren"
+
+msgctxt "activate"
+msgid "Activate"
+msgstr "Aktivieren"
+
+msgctxt "remove_staff"
+msgid "Remove staff"
+msgstr "Staff entziehen"
+
+msgctxt "make_staff"
+msgid "Grant staff"
+msgstr "Staff geben"
+
+msgctxt "blocked"
+msgid "Blocked"
+msgstr "Gesperrt"
+
+msgctxt "open"
+msgid "Open"
+msgstr "Öffnen"
+
+msgctxt "new_record"
+msgid "New record"
+msgstr "Neuer Eintrag"
+
+msgctxt "results"
+msgid "Results"
+msgstr "Treffer"
+
+msgctxt "skip"
+msgid "Skip to content"
+msgstr "Zum Inhalt"
+
+msgctxt "navigation"
+msgid "Navigation"
+msgstr "Navigation"
+
+msgctxt "breadcrumb"
+msgid "Breadcrumb"
+msgstr "Pfad"
+
+msgctxt "reset"
+msgid "Reset"
+msgstr "Zurücksetzen"
+
+msgctxt "error"
+msgid "Error"
+msgstr "Fehler"
+
+msgctxt "sort_asc"
+msgid "ascending"
+msgstr "aufsteigend"
+
+msgctxt "sort_desc"
+msgid "descending"
+msgstr "absteigend"
+
+msgctxt "hint_select"
+msgid "Choose an existing record."
+msgstr "Wählen Sie einen vorhandenen Eintrag."
+
+msgctxt "hint_flags"
+msgid "Staff opens administration. Superuser does not replace staff."
+msgstr "Staff öffnet die Verwaltung. Superuser ersetzt Staff nicht."
+
+msgctxt "hint_role"
+msgid "Existing roles only. Create a new role on the roles page."
+msgstr "Nur vorhandene Rollen. Eine neue Rolle entsteht auf der Rollenseite."
+
+msgctxt "hint_role_name"
+msgid "Up to 80 characters. Spaces are allowed, for example Read only."
+msgstr "Bis zu 80 Zeichen. Leerzeichen sind erlaubt, zum Beispiel Nur lesen."
+
+msgctxt "hint_permission"
+msgid "For each table, choose whether the role may create, read, update, or delete."
+msgstr "Je Tabelle legen Sie fest, ob die Rolle anlegen, lesen, ändern oder löschen darf."
+
+msgctxt "name"
+msgid "Name"
+msgstr "Name"
+
+msgctxt "hint_name"
+msgid "One name. No separate first and last name."
+msgstr "Ein Name. Keine getrennten Felder für Vorname und Nachname."
+
+msgctxt "profile_heading"
+msgid "Your record"
+msgstr "Eigener Datensatz"
+
+msgctxt "password_current"
+msgid "Current password"
+msgstr "Bisheriges Passwort"
+
+msgctxt "password_signout"
+msgid "A new password signs you out."
+msgstr "Ein neues Passwort meldet Sie ab."
+
+msgctxt "profile_invalid"
+msgid "The name or email is invalid."
+msgstr "Name oder E-Mail ist ungültig."
+
+msgctxt "password_current_invalid"
+msgid "The current password is wrong."
+msgstr "Das bisherige Passwort stimmt nicht."
+
+msgctxt "appearance"
+msgid "Appearance"
+msgstr "Darstellung"
+
+msgctxt "project"
+msgid "Project"
+msgstr "Projekt"
+
+msgctxt "project_hint"
+msgid "The browser shows the title, header, color, and icons. Currency and languages apply to the whole administration."
+msgstr "Titel, Kopfzeile, Farbe und Symbole sieht der Browser. Währung und Sprachen gelten für die ganze Verwaltung."
+
+msgctxt "site_title_label"
+msgid "Site title"
+msgstr "Seitentitel"
+
+msgctxt "hint_site_title"
+msgid "Shown in the browser tab title."
+msgstr "Steht im Titel des Browser-Tabs."
+
+msgctxt "site_header_label"
+msgid "Header"
+msgstr "Kopfzeile"
+
+msgctxt "hint_site_header"
+msgid "Shown at the top of the sidebar."
+msgstr "Steht oben in der Seitenleiste."
+
+msgctxt "app_name_label"
+msgid "Application"
+msgstr "Anwendung"
+
+msgctxt "hint_app_name"
+msgid "Application name for the browser."
+msgstr "Name der Anwendung für den Browser."
+
+msgctxt "primary_color_label"
+msgid "Brand color"
+msgstr "Markenfarbe"
+
+msgctxt "favicon_label"
+msgid "Favicon"
+msgstr "Favicon"
+
+msgctxt "apple_touch_label"
+msgid "Apple touch icon"
+msgstr "Apple-Touch-Symbol"
+
+msgctxt "hint_icon"
+msgid "PNG, JPEG, GIF, WebP, or ICO. Without a new file the current icon stays."
+msgstr "PNG, JPEG, GIF, WebP oder ICO. Ohne neue Datei bleibt das bisherige Symbol."
+
+msgctxt "icon_clear"
+msgid "Remove"
+msgstr "Entfernen"
+
+msgctxt "hint_image"
+msgid "PNG, JPEG, GIF, WebP, or ICO. Without a new file the current image stays."
+msgstr "PNG, JPEG, GIF, WebP oder ICO. Ohne neue Datei bleibt das bisherige Bild."
+
+msgctxt "currency_label"
+msgid "Currency"
+msgstr "Währung"
+
+msgctxt "hint_currency"
+msgid "Three letters, for example EUR."
+msgstr "Drei Buchstaben, zum Beispiel EUR."
+
+msgctxt "project_locale_label"
+msgid "Default language"
+msgstr "Standardsprache"
+
+msgctxt "project_fallback_label"
+msgid "Fallback language"
+msgstr "Ausweichsprache"
+
+msgctxt "project_invalid"
+msgid "The project details are invalid."
+msgstr "Die Projektangaben sind ungültig."
+
+msgctxt "roles_grant"
+msgid "Role assignment"
+msgstr "Rollenvergabe"
+
+msgctxt "hint_role_grant"
+msgid "Only someone with this permission can assign and change roles. A superuser always can."
+msgstr "Rollen vergeben und ändern darf nur, wer diese Berechtigung hat. Ein Superuser darf es immer."
+
+msgctxt "action_create"
+msgid "Create"
+msgstr "Anlegen"
+
+msgctxt "action_read"
+msgid "Read"
+msgstr "Lesen"
+
+msgctxt "action_update"
+msgid "Update"
+msgstr "Ändern"
+
+msgctxt "action_delete"
+msgid "Delete"
+msgstr "Löschen"
+
+msgctxt "matrix_table"
+msgid "Table"
+msgstr "Tabelle"
+
+msgctxt "confirm_check"
+msgid "I confirm this change."
+msgstr "Ich bestätige diese Änderung."
+
+msgctxt "assign_heading"
+msgid "Assign role"
+msgstr "Rolle zuweisen"
+
+msgctxt "no_roles"
+msgid "There is no role yet."
+msgstr "Es gibt noch keine Rolle."
+
+msgctxt "existing_roles"
+msgid "Existing roles"
+msgstr "Vorhandene Rollen"
+
+msgctxt "unknown_role"
+msgid "That role does not exist. Create it first."
+msgstr "Diese Rolle gibt es nicht. Legen Sie sie zuerst an."
+
+msgctxt "choose"
+msgid "Choose"
+msgstr "Bitte wählen"
+
+msgctxt "add_user"
+msgid "Add user"
+msgstr "Benutzer anlegen"
+
+msgctxt "password_confirm"
+msgid "Confirm password"
+msgstr "Passwort wiederholen"
+
+msgctxt "password_rules"
+msgid "12 to 128 characters. The password is not shown."
+msgstr "12 bis 128 Zeichen. Das Passwort wird nicht angezeigt."
+
+msgctxt "password_heading"
+msgid "Set password"
+msgstr "Passwort setzen"
+
+msgctxt "password_mismatch"
+msgid "The passwords do not match."
+msgstr "Die Passwörter stimmen nicht überein."
+
+msgctxt "confirm_required"
+msgid "This action requires confirmation."
+msgstr "Diese Aktion braucht eine Bestätigung."
+
+msgctxt "confirm_invalid"
+msgid "The confirmation is invalid."
+msgstr "Die Bestätigung ist ungültig."
+
+msgctxt "missing_relation"
+msgid "Missing"
+msgstr "Nicht vorhanden"
+
+msgctxt "hidden_relation"
+msgid "Not visible"
+msgstr "Nicht sichtbar"
+
+msgctxt "all"
+msgid "All"
+msgstr "Alle"
+
+msgctxt "view"
+msgid "View"
+msgstr "Anzeigen"
+
+msgctxt "manage_roles"
+msgid "Roles"
+msgstr "Rollen"
+
+msgctxt "email_taken"
+msgid "That email is already registered."
+msgstr "Diese E-Mail ist bereits vergeben."
+
+msgctxt "password_invalid"
+msgid "The password must contain 12 to 128 characters."
+msgstr "Das Passwort muss 12 bis 128 Zeichen haben."
+
+msgctxt "no_permissions"
+msgid "No permissions."
+msgstr "Keine Berechtigungen."
+
+msgctxt "user_saved"
+msgid "The user was saved."
+msgstr "Der Benutzer wurde gespeichert."
+
+msgctxt "confirm"
+msgid "Confirm"
+msgstr "Bestätigen"
+
+msgctxt "history"
+msgid "History"
+msgstr "Historie"
+
+msgctxt "history_all"
+msgid "Full history"
+msgstr "Vollständige Historie"
+
+msgctxt "history_partial"
+msgid "Only changes made through the admin. Direct repository writes and the auth CLI are absent."
+msgstr "Nur Änderungen über die Administration. Direkte Repository-Schreibvorgänge und die Auth-CLI fehlen."
+
+msgctxt "history_limit"
+msgid "The latest 8 events."
+msgstr "Die neuesten 8 Ereignisse."
+
+msgctxt "history_more"
+msgid "More events are in the full history."
+msgstr "Weitere Ereignisse stehen in der vollständigen Historie."
+
+msgctxt "history_none"
+msgid "No entry is stored for this record yet."
+msgstr "Für diesen Datensatz ist noch kein Eintrag gespeichert."
+
+msgctxt "audit_create"
+msgid "Created"
+msgstr "Angelegt"
+
+msgctxt "audit_update"
+msgid "Updated"
+msgstr "Geändert"
+
+msgctxt "audit_delete"
+msgid "Deleted"
+msgstr "Gelöscht"
+
+msgctxt "audit_bulk_update"
+msgid "Bulk update"
+msgstr "Sammeländerung"
+
+msgctxt "audit_bulk_delete"
+msgid "Bulk delete"
+msgstr "Sammellöschung"
+
+msgctxt "audit_user_create"
+msgid "User created"
+msgstr "Benutzer angelegt"
+
+msgctxt "audit_user_update"
+msgid "User updated"
+msgstr "Benutzer geändert"
+
+msgctxt "audit_password_reset"
+msgid "Password reset"
+msgstr "Passwort zurückgesetzt"
+
+msgctxt "audit_role_assign"
+msgid "Role assigned"
+msgstr "Rolle zugewiesen"
+
+msgctxt "audit_role_revoke"
+msgid "Role revoked"
+msgstr "Rolle entzogen"
+
+msgctxt "audit_permission_grant"
+msgid "Permission granted"
+msgstr "Recht vergeben"
+
+msgctxt "audit_permission_revoke"
+msgid "Permission revoked"
+msgstr "Recht entzogen"
+
+msgctxt "dashboard_hint"
+msgid "The lists are in the side navigation."
+msgstr "Die Listen stehen in der Seitennavigation."
+
+msgctxt "dashboard_activity"
+msgid "Recent activity"
+msgstr "Letzte Vorgänge"
+
+msgctxt "dashboard_activity_hint"
+msgid "These events come from the admin history. An account sees the events it is allowed to see."
+msgstr "Diese Vorgänge stammen aus der Verwaltungshistorie. Ein Konto sieht die Vorgänge, die es sehen darf."
+
+msgctxt "dashboard_activity_error"
+msgid "The activity could not be read."
+msgstr "Die Vorgänge konnten nicht gelesen werden."
+
+msgctxt "dashboard_empty_activity"
+msgid "No activity yet."
+msgstr "Noch keine Vorgänge."
+
+msgctxt "dashboard_widgets"
+msgid "Figures"
+msgstr "Kennzahlen"
+
+msgctxt "board_new"
+msgid "New menu"
+msgstr "Neues Menü"
+
+msgctxt "board_name"
+msgid "Name"
+msgstr "Name"
+
+msgctxt "board_create"
+msgid "Create menu"
+msgstr "Menü anlegen"
+
+msgctxt "board_edit"
+msgid "Edit menu"
+msgstr "Menü bearbeiten"
+
+msgctxt "board_open"
+msgid "Open"
+msgstr "Öffnen"
+
+msgctxt "board_delete"
+msgid "Delete menu"
+msgstr "Menü löschen"
+
+msgctxt "board_add"
+msgid "Add block"
+msgstr "Block hinzufügen"
+
+msgctxt "board_continue"
+msgid "Choose fields"
+msgstr "Felder wählen"
+
+msgctxt "board_kind"
+msgid "Display"
+msgstr "Darstellung"
+
+msgctxt "board_table"
+msgid "Table"
+msgstr "Tabelle"
+
+msgctxt "board_bar"
+msgid "Bar"
+msgstr "Balken"
+
+msgctxt "board_line"
+msgid "Line"
+msgstr "Linie"
+
+msgctxt "board_pie"
+msgid "Donut"
+msgstr "Donut"
+
+msgctxt "board_stack"
+msgid "Stacked"
+msgstr "Stapel"
+
+msgctxt "board_tree"
+msgid "Treemap"
+msgstr "Treemap"
+
+msgctxt "board_card"
+msgid "Card"
+msgstr "Karte"
+
+msgctxt "board_home"
+msgid "Open at start"
+msgstr "Beim Start öffnen"
+
+msgctxt "board_start"
+msgid "Start view"
+msgstr "Startansicht"
+
+msgctxt "board_apply"
+msgid "Apply"
+msgstr "Übernehmen"
+
+msgctxt "board_preview"
+msgid "Preview"
+msgstr "Vorschau"
+
+msgctxt "board_preview_empty"
+msgid "The preview shows the block once the display is set."
+msgstr "Die Vorschau zeigt den Block, sobald die Darstellung steht."
+
+msgctxt "board_home_on"
+msgid "This menu opens at start."
+msgstr "Dieses Menü öffnet beim Start."
+
+msgctxt "board_series"
+msgid "Series"
+msgstr "Serie"
+
+msgctxt "board_trend"
+msgid "Trend"
+msgstr "Verlauf"
+
+msgctxt "board_layout_hint"
+msgid "The grid is the view. Move sets the block on a free spot, Size changes the cells. Both apply at once."
+msgstr "Auf dem Raster liegt die Ansicht. Verschieben setzt den Block auf eine freie Stelle, Größe ändert die Zellen. Beides gilt sofort."
+
+msgctxt "board_drag"
+msgid "Move"
+msgstr "Verschieben"
+
+msgctxt "board_resize"
+msgid "Size"
+msgstr "Größe"
+
+msgctxt "board_place"
+msgid "Place"
+msgstr "Platz"
+
+msgctxt "board_column"
+msgid "Column"
+msgstr "Spalte"
+
+msgctxt "board_row"
+msgid "Row"
+msgstr "Zeile"
+
+msgctxt "board_width"
+msgid "Width"
+msgstr "Breite"
+
+msgctxt "board_height"
+msgid "Height"
+msgstr "Höhe"
+
+msgctxt "board_place_busy"
+msgid "That spot is already taken."
+msgstr "Dieser Platz ist schon belegt."
+
+msgctxt "board_span"
+msgid "Width"
+msgstr "Breite"
+
+msgctxt "board_span_half"
+msgid "Half row"
+msgstr "Halbe Zeile"
+
+msgctxt "board_span_full"
+msgid "Full row"
+msgstr "Ganze Zeile"
+
+msgctxt "board_move_up"
+msgid "Move up"
+msgstr "Nach oben"
+
+msgctxt "board_move_down"
+msgid "Move down"
+msgstr "Nach unten"
+
+msgctxt "board_widget_edit"
+msgid "Edit"
+msgstr "Bearbeiten"
+
+msgctxt "board_model"
+msgid "Model"
+msgstr "Modell"
+
+msgctxt "board_fields"
+msgid "Fields"
+msgstr "Felder"
+
+msgctxt "board_group"
+msgid "Grouping"
+msgstr "Gruppierung"
+
+msgctxt "board_group_none"
+msgid "None"
+msgstr "Keine"
+
+msgctxt "board_measure"
+msgid "Summed value"
+msgstr "Summierter Wert"
+
+msgctxt "board_title"
+msgid "Title"
+msgstr "Titel"
+
+msgctxt "board_save"
+msgid "Save block"
+msgstr "Block speichern"
+
+msgctxt "board_remove"
+msgid "Remove block"
+msgstr "Block entfernen"
+
+msgctxt "board_empty"
+msgid "This menu has no block yet."
+msgstr "Dieses Menü hat noch keinen Block."
+
+msgctxt "board_none"
+msgid "No menu yet."
+msgstr "Noch kein Menü."
+
+msgctxt "board_hint"
+msgid "A table shows the chosen fields. A chart groups by one field and counts the records or sums a number. A line needs a date field."
+msgstr "Eine Tabelle zeigt die gewählten Felder. Eine Grafik gruppiert nach einem Feld und zählt die Datensätze oder summiert einen Zahlenwert. Eine Linie braucht ein Datumsfeld."
+
+msgctxt "board_chart_limit"
+msgid "The chart shows the 12 largest groups."
+msgstr "Die Grafik zeigt die 12 größten Gruppen."
+
+msgctxt "board_line_limit"
+msgid "The line shows the 12 latest groups."
+msgstr "Die Linie zeigt die 12 letzten Gruppen."
+
+msgctxt "board_locked"
+msgid "This model is locked for this account."
+msgstr "Dieses Modell ist für dieses Konto gesperrt."
+
+msgctxt "board_missing"
+msgid "The model or a field is no longer available."
+msgstr "Das Modell oder ein Feld ist nicht mehr vorhanden."
+
+msgctxt "board_read_error"
+msgid "The menus could not be read."
+msgstr "Die Menüs konnten nicht gelesen werden."
+
+msgctxt "board_name_invalid"
+msgid "The name needs 1 to 48 characters."
+msgstr "Der Name braucht 1 bis 48 Zeichen."
+
+msgctxt "board_title_invalid"
+msgid "The title needs 1 to 60 characters."
+msgstr "Der Titel braucht 1 bis 60 Zeichen."
+
+msgctxt "board_limit"
+msgid "At most 24 menus are possible."
+msgstr "Es sind höchstens 24 Menüs möglich."
+
+msgctxt "board_widget_limit"
+msgid "A menu has at most 12 blocks."
+msgstr "Ein Menü hat höchstens 12 Blöcke."
+
+msgctxt "board_fields_required"
+msgid "A table needs at least one field."
+msgstr "Eine Tabelle braucht mindestens ein Feld."
+
+msgctxt "board_group_required"
+msgid "A chart needs a grouping field."
+msgstr "Eine Grafik braucht ein Gruppierungsfeld."
+
+msgctxt "board_line_date"
+msgid "A line needs a date field."
+msgstr "Eine Linie braucht ein Datumsfeld."
+
+msgctxt "board_bad_kind"
+msgid "This display does not exist."
+msgstr "Diese Darstellung gibt es nicht."
+
+msgctxt "board_bad_model"
+msgid "This model is not available."
+msgstr "Dieses Modell steht nicht zur Verfügung."
+
+msgctxt "dashboard_widgets_empty"
+msgid "Tables and charts are created under Dashboards in Configuration. There you choose the model, fields and display."
+msgstr "Tabellen und Grafiken legt man unter Dashboards in der Konfiguration an. Dort wählt man Modell, Felder und Darstellung."
+
+msgctxt "open_list"
+msgid "Open list"
+msgstr "Liste öffnen"
+
+msgctxt "empty_filtered"
+msgid "No records match this search or these filters."
+msgstr "Keine Treffer für diese Suche oder diese Filter."
+
+msgctxt "bulk_page"
+msgid "Entire page"
+msgstr "Gesamte Seite"
+
+msgctxt "bulk_action"
+msgid "Action"
+msgstr "Aktion"
+
+msgctxt "bulk_run"
+msgid "Run"
+msgstr "Ausführen"
+
+msgctxt "select"
+msgid "Select"
+msgstr "Auswählen"
+
+msgctxt "bulk_confirm"
+msgid "Confirm selection"
+msgstr "Auswahl bestätigen"
+
+msgctxt "bulk_count"
+msgid "Affected records"
+msgstr "Betroffene Datensätze"
+
+msgctxt "bulk_empty"
+msgid "No records selected."
+msgstr "Keine Datensätze ausgewählt."
+
+msgctxt "bulk_denied"
+msgid "The selection contains a record that is not allowed. Nothing was changed."
+msgstr "Die Auswahl enthält einen nicht erlaubten Datensatz. Es wurde nichts geändert."
+
+msgctxt "bulk_failed"
+msgid "The action was rolled back. Nothing was changed."
+msgstr "Die Aktion wurde zurückgerollt. Es wurde nichts geändert."
+
+msgctxt "inline_add"
+msgid "Add"
+msgstr "Hinzufügen"
+
+msgctxt "inline_empty"
+msgid "No related records."
+msgstr "Keine verknüpften Einträge."
+
+msgctxt "inline_open"
+msgid "Open"
+msgstr "Öffnen"
+
+msgctxt "inline_another"
+msgid "Add another row"
+msgstr "Weitere Zeile"
+
+msgctxt "inline_remove"
+msgid "Remove"
+msgstr "Entfernen"
+
+msgctxt "inline_marked"
+msgid "Removed when you save."
+msgstr "Wird beim Speichern entfernt."
+
+msgctxt "inline_conflict"
+msgid "Another change updated this record. Nothing was saved."
+msgstr "Ein anderer Vorgang hat den Datensatz geändert. Es wurde nichts gespeichert."
+
+msgctxt "inline_failed"
+msgid "The change was rolled back. Nothing was saved."
+msgstr "Die Änderung wurde zurückgerollt. Es wurde nichts gespeichert."
+
+msgctxt "inline_limit"
+msgid "The number of rows is invalid."
+msgstr "Die Anzahl der Zeilen ist ungültig."
+
+msgctxt "inline_foreign"
+msgid "The row does not belong to this record."
+msgstr "Die Zeile gehört nicht zu diesem Datensatz."
+
+msgctxt "audit_empty"
+msgid "No entries."
+msgstr "Keine Einträge."
+
+msgctxt "when"
+msgid "When"
+msgstr "Zeitpunkt"
+
+msgctxt "actor"
+msgid "Actor"
+msgstr "Akteur"
+
+msgctxt "outcome"
+msgid "Outcome"
+msgstr "Ergebnis"
+
+msgctxt "details"
+msgid "Details"
+msgstr "Details"
+
+msgctxt "record"
+msgid "Record"
+msgstr "Datensatz"
+
+msgctxt "succeeded"
+msgid "Succeeded"
+msgstr "Erfolgreich"
+
+msgctxt "denied"
+msgid "Denied"
+msgstr "Verweigert"
+
+msgctxt "date_hierarchy"
+msgid "Date"
+msgstr "Datum"
+
+msgctxt "utc_hint"
+msgid "UTC. The value is not converted to a local time zone."
+msgstr "UTC. Der Wert wird nicht in eine lokale Zeitzone umgerechnet."
+
+msgctxt "validation_date"
+msgid "The date is invalid."
+msgstr "Das Datum ist ungültig."
+
+msgctxt "validation_time"
+msgid "The time is invalid."
+msgstr "Die Uhrzeit ist ungültig."
+
+msgctxt "validation_datetime"
+msgid "The timestamp is invalid. UTC is required."
+msgstr "Der Zeitpunkt ist ungültig. Erwartet wird UTC."
+
+msgctxt "month_1"
+msgid "January"
+msgstr "Januar"
+
+msgctxt "month_2"
+msgid "February"
+msgstr "Februar"
+
+msgctxt "month_3"
+msgid "March"
+msgstr "März"
+
+msgctxt "month_4"
+msgid "April"
+msgstr "April"
+
+msgctxt "month_5"
+msgid "May"
+msgstr "Mai"
+
+msgctxt "month_6"
+msgid "June"
+msgstr "Juni"
+
+msgctxt "month_7"
+msgid "July"
+msgstr "Juli"
+
+msgctxt "month_8"
+msgid "August"
+msgstr "August"
+
+msgctxt "month_9"
+msgid "September"
+msgstr "September"
+
+msgctxt "month_10"
+msgid "October"
+msgstr "Oktober"
+
+msgctxt "month_11"
+msgid "November"
+msgstr "November"
+
+msgctxt "month_12"
+msgid "December"
+msgstr "Dezember"
+
+msgctxt "applications"
+msgid "Applications"
+msgstr "Anwendungen"
+
+msgctxt "access"
+msgid "Users and access"
+msgstr "Benutzer und Zugang"
+
+msgctxt "time_utc"
+msgid "Times are shown in UTC. Stored values stay unchanged."
+msgstr "Zeitpunkte werden in UTC angezeigt. Gespeicherte Werte bleiben unverändert."
+
+msgctxt "time_unavailable"
+msgid "Time unavailable"
+msgstr "Zeitpunkt nicht lesbar"
+
+msgctxt "menu"
+msgid "Menu"
+msgstr "Menü"
+

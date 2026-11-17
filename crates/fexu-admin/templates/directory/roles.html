@@ -23,7 +23,7 @@
 <td class="is-lead"><a href="{{ role.href }}">{{ role.name }}</a></td>
 <td>
 <details class="menu">
-<summary>{{ i18n.actions }}</summary>
+<summary class="icon-button" aria-label="{{ i18n.actions }}" title="{{ i18n.actions }}"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="5" r="1.6" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none"/><circle cx="12" cy="19" r="1.6" fill="currentColor" stroke="none"/></svg></summary>
 <div class="menu-panel">
 <a href="{{ role.href }}">{{ i18n.permissions }}</a>
 <a href="{{ role.history }}">{{ i18n.history }}</a>

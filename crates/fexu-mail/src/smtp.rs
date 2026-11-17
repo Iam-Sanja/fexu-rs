@@ -1,4 +1,4 @@
-//! Ein SMTP-Versuch mit geprüfter TLS-Verbindung. Kein Klartext-Fallback und kein Retry.
+//! One SMTP attempt using a verified TLS connection. No plaintext fallback or retry.
 
 use crate::error::MailError;
 use crate::message::{validate, MailMessage};

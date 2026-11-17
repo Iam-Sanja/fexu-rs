@@ -219,11 +219,27 @@ async fn cookie_writes_require_csrf_before_the_handler() {
     )
     .await;
     assert_eq!(status, StatusCode::FORBIDDEN, "{body}");
-    assert!(
-        body.contains("Die Sicherheitsprüfung ist fehlgeschlagen."),
-        "{body}"
-    );
+    assert!(body.contains("The security check failed."), "{body}");
     assert!(!body.contains(&issued.token), "{body}");
+
+    // An explicit German locale still takes precedence over the English default.
+    let german_session = format!("{session}; fexu_locale=de");
+    let (status, german_body) = send(
+        &app,
+        "POST",
+        "/probe",
+        Some(&german_session),
+        None,
+        None,
+        Some("application/x-www-form-urlencoded"),
+        "name=Ada",
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN, "{german_body}");
+    assert!(
+        german_body.contains("Die Sicherheitsprüfung ist fehlgeschlagen."),
+        "{german_body}"
+    );
 
     let form = format!("csrf_token={}&marker=kept", issued.csrf_token);
     let (status, body) = send(

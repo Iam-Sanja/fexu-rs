@@ -1,4 +1,4 @@
-//! Registrierte Admin-Seiten. Der Pfad kommt aus der Registry, nie aus einem freien URL-Teil.
+//! Registered admin pages. Page paths come from the registry, never from arbitrary URL segments.
 
 use crate::registry::AdminRegistry;
 use fexu_auth::AuthUser;
@@ -12,7 +12,9 @@ pub const RESERVED_KEYS: &[&str] = &[
     "admin",
     "api",
     "assets",
+    "account",
     "audit",
+    "boards",
     "directory",
     "login",
     "logout",
@@ -130,7 +132,7 @@ impl AdminView {
         self
     }
 
-    /// Vollständiger Code, zum Beispiel `orders.read`. Fexu prüft ihn vor dem Handler.
+    /// Full permission code, for example `orders.read`. Fexu checks it before calling the handler.
     pub fn permission(mut self, code: &'static str) -> Self {
         self.permission = code;
         self

@@ -128,7 +128,7 @@ impl ApiDocsSettings {
     }
 }
 
-/// Deklariertes Migrationsverzeichnis einer App. Es aktiviert keine Rust-App.
+/// Declared migration directory for an app. Does not activate the Rust app.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DeclaredApp {
     pub name: String,
@@ -153,7 +153,7 @@ impl std::fmt::Debug for ProjectConfig {
 }
 
 impl ProjectConfig {
-    /// Dateipfad der Vorlagen. Er bleibt relativ zur Projektdatei.
+    /// Template path remains relative to the project file.
     pub fn templates_directory(&self) -> PathBuf {
         self.root.join(&self.templates_dir)
     }
@@ -170,7 +170,7 @@ impl ProjectConfig {
         self.storage_max_upload_mb.saturating_mul(1024 * 1024)
     }
 
-    /// `DATABASE_URL` ersetzt die Datei-URL, ohne sie in Protokolle zu schreiben.
+    /// `DATABASE_URL` overrides the configured file URL without logging it.
     pub fn resolved_database_url(&self) -> String {
         match std::env::var("DATABASE_URL") {
             Ok(value) if !value.is_empty() => value,
@@ -351,7 +351,7 @@ fn parse_manifest(path: &Path) -> Result<ProjectConfig, MigrationError> {
     let mut allow_wildcard_bind = false;
     let mut admin_enabled = false;
     let mut embedded_assets = false;
-    let mut default_locale = "de".to_owned();
+    let mut default_locale = "en".to_owned();
     let mut fallback_locale = "en".to_owned();
     let mut debug = false;
     let mut site_title = "Fexu Admin".to_owned();
@@ -1294,7 +1294,7 @@ mod tests {
             "migrations_dir = \"migrations\"\nschema_command = \"cargo run --quiet -- --print-schema\"\n",
         );
         let config = parse_manifest(&path).expect("legacy");
-        assert_eq!(config.default_locale, "de");
+        assert_eq!(config.default_locale, "en");
         assert!(!config.templates_enabled);
         assert_eq!(config.session_hours, 12);
         assert_eq!(config.primary_color, "#0f172a");
@@ -1366,6 +1366,7 @@ primary_color = "#0f172a"
 "##,
         );
         let config = parse_manifest(&path).expect("settings");
+        assert_eq!(config.default_locale, "de");
         assert_eq!(config.app_name, "MyShop");
         assert!(config.templates_enabled);
         assert!(config.debug);

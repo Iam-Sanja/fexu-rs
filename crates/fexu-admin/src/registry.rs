@@ -1,4 +1,4 @@
-//! Explizite Admin-Registry. Nur Modelle mit `admin = true` werden aufgenommen.
+//! Explicit admin registry. Only models marked `admin = true` are included.
 
 use crate::actions::{self, AdminAction};
 use crate::audit::{self, Event};
@@ -10,7 +10,7 @@ use fexu_core::{AdminModelMeta, ColumnSpec, FexuError, ModelDescriptor, QuerySco
 use fexu_db::driver::{DatabaseConnection, DatabaseTransaction, TransactionTrait};
 use fexu_db::{query_admin_page, AdminPageRequest, DeleteOutcome, ModelRepository};
 use serde_json::{Map, Value};
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock, RwLock};
 
 #[allow(clippy::too_many_arguments)]
 #[async_trait::async_trait]
@@ -109,7 +109,7 @@ impl Default for AdminBranding {
             site_header: "Fexu Verwaltung".to_owned(),
             app_name: "Fexu".to_owned(),
             primary_color: "#0f172a".to_owned(),
-            default_locale: "de".to_owned(),
+            default_locale: "en".to_owned(),
             fallback_locale: "en".to_owned(),
             currency: "EUR".to_owned(),
         }
@@ -117,7 +117,7 @@ impl Default for AdminBranding {
 }
 
 impl AdminBranding {
-    /// Verwirft Farben, Sprachen und Währungen, die nicht dem öffentlichen Vertrag entsprechen.
+    /// Rejects colors, locales, and currencies that violate the public configuration contract.
     pub fn sanitized(mut self) -> Self {
         let fallback = Self::default();
         if !is_public_label(&self.site_title) {
@@ -156,7 +156,7 @@ pub(crate) fn valid_template_name(name: &str) -> bool {
         && !name.contains("..")
 }
 
-fn is_public_label(value: &str) -> bool {
+pub(crate) fn is_public_label(value: &str) -> bool {
     let trimmed = value.trim();
     !trimmed.is_empty()
         && trimmed.len() <= 80
@@ -165,17 +165,25 @@ fn is_public_label(value: &str) -> bool {
             .any(|char| char.is_control() || char == '<' || char == '>')
 }
 
-fn is_hex_color(value: &str) -> bool {
+pub(crate) fn is_hex_color(value: &str) -> bool {
     let Some(hex) = value.strip_prefix('#') else {
         return false;
     };
     matches!(hex.len(), 3 | 6) && hex.chars().all(|char| char.is_ascii_hexdigit())
 }
 
+#[derive(Clone, Debug, Default)]
+pub(crate) struct ProjectIcons {
+    pub favicon: String,
+    pub apple_touch_icon: String,
+}
+
 #[derive(Clone, Default)]
 pub struct AdminRegistry {
     models: Arc<Vec<Arc<dyn ManagedModel>>>,
-    branding: AdminBranding,
+    branding: Arc<RwLock<AdminBranding>>,
+    icons: Arc<RwLock<ProjectIcons>>,
+    project_ready: Arc<OnceLock<()>>,
     actions: Vec<AdminAction>,
     views: Vec<AdminView>,
     filters: Vec<AdminFilter>,
@@ -194,17 +202,49 @@ impl AdminRegistry {
         Self::default()
     }
 
-    pub fn with_branding(mut self, branding: AdminBranding) -> Self {
-        self.branding = branding.sanitized();
+    pub fn with_branding(self, branding: AdminBranding) -> Self {
+        *self
+            .branding
+            .write()
+            .unwrap_or_else(|error| error.into_inner()) = branding.sanitized();
         self
     }
 
-    pub fn branding(&self) -> &AdminBranding {
-        &self.branding
+    pub fn branding(&self) -> AdminBranding {
+        self.branding
+            .read()
+            .unwrap_or_else(|error| error.into_inner())
+            .clone()
     }
 
-    /// Ordnet genau die nächste Modell- oder Seitenregistrierung dieser App zu.
-    /// Für weitere Registrierungen `with_app` erneut aufrufen.
+    pub(crate) fn icons(&self) -> ProjectIcons {
+        self.icons
+            .read()
+            .unwrap_or_else(|error| error.into_inner())
+            .clone()
+    }
+
+    pub(crate) fn project_loaded(&self) -> bool {
+        self.project_ready.get().is_some()
+    }
+
+    pub(crate) fn mark_project_loaded(&self) {
+        let _ = self.project_ready.set(());
+    }
+
+    pub(crate) fn apply_project(&self, branding: AdminBranding, icons: ProjectIcons) {
+        *self
+            .branding
+            .write()
+            .unwrap_or_else(|error| error.into_inner()) = branding.sanitized();
+        *self
+            .icons
+            .write()
+            .unwrap_or_else(|error| error.into_inner()) = icons;
+    }
+
+    /// Associates exactly the next model or page registration with this app.
+    /// Call `with_app` again for additional registrations.
     pub fn with_app(mut self, key: impl Into<String>, label: impl Into<String>) -> Self {
         let key = key.into();
         let label = label.into().trim().to_owned();
@@ -269,7 +309,7 @@ impl AdminRegistry {
         self.push(Arc::new(Policed::<M, P>::new()))
     }
 
-    /// Engt ein bereits geprüftes Modell ein. Wirksam erst nach [`Self::seal`].
+    /// Further restricts an already validated model. Takes effect after [`Self::seal`].
     pub fn configure(
         mut self,
         checked: crate::configure::CheckedModelAdmin,
@@ -415,7 +455,7 @@ impl AdminRegistry {
         Ok(self)
     }
 
-    /// Prüft Erweiterungen gegen die registrierten Modelle. Danach ist die Registry startbereit.
+    /// Validates extensions against registered models. The registry is then ready for startup.
     pub fn seal(mut self) -> Result<Self, ExtensionError> {
         self.check_configured()?;
         let names: Vec<&str> = self.templates.iter().map(|(name, _)| *name).collect();
@@ -535,6 +575,26 @@ impl AdminRegistry {
         meta.fieldsets
     }
 
+    pub(crate) fn form_layout(&self, key: &str) -> Option<&[crate::configure::FormLayout]> {
+        if !self.sealed {
+            return None;
+        }
+        let item = self.configured.iter().find(|item| item.key() == key)?;
+        let layouts = item.layouts();
+        (!layouts.is_empty()).then_some(layouts)
+    }
+
+    pub(crate) fn related_tables(&self, key: &str) -> &[crate::configure::RelatedTable] {
+        if !self.sealed {
+            return &[];
+        }
+        self.configured
+            .iter()
+            .find(|item| item.key() == key)
+            .map(crate::configure::CheckedModelAdmin::related)
+            .unwrap_or(&[])
+    }
+
     pub(crate) fn ordering_of<'a>(
         &'a self,
         meta: &'a fexu_core::AdminModelMeta,
@@ -558,6 +618,15 @@ impl AdminRegistry {
             }
         }
         meta.per_page
+    }
+
+    pub(crate) fn list_editable_of(&self, meta: &fexu_core::AdminModelMeta) -> &[&'static str] {
+        if self.sealed {
+            if let Some(item) = self.configured.iter().find(|item| item.key() == meta.key) {
+                return item.list_editable();
+            }
+        }
+        &[]
     }
 
     pub(crate) fn list_order_of(
@@ -631,6 +700,46 @@ impl AdminRegistry {
             {
                 return Err(ExtensionError::detailed("admin.relation", detail));
             }
+            for table in item.related() {
+                let Some(child) = self
+                    .models
+                    .iter()
+                    .find(|candidate| candidate.meta().key == table.child_key)
+                else {
+                    return Err(ExtensionError::detailed(
+                        "admin.relation",
+                        format!(
+                            "`{}` points at `{}`, which is not registered in this admin.",
+                            table.name, table.child_key
+                        ),
+                    ));
+                };
+                let linked = child.columns().iter().any(|column| {
+                    column.name == table.column && references_parent(column, model.as_ref())
+                });
+                if !linked {
+                    return Err(ExtensionError::detailed(
+                        "admin.relation",
+                        format!(
+                            "`{}` on `{}` does not reference `{}`.",
+                            table.column,
+                            table.child_key,
+                            model.meta().key
+                        ),
+                    ));
+                }
+                if model
+                    .meta()
+                    .inlines
+                    .iter()
+                    .any(|inline| inline.name == table.name)
+                {
+                    return Err(ExtensionError::detailed(
+                        "admin.relation",
+                        format!("`{}` is already an inline on this model.", table.name),
+                    ));
+                }
+            }
             for link in item.links() {
                 if !self
                     .models
@@ -701,7 +810,7 @@ impl AdminRegistry {
         self.models.iter().find(|model| model.meta().key == key)
     }
 
-    /// Genau ein registriertes Modell für diese Tabelle. Zwei Treffer bleiben unaufgelöst.
+    /// Returns exactly one registered model for this table. Ambiguous matches remain unresolved.
     pub fn model_for_table(&self, table: &str) -> Option<&Arc<dyn ManagedModel>> {
         let mut found = None;
         for model in self.models.iter() {
@@ -1234,6 +1343,13 @@ mod tests {
     use super::AdminBranding;
 
     #[test]
+    fn branding_defaults_to_english() {
+        let branding = AdminBranding::default();
+        assert_eq!(branding.default_locale, "en");
+        assert_eq!(branding.fallback_locale, "en");
+    }
+
+    #[test]
     fn branding_rejects_css_and_unknown_locale() {
         let branding = AdminBranding {
             primary_color: "red;background:url(x)".to_owned(),
@@ -1244,7 +1360,7 @@ mod tests {
         .sanitized();
         assert_eq!(branding.primary_color, "#0f172a");
         assert_eq!(branding.currency, "EUR");
-        assert_eq!(branding.default_locale, "de");
+        assert_eq!(branding.default_locale, "en");
     }
 }
 

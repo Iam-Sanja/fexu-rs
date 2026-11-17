@@ -1,4 +1,4 @@
-//! Registrierte Listenfilter. Die Spalte steht in der Registry, der Wert wird gebunden.
+//! Registered list filters. Column definitions come from the registry; values are bound.
 
 use fexu_core::{AdminModelMeta, ColumnKind, ColumnSpec};
 use fexu_db::driver::Value as DbValue;

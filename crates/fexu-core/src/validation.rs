@@ -1,4 +1,4 @@
-//! Gemeinsame Feldregeln für Formulare. Modellmakros behalten ihre eigenen Meldungen.
+//! Shared field rules for forms. Model macros retain their own error messages.
 
 pub fn text_code(
     value: &str,

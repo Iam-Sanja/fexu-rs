@@ -1,4 +1,4 @@
-//! SQL für Auth-Tabellen über SeaQuery. Keine zweite ORM-Schicht.
+//! SQL for auth tables through SeaQuery. No second ORM layer.
 
 use crate::error::AuthError;
 use crate::schema::{
@@ -144,7 +144,7 @@ pub async fn list_user_rows(db: &impl ConnectionTrait) -> Result<Vec<UserRow>, A
     rows.iter().map(read_user).collect()
 }
 
-/// Rollennamen je Benutzer. Das Passwort-Hash wird nicht gelesen.
+/// Role names per user. Password hashes are not read.
 pub async fn list_user_role_names(
     db: &impl ConnectionTrait,
 ) -> Result<Vec<(Uuid, String)>, AuthError> {
@@ -1035,7 +1035,7 @@ fn text(value: &str) -> fexu_db::driver::sea_query::SimpleExpr {
     Expr::value(value)
 }
 
-/// PostgreSQL-Spalten vom Typ UUID bekommen einen UUID-Parameter. SQLite speichert dieselbe Spalte als TEXT.
+/// PostgreSQL UUID columns receive UUID parameters. SQLite stores the same column as TEXT.
 fn uuid_expr(backend: DatabaseBackend, id: Uuid) -> fexu_db::driver::sea_query::SimpleExpr {
     match backend {
         DatabaseBackend::Postgres => Expr::value(Value::Uuid(Some(Box::new(id)))),
@@ -1106,6 +1106,84 @@ async fn one(
     db.query_one(statement(db, query)?)
         .await
         .map_err(AuthError::database)
+}
+
+const PROFILES: &str = "_fexu_user_profiles";
+
+pub(crate) async fn ensure_profiles(db: &impl ConnectionTrait) -> Result<(), AuthError> {
+    let backend = db.get_database_backend();
+    db.execute(Statement::from_string(
+        backend,
+        "CREATE TABLE IF NOT EXISTS _fexu_user_profiles (
+            user_id TEXT PRIMARY KEY NOT NULL,
+            name TEXT NOT NULL
+        )"
+        .to_owned(),
+    ))
+    .await
+    .map(|_| ())
+    .map_err(AuthError::database)
+}
+
+pub(crate) async fn profile_name(db: &impl ConnectionTrait, id: Uuid) -> Result<String, AuthError> {
+    ensure_profiles(db).await?;
+    let mut query = Query::select();
+    query
+        .column(Alias::new("name"))
+        .from(Alias::new(PROFILES))
+        .and_where(Expr::col(Alias::new("user_id")).eq(id.to_string()));
+    Ok(match one(db, &query).await? {
+        Some(row) => row
+            .try_get::<String>("", "name")
+            .map_err(|_| AuthError::database("profile name is not text"))?,
+        None => String::new(),
+    })
+}
+
+pub(crate) async fn profile_names(
+    db: &impl ConnectionTrait,
+) -> Result<Vec<(Uuid, String)>, AuthError> {
+    ensure_profiles(db).await?;
+    let mut query = Query::select();
+    query
+        .columns([Alias::new("user_id"), Alias::new("name")])
+        .from(Alias::new(PROFILES));
+    let mut names = Vec::new();
+    for row in all(db, &query).await? {
+        let id = row
+            .try_get::<String>("", "user_id")
+            .map_err(|_| AuthError::database("profile user is not text"))?;
+        let Some(id) = Uuid::parse_str(&id).ok() else {
+            continue;
+        };
+        let name = row
+            .try_get::<String>("", "name")
+            .map_err(|_| AuthError::database("profile name is not text"))?;
+        names.push((id, name));
+    }
+    Ok(names)
+}
+
+pub(crate) async fn set_profile_name(
+    db: &impl ConnectionTrait,
+    id: Uuid,
+    name: &str,
+) -> Result<(), AuthError> {
+    ensure_profiles(db).await?;
+    let mut delete = Query::delete();
+    delete
+        .from_table(Alias::new(PROFILES))
+        .and_where(Expr::col(Alias::new("user_id")).eq(id.to_string()));
+    execute(db, &delete).await?;
+    if name.is_empty() {
+        return Ok(());
+    }
+    let mut insert = Query::insert();
+    insert
+        .into_table(Alias::new(PROFILES))
+        .columns([Alias::new("user_id"), Alias::new("name")])
+        .values_panic([text(&id.to_string()), text(name)]);
+    execute(db, &insert).await
 }
 
 async fn all(

@@ -67,12 +67,12 @@ pub struct ColumnSnapshot {
     pub nullable: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub default: Option<bool>,
-    /// Nur bei `decimal`. Fehlt in älteren Snapshots.
+    /// Applies only to `decimal`. Absent from older snapshots.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub precision: Option<u8>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub scale: Option<u8>,
-    /// Speicherwerte einer Choice-Spalte. Labels sind Anzeigetext und kein Schemaunterschied.
+    /// Stored values of a choice column. Display labels do not affect the schema.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub choices: Vec<StoredChoice>,
 }
@@ -139,7 +139,7 @@ pub struct TableSnapshot {
     pub foreign_keys: Vec<ForeignKeySnapshot>,
 }
 
-/// Tabelle einer anderen installierten App. Diese App erzeugt sie nicht.
+/// Table owned by another installed app. This app does not create it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ExternalTableSnapshot {
     pub app: String,
@@ -150,10 +150,10 @@ pub struct ExternalTableSnapshot {
 pub struct SchemaSnapshot {
     pub format_version: u32,
     pub tables: Vec<TableSnapshot>,
-    /// Direkte App-Abhängigkeiten. Leer bei bestehenden Dateien und dann nicht serialisiert.
+    /// Direct app dependencies. Empty and omitted from serialization for legacy files.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub depends_on: Vec<String>,
-    /// Zieltabellen aus `depends_on`. Sie gehören nicht zu den Operationen dieser App.
+    /// Target tables from `depends_on`. Not part of this app's migration operations.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub external_tables: Vec<ExternalTableSnapshot>,
 }
@@ -196,7 +196,7 @@ impl SchemaSnapshot {
         Ok(snapshot)
     }
 
-    /// Modellausgabe einer einzelnen App. Ziele aus anderen Apps prüft erst die App-Auflösung.
+    /// Schema output for one app. Cross-app targets are checked during app resolution.
     pub fn from_model_json(text: &str) -> Result<Self, MigrationError> {
         let snapshot = Self::parse_json(text)?;
         snapshot.validate_owned()?;
@@ -217,7 +217,7 @@ impl SchemaSnapshot {
         self.validate_inner(true)
     }
 
-    /// Prüft die eigenen Tabellen. Ein Ziel aus einer anderen App darf hier noch offen sein.
+    /// Validates owned tables. A target in another app may remain unresolved at this stage.
     pub fn validate_owned(&self) -> Result<(), MigrationError> {
         self.validate_inner(false)
     }
@@ -281,7 +281,7 @@ impl SchemaSnapshot {
         Ok(())
     }
 
-    /// Gleicher Tabelleninhalt. `depends_on` und externe Tabellen sind Katalogdaten und erzeugen keine Operation.
+    /// Equivalent table contents. `depends_on` and external tables are catalog metadata, not operations.
     pub fn semantically_eq(&self, other: &Self) -> bool {
         if self.format_version != other.format_version || self.tables.len() != other.tables.len() {
             return false;

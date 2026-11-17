@@ -1,9 +1,9 @@
-//! Statische App-Registrierung. Es wird kein Code aus `fexu.toml` geladen.
+//! Static app registration. No code is loaded from `fexu.toml`.
 
 use crate::pages::{PageError, Site};
 use crate::urls::{UrlError, UrlSet};
 use crate::App;
-use fexu_admin::{AdminAction, AdminFilter, AdminView, AdminWidget};
+use fexu_admin::{AdminAction, AdminFilter, AdminView, AdminWidget, CheckedModelAdmin};
 use fexu_db::ModelRepository;
 use fexu_jobs::JobRegistry;
 use fexu_migrations::{package_order, same_migration_contract, PackageMigration, ProjectConfig};
@@ -92,7 +92,7 @@ impl AppConfig {
         self
     }
 
-    /// Die genannte App muss vorher installiert sein und mindestens diese Version haben.
+    /// The named app must already be installed at this version or newer.
     pub fn requires(mut self, name: &'static str, minimum: &'static str) -> Self {
         self.requirements.push((name, minimum));
         self
@@ -115,7 +115,7 @@ pub trait FexuApplication {
     fn config(&self) -> AppConfig;
     fn contribute(&self, registry: &mut Registration<'_>) -> Result<(), AppError>;
 
-    /// Registriert Handler dieser App. `install` ruft die Methode nicht auf.
+    /// Registers handlers for this app. `install` does not call this method.
     fn register_jobs(&self, _registry: &mut JobRegistry) -> Result<(), AppError> {
         Ok(())
     }
@@ -235,6 +235,16 @@ impl<'a> Registration<'a> {
     pub fn admin_filter(&mut self, filter: AdminFilter) -> Result<(), AppError> {
         let registry = self.app.admin.take().unwrap_or_default();
         self.app.admin = Some(registry.filter(filter)?);
+        Ok(())
+    }
+
+    pub fn admin_configure(&mut self, checked: CheckedModelAdmin) -> Result<(), AppError> {
+        let registry = self.app.admin.take().unwrap_or_default();
+        self.app.admin = Some(
+            registry
+                .with_app(self.name, self.label)
+                .configure(checked)?,
+        );
         Ok(())
     }
 
@@ -569,7 +579,7 @@ impl App {
         })
     }
 
-    /// Beschreibt die Entfernung aus dem nächsten Build. Tabellen und Zeilen bleiben.
+    /// Plans removal from the next build. Tables and rows are retained.
     pub fn uninstall_plan(&self, name: &str) -> Result<UninstallPlan, AppError> {
         if !self.installed.iter().any(|installed| installed == name) {
             return Err(AppError::new(
@@ -605,14 +615,14 @@ pub struct UpgradePlan {
     pub name: String,
     pub from: Option<String>,
     pub to: String,
-    /// `upgrade_plan` verändert die Datenbank nicht. Migrationen bleiben `fexu migrate`.
+    /// `upgrade_plan` does not change the database. Migrations remain under `fexu migrate`.
     pub applies_migrations: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UninstallPlan {
     pub name: String,
-    /// Der nächste Build lässt `install` weg. Ein laufender Prozess entlädt die App nicht.
+    /// The next build omits `install`. Running processes do not unload the app.
     pub removes_from_next_build: bool,
     pub drops_tables: bool,
     pub drops_rows: bool,
