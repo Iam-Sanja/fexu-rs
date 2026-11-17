@@ -6,6 +6,11 @@
 - `fexu new` writes `fexu = "=0.1.2"` unless `--fexu-path` is set. The fullstack template keeps `features = ["admin-ui"]` on that registry dependency.
 - The publish planner skips a version that is already in the crates.io index and waits until a new upload is visible before the next crate. Trusted-publishing tokens still expire after 30 minutes. This entry is not a crates.io publication.
 
+## Unreleased — admin view queries and local flash redirects
+
+- A custom admin page reads checked GET parameters from `ViewRequest.query`. Invalid parameters answer 422. `ViewHandler` returns `ViewOutcome`: a page, a 303 to a canonical `/admin` path, 404, 409 or 422. External and off-admin targets do not set `Location`. Staff, permission and CSRF checks still run before the handler (#146).
+- `redirect_with_flash` stores a session flash only after the existing local-path check. A rejected target or message does not write a row and does not redirect. `take_flashes` still consumes each message once (#89).
+
 ## Unreleased — development CSRF keys
 
 - `AuthConfig::development` draws a new 32-byte CSRF key on every call. `try_from_env` still loads `FEXU_CSRF_SECRET` or `.fexu/csrf.key`. Token and HMAC formats are unchanged. Debug output keeps both secrets redacted.

@@ -15,6 +15,7 @@
 | `render(request, "home.html", context)` | `views::render(site, "home.html", context, debug)` |
 | `JsonResponse({"ok": True})` | `views::json(&fexu::serde_json::json!({"ok": true}))` |
 | `redirect("/home")` | `views::redirect_to("/home")` |
+| redirect plus one-shot message | `views::redirect_with_flash(db, session, level, text, "/home")` |
 | `Http404` | `views::fail(..., StatusCode::NOT_FOUND, code, detail, debug)`. HTML uses `templates/errors/404.html` when `mount_pages` installed the project templates. |
 | `PermissionDenied` |`views::fail(..., StatusCode::FORBIDDEN, ...)` or `require_staff`|
 | `login_required` |`require_user` for an existing session|
