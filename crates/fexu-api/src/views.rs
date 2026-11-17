@@ -16,7 +16,9 @@ pub use crate::crud::{
 pub use crate::flash::{
     create_flash_table, push_flash, render_flashes, take_flashes, FlashLevel, FlashMessage,
 };
-pub use crate::generic::{crud_urls, crud_urls_with, HtmlResource, KeepRecord, RecordStamp};
+pub use crate::generic::{
+    crud_urls, crud_urls_for, crud_urls_with, CrudPart, HtmlResource, KeepRecord, RecordStamp,
+};
 pub use crate::seo::{canonical_url, conditional_response, robots_txt, sitemap_xml, CachePolicy};
 
 #[derive(Debug)]
