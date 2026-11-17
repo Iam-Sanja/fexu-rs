@@ -18,6 +18,13 @@
 - `fexu new` writes `fexu = "=0.1.2"` unless `--fexu-path` is set. The fullstack template keeps `features = ["admin-ui"]` on that registry dependency.
 - The publish planner skips a version that is already in the crates.io index and waits until a new upload is visible before the next crate. Trusted-publishing tokens still expire after 30 minutes. This entry is not a crates.io publication.
 
+## Unreleased — API contract pagination
+
+- Generated list routes keep the keyset page of at most 100 rows and return `has_more` with `next` instead of dropping the rest. `limit` outside 1..=100 is 422. Filters and sorts stay on the readable admin allow-list.
+- OpenAPI update schemas allow JSON `null` only for nullable columns. Object schemas include an example. `fexu::openapi::matches_schema` checks a JSON value against that document.
+- Model, auth, documentation and view problem responses use `Content-Type: application/problem+json`. Admin and storage JSON errors stay `application/json`.
+- `ModelRepository::list` and offset `page` still report `truncated` at 100 rows. Changing that repository cap is left to the query work in #144.
+
 ## Unreleased — development CSRF keys
 
 - `AuthConfig::development` draws a new 32-byte CSRF key on every call. `try_from_env` still loads `FEXU_CSRF_SECRET` or `.fexu/csrf.key`. Token and HMAC formats are unchanged. Debug output keeps both secrets redacted.

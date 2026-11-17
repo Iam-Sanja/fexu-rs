@@ -17,9 +17,8 @@ use axum::extract::{Request, State};
 use axum::http::{header, HeaderMap, HeaderValue, Method, StatusCode};
 use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
-use axum::Json;
 use fexu_auth::{csrf_header_name, AppState, AuthError};
-use fexu_core::{problem_json, FexuError};
+use fexu_core::FexuError;
 use http_body_util::{BodyExt, Limited};
 
 use super::ApiError;
@@ -418,5 +417,5 @@ fn html_csrf(headers: &HeaderMap) -> Response {
 }
 
 fn problem(status: StatusCode, title: &'static str, detail: &'static str) -> Response {
-    (status, Json(problem_json(status.as_u16(), title, detail))).into_response()
+    crate::problem_http(status, title, detail)
 }
