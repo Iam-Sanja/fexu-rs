@@ -404,7 +404,7 @@ pub(crate) fn specification(app: &App) -> Value {
         "paths": path_value(paths),
         "components": {
             "schemas": schema_value(schemas),
-            "securitySchemes": security_schemes()
+            "securitySchemes": security_schemes(app)
         }
     })
 }
@@ -1102,9 +1102,10 @@ fn base_operation(
         "security": security_for(app, access, write)
     });
     if write && !matches!(access, ModelAccess::Denied | ModelAccess::PolicyUnbound) {
-        operation["description"] = json!(
-            "A request that sends fexu_session or fexu_anonymous must also send x-csrf-token or the form field csrf_token. Bearer authorization is not a session."
-        );
+        let (session_cookie, anonymous_cookie) = browser_cookie_names(app);
+        operation["description"] = json!(format!(
+            "A request that sends {session_cookie} or {anonymous_cookie} must also send x-csrf-token or the form field csrf_token. Bearer authorization is not a session."
+        ));
     }
     operation
 }
@@ -1393,7 +1394,7 @@ fn custom_operation(operation: &OpenApiOperation) -> Value {
         body["description"] = json!(operation.description);
     } else if operation.session || operation.csrf {
         body["description"] = json!(
-            "A request that sends fexu_session must also send x-csrf-token when this operation requires that proof. Bearer authorization is not a session."
+            "A request that sends the configured session cookie must also send x-csrf-token when this operation requires that proof. The default name is fexu_session. Bearer authorization is not a session."
         );
     }
     if !operation.parameters.is_empty() {
@@ -1417,19 +1418,30 @@ fn custom_operation(operation: &OpenApiOperation) -> Value {
     body
 }
 
-fn security_schemes() -> Value {
+fn browser_cookie_names(app: &App) -> (String, String) {
+    match app.auth.as_ref() {
+        Some(auth) => (
+            auth.config().cookie_name.clone(),
+            auth.config().anonymous_cookie_name.clone(),
+        ),
+        None => ("fexu_session".to_owned(), "fexu_anonymous".to_owned()),
+    }
+}
+
+fn security_schemes(app: &App) -> Value {
+    let (session_cookie, anonymous_cookie) = browser_cookie_names(app);
     json!({
         "sessionCookie": {
             "type": "apiKey",
             "in": "cookie",
-            "name": "fexu_session",
-            "description": "Signed browser session. It is not a Bearer token."
+            "name": session_cookie,
+            "description": "Signed browser session for this application. It is not a Bearer token. The default name is fexu_session."
         },
         "anonymousCookie": {
             "type": "apiKey",
             "in": "cookie",
-            "name": "fexu_anonymous",
-            "description": "Anonymous browser session. It does not prove an admin login."
+            "name": anonymous_cookie,
+            "description": "Anonymous browser session for this application. It does not prove an admin login. The default name is fexu_anonymous."
         },
         "csrfHeader": {
             "type": "apiKey",

@@ -46,6 +46,12 @@
 - `inspect_framework` and the auth and jobs status commands report a missing table or a missing column from the latest applied framework snapshot as an error. The latest snapshot is the highest migration number, not the last array entry. They do not recreate the table or column and do not describe that database as fully migrated. Empty and absent application directories stay optional. Checksums of the checked-in migration files are unchanged.
 - Cold-start Bash and PowerShell accept a PostgreSQL URL only when it has no query string, the decoded database name starts with `fexu_test_`, and the host is the literal form `127.0.0.1`, `localhost`, or `[::1]`. The host is not percent-decoded. Every query parameter is refused. The URL user must already be a disposable test role; the scripts do not verify that role's privileges. Both scripts require `login=ok` and a reported job. Linux CI runs the Bash script and Windows CI runs the PowerShell script.
 
+## Unreleased — per-application browser cookies
+
+- `AuthConfig::with_cookie_namespace` names session, anonymous, login-CSRF, reset-CSRF and reset-exchange cookies for one application. The label `fexu` keeps `fexu_session`, `fexu_anonymous`, `fexu_login_csrf`, `fexu_reset_csrf` and `fexu_reset`.
+- A configured `cookie_name` still authenticates that application. Its login and reset cookies follow that name instead of the historical `fexu_*` CSRF cookies. Logout and login clear only those names. Another application's cookies are not read and are not deleted.
+- The default names are unchanged, so existing `fexu_session` deployments keep their cookies. Two applications on one host must use two namespaces because browsers share cookies across ports.
+
 ## Unreleased — browser security and native admin login
 
 - The security-header layer keeps one canonical `Referrer-Policy` only when every header field and comma-separated token is that same safe value. Any other combination is replaced by the configured policy. `nosniff` and `DENY` stay mandatory. `Host` and `X-Forwarded-*` are not origins.
