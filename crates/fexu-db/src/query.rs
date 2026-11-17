@@ -340,10 +340,27 @@ impl NamedFilter {
         &self.predicate
     }
 
+    /// AND. The stored name stays the name of `self`. Only the predicate is applied.
     pub fn and(self, other: NamedFilter) -> Self {
         Self {
             name: self.name,
             predicate: all_of([self.predicate, other.predicate]),
+        }
+    }
+
+    /// OR. The stored name stays the name of `self`. Only the predicate is applied.
+    pub fn or(self, other: NamedFilter) -> Self {
+        Self {
+            name: self.name,
+            predicate: any_of([self.predicate, other.predicate]),
+        }
+    }
+
+    /// NOT. The stored name stays the name of `self`.
+    pub fn negated(self) -> Self {
+        Self {
+            name: self.name,
+            predicate: not(self.predicate),
         }
     }
 }
