@@ -74,7 +74,7 @@ Answer 204 and `Set-Cookie` with empty value.
 
 State is a JSON object of at most 32 scalar values, stored as text and bound as a parameter. It is not copied into the user session at login. Login revokes the anonymous row in the same transaction that inserts the new user session. That blocks session fixation of the anonymous id. `authenticate_token` does not accept an anonymous token.
 
-Absolute lifetime and idle timeout are `FEXU_SESSION_HOURS` and `FEXU_IDLE_MINUTES`, the same values as user sessions. The anonymous cookie name is not configurable. It must stay distinct from `fexu_session`.
+Absolute lifetime and idle timeout are `FEXU_SESSION_HOURS` and `FEXU_IDLE_MINUTES`, the same values as user sessions. The default anonymous cookie is `fexu_anonymous`. `with_cookie_namespace` renames it with the session cookie, and the two names stay distinct.
 
 ## Limitations
 
