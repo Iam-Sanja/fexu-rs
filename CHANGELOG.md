@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased — safe schema evolution
+
+- Explicit `rename_column` and `rename_table` remain the only rename path. A removed name plus a new name is not guessed, and a rename that leaves more than one name changed is rejected. A rename whose old and new names are equal is rejected before any file or statement is written. Identifiers are checked again before SQL, and a rejected name that is not a plain identifier is not copied into the error.
+- Boolean default changes, default removal, secondary indexes, and unique indexes keep existing rows. A unique index over duplicate values rolls back and writes no history row. Unsupported type changes stay refused. Destructive drops still require `--allow-destructive`.
+- After a SQLite rebuild commits, a failed `PRAGMA foreign_keys = ON` does not roll the migration back. The error states that the history row was saved, and the connection is closed instead of being reused with enforcement off.
+
 ## Unreleased — Docker bind, proxy headers and database role
 
 - `fexu check --deploy` reads `BIND_ADDRESS`. `0.0.0.0` and `::` stay errors until `server.allow_wildcard_bind` or `FEXU_ALLOW_WILDCARD_BIND=true`. The explicit case is not an allowed origin. `FEXU_TRUST_PROXY=1` with only `*` remains an error.
