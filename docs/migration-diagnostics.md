@@ -41,6 +41,32 @@ SQLite diagnoses open an existing file with `mode=ro`. A missing file does not l
 
 The URL is `DATABASE_URL`, otherwise `database.url` from `fexu.toml`. The same resolution is used by the generated program. A URL that is calculated only in the application code does not see the CLI.
 
+## Read-only plan
+
+`fexu migrate plan` keeps the application-directory comparison and, unless `--migrations-dir` selects another directory, also reports:
+
+- dependency errors from declared `[app.<name>]` packages: a missing app, a self-dependency, or a cycle. The message states that no migration was applied when the graph itself says so. No migration file is created.
+- pending, checksum, order, and live-schema findings for the embedded auth and job packages. Pending IDs are prefixed `Auth:` and `Job:`. A checksum or order conflict stays an error and skips the live comparison. Extra or missing columns on tables that belong to the latest applied framework snapshot are drift. Unrelated application tables are not treated as framework drift.
+
+`plan_embedded` and `package_dependency_findings` do not call `ensure_history` and do not execute schema SQL. An empty embedded package is an error. A duplicate resource ID or an ID outside the expected auth or jobs list is an error that names the component and the ID; those resources are not applied. An absent or empty application directory remains an optional empty set.
+
+## Runtime contract for issues 74, 75, and 83
+
+Fulfilled:
+
+- Auth migrations `0001_auth_schema` through `0006_account_security` and job migrations `0001_jobs` and `0002_job_schedule` are compiled into the binary. Runtime apply and status do not open `CARGO_MANIFEST_DIR`.
+- A relocated `embedded-migrate` binary applies those resources, then calls the public auth and jobs APIs. Linux CI runs `scripts/cold-start-embedded.sh`. Windows CI runs `scripts/cold-start-embedded.ps1`. The official multi-stage example is `examples/deploy/Dockerfile`; the runtime stage copies only the binary.
+- Missing, corrupt, incomplete, duplicate, and unexpected required framework resources fail before success. Optional application directories stay empty without that error.
+- Fresh and already-migrated SQLite and disposable PostgreSQL databases are covered by library tests. PostgreSQL tests are ignored unless `DATABASE_URL` points at an admin connection that can create a `fexu_test_` database. They drop only that disposable database.
+- `migrate plan` is read-only for application files, embedded auth and jobs, and declared app dependencies. Drift is reported. Checksum conflicts are not rewritten as drift.
+
+Still open in issue 83, outside this read-only slice:
+
+- Generating rename, default, index, foreign-key, and type migrations is unchanged and is not newly specified here.
+- Destructive changes still require an explicit acknowledgement and are not planned into an automatic write.
+- `migrate down` still does not restore dropped rows, and this change does not add a populated-data round trip.
+- CI still does not boot an older snapshot, migrate it forward, and compare application data. The relocated-binary CI starts from an empty disposable database.
+
 ## Schema
 
 `fexu migrate status` loads the model via `--schema-file` or `schema_command`. `fexu check` does the same after the database file is present. `FEXU_SCHEMA_FILE` replaces the command. `FEXU_CHECK_SKIP_SCHEMA=1` skips it in `check`. `doctor`, `dev` and `upgrade` do not start `schema_command`. Without a loaded schema, the diagnosis explicitly reports this and claims no match.

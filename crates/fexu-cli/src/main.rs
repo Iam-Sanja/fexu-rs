@@ -863,6 +863,7 @@ fn run_migrate(action: MigrateCommand) -> Result<(), String> {
             migrations_dir,
             schema_file,
         } => {
+            let use_project = migrations_dir.is_none();
             let directory = resolve_directory(migrations_dir)?;
             let schema = load_optional_schema(schema_file)?;
             let url = resolve_database_url(database_url)?;
@@ -871,9 +872,36 @@ fn run_migrate(action: MigrateCommand) -> Result<(), String> {
                 let db = fexu_db::connect(&readonly)
                     .await
                     .map_err(|error| format!("migration.database.unavailable: {error}"))?;
-                plan_database(&db, &directory, schema.as_ref())
+                let mut report = plan_database(&db, &directory, schema.as_ref())
                     .await
-                    .map_err(|error| error.0)
+                    .map_err(|error| error.0)?;
+                if use_project {
+                    let packages = declared_packages()?;
+                    report
+                        .findings
+                        .extend(fexu_migrations::package_dependency_findings(&packages));
+                    let auth =
+                        fexu_auth::embedded_migrations().map_err(|error| error.to_string())?;
+                    let jobs = fexu_jobs::embedded_migrations()
+                        .map_err(|error| format!("{} {}", error.code(), error.detail()))?;
+                    let auth_plan = fexu_migrations::plan_embedded(
+                        &db,
+                        &auth,
+                        fexu_migrations::AUTH_HISTORY_TABLE,
+                        "Auth",
+                    )
+                    .await
+                    .map_err(|error| error.0)?;
+                    let jobs_plan =
+                        fexu_migrations::plan_embedded(&db, &jobs, fexu_jobs::JOB_HISTORY, "Job")
+                            .await
+                            .map_err(|error| error.0)?;
+                    report.pending.extend(auth_plan.pending);
+                    report.pending.extend(jobs_plan.pending);
+                    report.findings.extend(auth_plan.findings);
+                    report.findings.extend(jobs_plan.findings);
+                }
+                Ok::<_, String>(report)
             })?;
             println!("Migration plan is read-only.");
             println!("backend: {}", report.backend);
