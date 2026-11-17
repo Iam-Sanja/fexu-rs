@@ -1,0 +1,127 @@
+{
+  "schema": 1,
+  "framework": "fexu",
+  "crate_version": "0.1.2",
+  "profile": "release",
+  "database": "sqlite",
+  "sqlite_pool": "max_connections=1 from fexu::db::connect; this bench does not change it",
+  "transport": "HTTP/1.1 keep-alive on 127.0.0.1, ephemeral port, TCP_NODELAY",
+  "plan": {
+    "categories": 20,
+    "items_per_category": 10,
+    "page_limit": 20,
+    "warmup": 40,
+    "sequential_reads": 300,
+    "sequential_writes": 40,
+    "error_each": 10,
+    "concurrent_workers": 4,
+    "concurrent_reads_per_worker": 40
+  },
+  "startup_ready_ns": 28839015300,
+  "auth_setup_ns": 4467792500,
+  "schema_ns": 441847700,
+  "seed_ns": 22289451300,
+  "login_ns": 82380900,
+  "login_status": 200,
+  "discover_has_more": true,
+  "warmup_requests": 200,
+  "sequential_reads": {
+    "operation": "authenticated read",
+    "count": 300,
+    "status": 200,
+    "elapsed_ns": 180833500,
+    "requests_per_second": 1658.9846460971003,
+    "latency_ns": {
+      "min": 252900,
+      "p50": 484800,
+      "p95": 624800,
+      "p99": 680600,
+      "max": 35883800
+    }
+  },
+  "sequential_writes": {
+    "operation": "authenticated patch",
+    "count": 40,
+    "status": 200,
+    "elapsed_ns": 32885900,
+    "requests_per_second": 1216.3267540191996,
+    "latency_ns": {
+      "min": 627400,
+      "p50": 810400,
+      "p95": 984100,
+      "p99": 1064200,
+      "max": 1064200
+    }
+  },
+  "unauthorized": {
+    "operation": "missing session",
+    "count": 10,
+    "status": 401,
+    "elapsed_ns": 995900,
+    "requests_per_second": 10041.168792047394,
+    "latency_ns": {
+      "min": 79400,
+      "p50": 94300,
+      "p95": 143500,
+      "p99": 143500,
+      "max": 143500
+    }
+  },
+  "not_found": {
+    "operation": "missing row",
+    "count": 10,
+    "status": 404,
+    "elapsed_ns": 4093900,
+    "requests_per_second": 2442.6585896089305,
+    "latency_ns": {
+      "min": 339700,
+      "p50": 406700,
+      "p95": 475800,
+      "p99": 475800,
+      "max": 475800
+    }
+  },
+  "invalid": {
+    "operation": "rejected page limit",
+    "count": 10,
+    "status": 422,
+    "elapsed_ns": 2802500,
+    "requests_per_second": 3568.242640499554,
+    "latency_ns": {
+      "min": 242400,
+      "p50": 259200,
+      "p95": 339300,
+      "p99": 339300,
+      "max": 339300
+    }
+  },
+  "concurrent_reads": {
+    "operation": "concurrent authenticated list",
+    "count": 160,
+    "status": 200,
+    "elapsed_ns": 64670800,
+    "requests_per_second": 2474.068667775874,
+    "latency_ns": {
+      "min": 322200,
+      "p50": 1202800,
+      "p95": 3788500,
+      "p99": 5653200,
+      "max": 7452300
+    }
+  },
+  "memory": {
+    "measured": true,
+    "method": "K32GetProcessMemoryInfo working set",
+    "working_set_bytes": 16695296,
+    "peak_working_set_bytes": 34758656
+  },
+  "not_measured": [
+    "postgresql",
+    "runique",
+    "cot",
+    "loco",
+    "build_duration",
+    "linux",
+    "macos"
+  ]
+}

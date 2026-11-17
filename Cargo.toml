@@ -10,6 +10,7 @@ members = [
   "examples/notes",
   "examples/desk",
   "examples/board",
+  "examples/bench-baseline",
   "examples/contract"
 ]
 

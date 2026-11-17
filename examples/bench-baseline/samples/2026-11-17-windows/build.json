@@ -1,0 +1,7 @@
+﻿{
+    "schema":  1,
+    "command":  "cargo build --release -p fexu-bench-baseline",
+    "elapsed_ns":  312530700,
+    "incremental":  true,
+    "note":  "Wall time of this process. A warm target directory makes this shorter than a clean build. This is not a clean-build claim."
+}

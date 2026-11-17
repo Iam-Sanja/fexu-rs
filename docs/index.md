@@ -10,7 +10,7 @@ The main flow is: Rust model → `FexuModel` metadata and repository methods →
 
 ## Django capability comparison
 
-The [Django 6.1 capability matrix](django-capability-matrix.md) compares Fexu's documented behavior with Django's major developer benefits. The [framework comparison](framework-comparison.md) records Fexu, Runique, Cot and Loco from published pages, without runtime numbers. [Release readiness](release-readiness.md) records the staged first crates.io publication; check individual crate pages for current availability.
+The [Django 6.1 capability matrix](django-capability-matrix.md) compares Fexu's documented behavior with Django's major developer benefits. The [framework comparison](framework-comparison.md) records Fexu, Runique, Cot and Loco from published pages. The [benchmark baseline](benchmarks.md) adds a repeatable Fexu SQLite measurement and leaves the other frameworks untimed. [Release readiness](release-readiness.md) records the staged first crates.io publication; check individual crate pages for current availability.
 
 ## Documentation by topic
 
