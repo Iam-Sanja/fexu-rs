@@ -31,8 +31,16 @@ use crate::sql::{
 pub const PAGE_LIMIT: u64 = LIST_LIMIT as u64;
 /// Maximum `OFFSET` for [`Select::page`]. Larger windows use [`Select::keyset`].
 pub const OFFSET_LIMIT: u64 = 1_000_000;
-/// Maximum number of bound values in one `IN` or `NOT IN` list.
+/// Maximum number of bound values in one nonempty `IN` or `NOT IN` list.
+///
+/// An empty list is not a value and is not an error: `IN []` matches nothing
+/// and `NOT IN []` matches every row. Both still compose with AND/OR/NOT and
+/// with [`QueryScope`].
 pub const IN_LIMIT: usize = 100;
+/// Maximum rows [`RowScan::collect_bounded`] will hold in one `Vec`.
+///
+/// A larger result is read with [`RowScan::next_batch`], one page at a time.
+pub const SCAN_COLLECT_LIMIT: u64 = 10_000;
 /// Maximum length of one text-search term, before LIKE or GLOB escaping.
 pub const TEXT_MATCH_LIMIT: usize = 200;
 
@@ -48,6 +56,12 @@ pub enum Bound {
     I64(i64),
     Text(String),
     Uuid(Uuid),
+    /// Calendar date. Accepted by a `Date` column. Text values stay valid.
+    Date(chrono::NaiveDate),
+    /// Time of day. Accepted by a `Time` column. Text values stay valid.
+    Time(chrono::NaiveTime),
+    /// UTC instant. Accepted by a `DateTime` column. Text values stay valid.
+    DateTime(chrono::DateTime<chrono::Utc>),
 }
 
 impl From<bool> for Bound {
@@ -83,6 +97,24 @@ impl From<&str> for Bound {
 impl From<Uuid> for Bound {
     fn from(value: Uuid) -> Self {
         Self::Uuid(value)
+    }
+}
+
+impl From<chrono::NaiveDate> for Bound {
+    fn from(value: chrono::NaiveDate) -> Self {
+        Self::Date(value)
+    }
+}
+
+impl From<chrono::NaiveTime> for Bound {
+    fn from(value: chrono::NaiveTime) -> Self {
+        Self::Time(value)
+    }
+}
+
+impl From<chrono::DateTime<chrono::Utc>> for Bound {
+    fn from(value: chrono::DateTime<chrono::Utc>) -> Self {
+        Self::DateTime(value)
     }
 }
 
@@ -161,6 +193,10 @@ impl Column {
         self.cmp(Compare::Lte(value.into()))
     }
 
+    /// Membership test. An empty iterator matches no row, including SQL `NULL`.
+    ///
+    /// A nonempty list holds at most [`IN_LIMIT`] bound values. The predicate
+    /// does not widen a [`QueryScope`].
     pub fn is_in<I, T>(self, values: I) -> Predicate
     where
         I: IntoIterator<Item = T>,
@@ -169,6 +205,10 @@ impl Column {
         self.cmp(Compare::In(values.into_iter().map(Into::into).collect()))
     }
 
+    /// Exclusion test. An empty iterator matches every row, including SQL `NULL`.
+    ///
+    /// A nonempty list holds at most [`IN_LIMIT`] bound values. The predicate
+    /// is AND-ed with the query scope and does not skip it.
     pub fn is_not_in<I, T>(self, values: I) -> Predicate
     where
         I: IntoIterator<Item = T>,
@@ -417,6 +457,18 @@ pub struct KeysetPage<T> {
     pub has_more: bool,
 }
 
+/// Keyset walk over every row that matches a [`Select`].
+///
+/// Each [`RowScan::next_batch`] holds at most one page (`limit`, 1..=[`PAGE_LIMIT`]).
+/// Earlier pages are not retained. [`Select::all`] stays a single window and
+/// does not grow to the whole table. Generated REST lists stay on that window.
+#[derive(Debug, Clone)]
+pub struct RowScan<M> {
+    select: Select<M>,
+    cursor: Option<String>,
+    finished: bool,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AggregateFn {
     Count,
@@ -482,8 +534,9 @@ pub struct ManyToMany {
 /// `filter` combines with AND. `any_of` and `not` build OR and NOT.
 /// The default order is `id ASC`. Any other order gets `id ASC` appended
 /// so pages do not overlap when sort keys are equal.
-/// `all` and `page` return at most [`PAGE_LIMIT`] rows. `count` and `exists`
-/// use the filter and scope, not the page window.
+/// `all` and `page` return at most [`PAGE_LIMIT`] rows and do not report rows
+/// past that window. [`Select::scan`] walks every match one keyset page at a
+/// time. `count` and `exists` use the filter and scope, not the page window.
 ///
 /// `scope` defaults to [`QueryScope::All`], the same default as `list`.
 /// Pass the scope produced by the object policy. [`QueryScope::None`] matches
@@ -670,6 +723,11 @@ impl<M> Select<M> {
         self
     }
 
+    /// One window of at most `limit` rows. The default limit is [`PAGE_LIMIT`].
+    ///
+    /// Rows beyond the window are omitted and this method does not say so.
+    /// [`Select::page`] reports `has_more`. [`Select::scan`] reads every match
+    /// without raising the page size or the REST list cap.
     pub async fn all<C>(&self, db: &C) -> Result<Vec<M>, FexuError>
     where
         M: FexuModel + DeserializeOwned,
@@ -803,6 +861,66 @@ impl<M> Select<M> {
             next,
             has_more,
         })
+    }
+
+    /// Starts a keyset scan at the first matching row.
+    ///
+    /// Offset must be zero. The batch size is `limit` and stays between 1 and
+    /// [`PAGE_LIMIT`]. Nullable and boolean order columns are rejected, as in
+    /// [`Select::keyset`]. [`QueryScope`] is applied on every batch.
+    pub fn scan(&self) -> Result<RowScan<M>, FexuError>
+    where
+        M: FexuModel,
+    {
+        self.scan_from(None)
+    }
+
+    /// Continues a keyset scan after `cursor`, which is a token from
+    /// [`RowScan::cursor`] or [`KeysetPage::next`].
+    pub fn scan_after(&self, cursor: &str) -> Result<RowScan<M>, FexuError>
+    where
+        M: FexuModel,
+    {
+        decode_cursor(cursor)?;
+        self.scan_from(Some(cursor.to_owned()))
+    }
+
+    fn scan_from(&self, cursor: Option<String>) -> Result<RowScan<M>, FexuError>
+    where
+        M: FexuModel,
+    {
+        if self.offset != 0 {
+            return Err(FexuError::Validation(
+                "a full scan does not use offset".into(),
+            ));
+        }
+        if self.limit == 0 || self.limit > PAGE_LIMIT {
+            return Err(FexuError::Validation(
+                "page size must be between 1 and 100".into(),
+            ));
+        }
+        let mut orders = self.orders.clone();
+        if !orders.iter().any(|(name, _)| *name == "id") {
+            orders.push(("id", Direction::Asc));
+        }
+        reject_keyset_orders(M::columns(), &orders)?;
+        Ok(RowScan {
+            select: self.duplicate(),
+            cursor,
+            finished: false,
+        })
+    }
+
+    fn duplicate(&self) -> Self {
+        Self {
+            predicate: self.predicate.clone(),
+            relations: self.relations.clone(),
+            orders: self.orders.clone(),
+            limit: self.limit,
+            offset: self.offset,
+            scope: self.scope.clone(),
+            _model: PhantomData,
+        }
     }
 
     /// Attaches one related `COUNT` or `SUM` with a single grouped join.
@@ -1044,6 +1162,102 @@ impl<M> Select<M> {
     }
 }
 
+impl<M> RowScan<M> {
+    /// Cursor of the last committed batch. `None` before the first batch and
+    /// after the scan has returned its last row.
+    pub fn cursor(&self) -> Option<&str> {
+        self.cursor.as_deref()
+    }
+
+    /// `true` after a batch reports no further row.
+    pub fn is_complete(&self) -> bool {
+        self.finished
+    }
+
+    /// Reads the next page. An empty vector means the scan is complete.
+    ///
+    /// A database or validation error leaves the cursor unchanged, so the same
+    /// page can be retried. This does not append to rows from earlier batches.
+    pub async fn next_batch<C>(&mut self, db: &C) -> Result<Vec<M>, FexuError>
+    where
+        M: FexuModel + DeserializeOwned,
+        C: ConnectionTrait,
+    {
+        if self.finished {
+            return Ok(Vec::new());
+        }
+        let page = self.read_page(db).await?;
+        if page.data.is_empty() {
+            self.finished = true;
+            self.cursor = None;
+            return Ok(Vec::new());
+        }
+        self.cursor = page.next.clone();
+        self.finished = !page.has_more;
+        Ok(page.data)
+    }
+
+    /// Collects every matching row when the total is within `max_rows`.
+    ///
+    /// `max_rows` is 1..=[`SCAN_COLLECT_LIMIT`]. If another row matches beyond
+    /// that bound, this returns `Validation` and does not yield a shortened
+    /// list. `cancel` runs before each batch, including the first. A `true`
+    /// result stops with `Validation` and does not issue that batch. The
+    /// returned vector is the only accumulated memory; each read is one page.
+    pub async fn collect_bounded<C, F>(
+        &mut self,
+        db: &C,
+        max_rows: u64,
+        mut cancel: F,
+    ) -> Result<Vec<M>, FexuError>
+    where
+        M: FexuModel + DeserializeOwned,
+        C: ConnectionTrait,
+        F: FnMut() -> bool,
+    {
+        if max_rows == 0 || max_rows > SCAN_COLLECT_LIMIT {
+            return Err(FexuError::Validation(format!(
+                "scan collect bound must be between 1 and {SCAN_COLLECT_LIMIT}"
+            )));
+        }
+        let mut rows = Vec::new();
+        loop {
+            if cancel() {
+                return Err(FexuError::Validation("scan cancelled".into()));
+            }
+            if self.finished {
+                return Ok(rows);
+            }
+            let page = self.read_page(db).await?;
+            if page.data.is_empty() {
+                self.finished = true;
+                self.cursor = None;
+                return Ok(rows);
+            }
+            let next_len = rows.len().saturating_add(page.data.len()) as u64;
+            if next_len > max_rows || (next_len == max_rows && page.has_more) {
+                return Err(FexuError::Validation(
+                    "scan truncated: more rows match than the collect bound".into(),
+                ));
+            }
+            self.cursor = page.next.clone();
+            self.finished = !page.has_more;
+            rows.extend(page.data);
+            if self.finished {
+                return Ok(rows);
+            }
+        }
+    }
+
+    async fn read_page<C>(&self, db: &C) -> Result<KeysetPage<M>, FexuError>
+    where
+        M: FexuModel + DeserializeOwned,
+        C: ConnectionTrait,
+    {
+        self.select.keyset(db, self.cursor.as_deref()).await
+    }
+}
+
 impl<M> Default for Select<M> {
     fn default() -> Self {
         Self::new()
@@ -1145,10 +1359,18 @@ fn compare_expr(
         | Compare::Lt(value)
         | Compare::Lte(value) => vec![value.clone()],
         Compare::In(values) | Compare::NotIn(values) => {
-            if values.is_empty() || values.len() > IN_LIMIT {
+            if values.len() > IN_LIMIT {
                 return Err(FexuError::Validation(
-                    "IN and NOT IN need between 1 and 100 values".into(),
+                    "IN and NOT IN lists hold at most 100 values".into(),
                 ));
+            }
+            if values.is_empty() {
+                let always = match compare {
+                    Compare::NotIn(_) => Expr::cust("1 = 1"),
+                    Compare::In(_) => Expr::cust("0 = 1"),
+                    _ => unreachable!("empty membership is IN or NOT IN"),
+                };
+                return Ok(always);
             }
             values.clone()
         }
@@ -1423,14 +1645,10 @@ fn value_matches(kind: ColumnKind, value: &Bound, inequality: bool) -> bool {
         (ColumnKind::Boolean, Bound::Bool(_)) => !inequality,
         (ColumnKind::Uuid, Bound::Uuid(_)) => !inequality,
         (ColumnKind::BigInt, Bound::I64(_)) => true,
-        (
-            ColumnKind::Text
-            | ColumnKind::Date
-            | ColumnKind::Time
-            | ColumnKind::DateTime
-            | ColumnKind::Choice,
-            Bound::Text(_),
-        ) => true,
+        (ColumnKind::Text | ColumnKind::Choice, Bound::Text(_)) => true,
+        (ColumnKind::Date, Bound::Text(_) | Bound::Date(_)) => true,
+        (ColumnKind::Time, Bound::Text(_) | Bound::Time(_)) => true,
+        (ColumnKind::DateTime, Bound::Text(_) | Bound::DateTime(_)) => true,
         (ColumnKind::Decimal, Bound::Text(_)) => true,
         _ => false,
     }
@@ -1500,55 +1718,71 @@ fn bind_temporal(
     value: &Bound,
     backend: DatabaseBackend,
 ) -> Result<Value, FexuError> {
-    let Bound::Text(text) = value else {
-        return Err(FexuError::Validation(format!(
+    let invalid = |code: &str| FexuError::Validation(format!("column {} {code}", column.name));
+    let rejected = || {
+        Err(FexuError::Validation(format!(
             "column {} does not accept this comparison",
             column.name
-        )));
+        )))
     };
-    let invalid = |code: &str| FexuError::Validation(format!("column {} {code}", column.name));
     match column.kind {
         ColumnKind::Date => {
-            let date = fexu_core::parse_date(text).map_err(invalid)?;
-            Ok(match backend {
-                DatabaseBackend::Postgres => Value::ChronoDate(Some(Box::new(date))),
-                DatabaseBackend::Sqlite => {
-                    Value::String(Some(Box::new(fexu_core::temporal::format_date(date))))
-                }
-                DatabaseBackend::MySql => {
-                    return Err(FexuError::Validation("MySQL is not supported".into()));
-                }
-            })
+            let date = match value {
+                Bound::Date(date) => *date,
+                Bound::Text(text) => fexu_core::parse_date(text).map_err(invalid)?,
+                _ => return rejected(),
+            };
+            bind_chrono(backend, ChronoBound::Date(date))
         }
         ColumnKind::Time => {
-            let time = fexu_core::parse_time(text).map_err(invalid)?;
-            Ok(match backend {
-                DatabaseBackend::Postgres => Value::ChronoTime(Some(Box::new(time))),
-                DatabaseBackend::Sqlite => {
-                    Value::String(Some(Box::new(fexu_core::temporal::format_time(time))))
-                }
-                DatabaseBackend::MySql => {
-                    return Err(FexuError::Validation("MySQL is not supported".into()));
-                }
-            })
+            let time = match value {
+                Bound::Time(time) => *time,
+                Bound::Text(text) => fexu_core::parse_time(text).map_err(invalid)?,
+                _ => return rejected(),
+            };
+            bind_chrono(backend, ChronoBound::Time(time))
         }
         ColumnKind::DateTime => {
-            let instant = fexu_core::parse_datetime_utc(text).map_err(invalid)?;
-            Ok(match backend {
-                DatabaseBackend::Postgres => Value::ChronoDateTimeUtc(Some(Box::new(instant))),
-                DatabaseBackend::Sqlite => {
-                    Value::String(Some(Box::new(sqlite_datetime_text(instant))))
-                }
-                DatabaseBackend::MySql => {
-                    return Err(FexuError::Validation("MySQL is not supported".into()));
-                }
-            })
+            let instant = match value {
+                Bound::DateTime(instant) => *instant,
+                Bound::Text(text) => fexu_core::parse_datetime_utc(text).map_err(invalid)?,
+                _ => return rejected(),
+            };
+            bind_chrono(backend, ChronoBound::DateTime(instant))
         }
-        _ => Err(FexuError::Validation(format!(
-            "column {} does not accept this comparison",
-            column.name
-        ))),
+        _ => rejected(),
     }
+}
+
+enum ChronoBound {
+    Date(chrono::NaiveDate),
+    Time(chrono::NaiveTime),
+    DateTime(chrono::DateTime<chrono::Utc>),
+}
+
+fn bind_chrono(backend: DatabaseBackend, value: ChronoBound) -> Result<Value, FexuError> {
+    let mysql = || Err(FexuError::Validation("MySQL is not supported".into()));
+    Ok(match (backend, value) {
+        (DatabaseBackend::Postgres, ChronoBound::Date(date)) => {
+            Value::ChronoDate(Some(Box::new(date)))
+        }
+        (DatabaseBackend::Sqlite, ChronoBound::Date(date)) => {
+            Value::String(Some(Box::new(fexu_core::temporal::format_date(date))))
+        }
+        (DatabaseBackend::Postgres, ChronoBound::Time(time)) => {
+            Value::ChronoTime(Some(Box::new(time)))
+        }
+        (DatabaseBackend::Sqlite, ChronoBound::Time(time)) => {
+            Value::String(Some(Box::new(fexu_core::temporal::format_time(time))))
+        }
+        (DatabaseBackend::Postgres, ChronoBound::DateTime(instant)) => {
+            Value::ChronoDateTimeUtc(Some(Box::new(instant)))
+        }
+        (DatabaseBackend::Sqlite, ChronoBound::DateTime(instant)) => {
+            Value::String(Some(Box::new(sqlite_datetime_text(instant))))
+        }
+        (DatabaseBackend::MySql, _) => return mysql(),
+    })
 }
 
 fn sqlite_datetime_text(value: chrono::DateTime<chrono::Utc>) -> String {
@@ -1561,6 +1795,9 @@ fn bound_value(value: &Bound) -> Value {
         Bound::I64(number) => Value::BigInt(Some(*number)),
         Bound::Text(text) => Value::String(Some(Box::new(text.clone()))),
         Bound::Uuid(id) => Value::Uuid(Some(Box::new(*id))),
+        Bound::Date(_) | Bound::Time(_) | Bound::DateTime(_) => {
+            unreachable!("temporal values are bound in bind_temporal")
+        }
     }
 }
 
@@ -2418,6 +2655,43 @@ mod tests {
             .statement_for(DatabaseBackend::Sqlite)
             .unwrap_err();
         assert!(missing.to_string().contains("not available"));
+
+        let empty_in = Item::query().filter(col("name").is_in(Vec::<String>::new()));
+        for backend in [DatabaseBackend::Sqlite, DatabaseBackend::Postgres] {
+            let statement = empty_in.statement_for(backend).unwrap();
+            let sql = statement.sql.to_ascii_uppercase();
+            assert!(sql.contains("0 = 1"), "{sql}");
+            assert!(!sql.contains(" IN "), "{sql}");
+            assert!(!sql.contains("IN()"), "{sql}");
+        }
+        let empty_not = Item::query().filter(col("category_id").is_not_in(Vec::<Uuid>::new()));
+        let not_sql = empty_not
+            .statement_for(DatabaseBackend::Postgres)
+            .unwrap()
+            .sql
+            .to_ascii_uppercase();
+        assert!(not_sql.contains("1 = 1"), "{not_sql}");
+        assert!(!not_sql.contains("NOT IN"), "{not_sql}");
+        let hundred: Vec<i64> = (0..100).collect();
+        let bounded = Item::query()
+            .filter(col("stock").is_in(hundred))
+            .statement_for(DatabaseBackend::Sqlite)
+            .unwrap();
+        let plain = Item::query()
+            .statement_for(DatabaseBackend::Sqlite)
+            .unwrap();
+        assert_eq!(
+            bounded.values.as_ref().unwrap().0.len(),
+            plain.values.as_ref().unwrap().0.len() + 100
+        );
+        assert!(bounded.sql.contains('?'));
+        assert!(!bounded.sql.contains("0, 1, 2"));
+        let too_many: Vec<i64> = (0..=100).collect();
+        let rejected = Item::query()
+            .filter(col("stock").is_in(too_many))
+            .statement_for(DatabaseBackend::Sqlite)
+            .unwrap_err();
+        assert!(rejected.to_string().contains("at most 100"));
     }
 
     #[tokio::test]
@@ -2551,7 +2825,8 @@ mod tests {
             .filter(col("name").is_in(Vec::<String>::new()))
             .all(&db)
             .await
-            .is_err());
+            .unwrap()
+            .is_empty());
         assert!(Item::query()
             .filter(col("stock").is_in(0..=100))
             .all(&db)
@@ -4249,6 +4524,59 @@ mod tests {
             .to_string()
             .contains("validation.datetime_offset"));
 
+        let day = chrono::NaiveDate::from_ymd_opt(2026, 11, 11).unwrap();
+        let typed_day = TemporalEvent::query()
+            .filter(col("opened_on").eq(day))
+            .all(db)
+            .await
+            .unwrap();
+        assert_eq!(temporal_labels(&typed_day), vec!["fraction"]);
+        let typed_after = TemporalEvent::query()
+            .filter(col("opened_on").gt(day))
+            .all(db)
+            .await
+            .unwrap();
+        assert_eq!(temporal_labels(&typed_after), vec!["last"]);
+        let clock = chrono::NaiveTime::from_hms_opt(14, 30, 0).unwrap();
+        let typed_time = TemporalEvent::query()
+            .filter(col("starts_at").eq(clock))
+            .all(db)
+            .await
+            .unwrap();
+        assert_eq!(temporal_labels(&typed_time), vec!["fraction"]);
+        let instant = fexu_core::parse_datetime_utc("2026-11-11T13:30:00.123456Z").unwrap();
+        let typed_instant = TemporalEvent::query()
+            .filter(col("created_at").eq(instant))
+            .all(db)
+            .await
+            .unwrap();
+        assert_eq!(temporal_labels(&typed_instant), vec!["fraction"]);
+        assert!(TemporalEvent::query()
+            .filter(col("opened_on").eq(clock))
+            .all(db)
+            .await
+            .is_err());
+        let no_days = TemporalParent::query()
+            .where_has::<TemporalEvent>(
+                "parent_id",
+                Related::new().filter(col("opened_on").is_in(Vec::<String>::new())),
+            )
+            .all(db)
+            .await
+            .unwrap();
+        assert!(no_days.is_empty());
+        let scoped_out = TemporalParent::query()
+            .where_has::<TemporalEvent>(
+                "parent_id",
+                Related::new()
+                    .scope(QueryScope::None)
+                    .filter(col("label").is_not_in(Vec::<String>::new())),
+            )
+            .all(db)
+            .await
+            .unwrap();
+        assert!(scoped_out.is_empty());
+
         let related = TemporalParent::query()
             .where_has::<TemporalEvent>(
                 "parent_id",
@@ -4330,6 +4658,29 @@ mod tests {
                 .0[0],
             Value::ChronoDateTimeUtc(Some(_))
         ));
+        let typed = TemporalEvent::query()
+            .filter(col("opened_on").eq(chrono::NaiveDate::from_ymd_opt(2026, 11, 11).unwrap()));
+        assert!(matches!(
+            typed
+                .statement_for(DatabaseBackend::Postgres)
+                .unwrap()
+                .values
+                .as_ref()
+                .unwrap()
+                .0[0],
+            Value::ChronoDate(Some(_))
+        ));
+        match &typed
+            .statement_for(DatabaseBackend::Sqlite)
+            .unwrap()
+            .values
+            .as_ref()
+            .unwrap()
+            .0[0]
+        {
+            Value::String(Some(value)) => assert_eq!(value.as_str(), "2026-11-11"),
+            other => panic!("expected sqlite typed date text, got {other:?}"),
+        }
     }
 
     #[tokio::test]
@@ -4349,6 +4700,441 @@ mod tests {
         let db = connect(disposable.url()).await.expect("postgres");
         insert_temporal(&db, DatabaseKind::Postgres).await;
         exercise_temporal_filters(&db).await;
+        db.close().await.expect("close");
+        disposable
+            .drop_database()
+            .await
+            .expect("drop isolated database");
+    }
+
+    async fn exercise_empty_membership(db: &impl ConnectionTrait) {
+        let empty_page = Item::query()
+            .filter(col("name").is_in(Vec::<String>::new()))
+            .page(db)
+            .await
+            .unwrap();
+        assert!(empty_page.data.is_empty());
+        assert_eq!(empty_page.total, 0);
+        assert!(!empty_page.has_more);
+
+        let admin = crate::query_admin_page(
+            db,
+            Item::descriptor().table,
+            Item::columns(),
+            crate::AdminPageRequest {
+                search_columns: &["name"],
+                search: Some("calendar-miss"),
+                sort_column: "id",
+                descending: false,
+                equal_filters: &[],
+                bounds: &[],
+                offset: 0,
+                limit: 20,
+                scope: &QueryScope::All,
+            },
+        )
+        .await
+        .unwrap();
+        assert!(admin.rows.is_empty());
+        assert_eq!(admin.total, 0);
+        assert!(!admin.has_more);
+
+        assert_eq!(
+            Item::query()
+                .filter(col("category_id").is_in(Vec::<Uuid>::new()))
+                .count(db)
+                .await
+                .unwrap(),
+            0
+        );
+        assert_eq!(
+            Item::query()
+                .filter(col("category_id").is_not_in(Vec::<Uuid>::new()))
+                .count(db)
+                .await
+                .unwrap(),
+            5
+        );
+        let null_kept = Item::query()
+            .filter(col("category_id").is_not_in(Vec::<Uuid>::new()))
+            .filter(col("category_id").is_null())
+            .all(db)
+            .await
+            .unwrap();
+        assert_eq!(names(&null_kept), vec!["gamma"]);
+
+        let alpha = Item::query()
+            .filter(any_of([
+                col("name").is_in(Vec::<String>::new()),
+                col("name").eq("alpha"),
+            ]))
+            .all(db)
+            .await
+            .unwrap();
+        assert_eq!(names(&alpha), vec!["alpha"]);
+        let still_alpha = Item::query()
+            .filter(all_of([
+                col("name").is_not_in(Vec::<String>::new()),
+                col("name").eq("alpha"),
+            ]))
+            .all(db)
+            .await
+            .unwrap();
+        assert_eq!(names(&still_alpha), vec!["alpha"]);
+        assert!(Item::query()
+            .filter(all_of([
+                col("name").is_in(Vec::<String>::new()),
+                col("name").eq("alpha"),
+            ]))
+            .all(db)
+            .await
+            .unwrap()
+            .is_empty());
+        assert_eq!(
+            Item::query()
+                .filter(not(col("name").is_in(Vec::<String>::new())))
+                .count(db)
+                .await
+                .unwrap(),
+            5
+        );
+        assert_eq!(
+            Item::query()
+                .filter(not(col("name").is_not_in(Vec::<String>::new())))
+                .count(db)
+                .await
+                .unwrap(),
+            0
+        );
+
+        let owned = Item::query()
+            .filter(col("name").is_not_in(Vec::<String>::new()))
+            .scope(QueryScope::Equals {
+                column: "owner_id",
+                value: ScopeValue::Uuid(Uuid::from_u128(8)),
+            })
+            .order_by("name", Direction::Asc)
+            .all(db)
+            .await
+            .unwrap();
+        assert_eq!(names(&owned), vec!["gamma", "hidden"]);
+        assert!(Item::query()
+            .filter(col("name").is_not_in(Vec::<String>::new()))
+            .scope(QueryScope::None)
+            .all(db)
+            .await
+            .unwrap()
+            .is_empty());
+        assert_eq!(
+            Item::query()
+                .filter(col("name").is_in(Vec::<String>::new()))
+                .scope(QueryScope::Equals {
+                    column: "owner_id",
+                    value: ScopeValue::Uuid(Uuid::from_u128(8)),
+                })
+                .count(db)
+                .await
+                .unwrap(),
+            0
+        );
+        assert_eq!(
+            names(
+                &Item::query()
+                    .filter(col("name").is_in(["alpha"]))
+                    .all(db)
+                    .await
+                    .unwrap()
+            ),
+            vec!["alpha"]
+        );
+        let hundred: Vec<i64> = (0..100).collect();
+        assert_eq!(
+            Item::query()
+                .filter(col("stock").is_in(hundred))
+                .count(db)
+                .await
+                .unwrap(),
+            5
+        );
+    }
+
+    async fn exercise_bounded_scan(db: &impl ConnectionTrait) {
+        assert!(Item::query().offset(1).scan().is_err());
+        assert!(Item::query()
+            .order_by("active", Direction::Asc)
+            .scan()
+            .is_err());
+        assert!(Item::query()
+            .order_by("category_id", Direction::Asc)
+            .scan()
+            .is_err());
+        let mut rejected = Item::query().scan().unwrap();
+        assert!(rejected
+            .collect_bounded(db, 0, || panic!("bound is rejected before a query"))
+            .await
+            .is_err());
+        assert!(rejected
+            .collect_bounded(db, SCAN_COLLECT_LIMIT + 1, || {
+                panic!("bound is rejected before a query")
+            })
+            .await
+            .is_err());
+
+        for number in 1_u128..=1_001 {
+            let owned = format!("row-{number}");
+            let name = if number == 101 {
+                "blocker"
+            } else {
+                owned.as_str()
+            };
+            insert(
+                db,
+                NewItem {
+                    id: number,
+                    name,
+                    stock: 1,
+                    active: true,
+                    price: i64::try_from(number / 2).unwrap(),
+                    category: Some(50),
+                    owner: if number == 500 { 9 } else { 7 },
+                },
+            )
+            .await;
+        }
+
+        let window = Item::query()
+            .order_by("price_cents", Direction::Asc)
+            .all(db)
+            .await
+            .unwrap();
+        assert_eq!(window.len(), 100);
+        assert!(window.iter().all(|row| row.name != "blocker"));
+
+        let mut scan = Item::query()
+            .order_by("price_cents", Direction::Asc)
+            .scan()
+            .unwrap();
+        let mut seen = 0_u64;
+        let mut blocker_at = None;
+        let mut previous: Option<(i64, Uuid)> = None;
+        let mut batches = 0_u64;
+        loop {
+            let batch = scan.next_batch(db).await.unwrap();
+            if batch.is_empty() {
+                break;
+            }
+            batches += 1;
+            assert!(batch.len() <= usize::try_from(PAGE_LIMIT).unwrap());
+            for row in &batch {
+                if let Some((price, id)) = previous {
+                    assert!(row.price_cents > price || (row.price_cents == price && row.id > id));
+                }
+                previous = Some((row.price_cents, row.id));
+                seen += 1;
+                if row.name == "blocker" {
+                    blocker_at = Some(seen);
+                }
+            }
+        }
+        assert!(scan.is_complete());
+        assert_eq!(seen, 1_001);
+        assert_eq!(blocker_at, Some(101));
+        assert!(batches > 10);
+        assert!(scan.next_batch(db).await.unwrap().is_empty());
+
+        let mut resumed_source = Item::query()
+            .order_by("price_cents", Direction::Asc)
+            .limit(40)
+            .scan()
+            .unwrap();
+        let first = resumed_source.next_batch(db).await.unwrap();
+        let token = resumed_source.cursor().unwrap().to_owned();
+        let second = resumed_source.next_batch(db).await.unwrap();
+        let mut resumed = Item::query()
+            .order_by("price_cents", Direction::Asc)
+            .limit(40)
+            .scan_after(&token)
+            .unwrap();
+        assert_eq!(resumed.next_batch(db).await.unwrap(), second);
+        assert!(first
+            .iter()
+            .all(|row| second.iter().all(|other| other.id != row.id)));
+
+        let mut scoped = Item::query()
+            .order_by("price_cents", Direction::Asc)
+            .scope(QueryScope::Equals {
+                column: "owner_id",
+                value: ScopeValue::Uuid(Uuid::from_u128(7)),
+            })
+            .scan()
+            .unwrap();
+        let scoped_rows = scoped.collect_bounded(db, 2_000, || false).await.unwrap();
+        assert_eq!(scoped_rows.len(), 1_000);
+        assert!(scoped_rows.iter().all(|row| row.id != Uuid::from_u128(500)));
+        assert!(scoped.is_complete());
+
+        let mut hidden = Item::query().scope(QueryScope::None).scan().unwrap();
+        assert!(hidden
+            .collect_bounded(db, 100, || false)
+            .await
+            .unwrap()
+            .is_empty());
+
+        QueryCounter::reset();
+        let mut cancelled = Item::query().limit(50).scan().unwrap();
+        let mut started = false;
+        let error = cancelled
+            .collect_bounded(db, 5_000, || {
+                let stop = started;
+                started = true;
+                stop
+            })
+            .await
+            .unwrap_err();
+        assert!(error.to_string().contains("scan cancelled"));
+        assert_eq!(QueryCounter::get(), 1);
+
+        QueryCounter::reset();
+        let mut immediate = Item::query().scan().unwrap();
+        let error = immediate
+            .collect_bounded(db, 5_000, || true)
+            .await
+            .unwrap_err();
+        assert!(error.to_string().contains("scan cancelled"));
+        assert_eq!(QueryCounter::get(), 0);
+
+        let mut truncated = Item::query().limit(100).scan().unwrap();
+        let error = truncated
+            .collect_bounded(db, 100, || false)
+            .await
+            .unwrap_err();
+        assert!(error.to_string().contains("scan truncated"));
+        assert!(truncated.cursor().is_none());
+        assert_eq!(truncated.next_batch(db).await.unwrap().len(), 100);
+
+        let mut complete = Item::query().limit(100).scan().unwrap();
+        let rows = complete.collect_bounded(db, 1_001, || false).await.unwrap();
+        assert_eq!(rows.len(), 1_001);
+        assert!(rows.iter().any(|row| row.name == "blocker"));
+    }
+
+    struct FailAfter<'a> {
+        inner: &'a DatabaseConnection,
+        budget: std::sync::atomic::AtomicUsize,
+    }
+
+    #[async_trait::async_trait]
+    impl ConnectionTrait for FailAfter<'_> {
+        fn get_database_backend(&self) -> DatabaseBackend {
+            self.inner.get_database_backend()
+        }
+
+        async fn execute(
+            &self,
+            statement: Statement,
+        ) -> Result<crate::driver::ExecResult, crate::driver::DbErr> {
+            self.inner.execute(statement).await
+        }
+
+        async fn execute_unprepared(
+            &self,
+            sql: &str,
+        ) -> Result<crate::driver::ExecResult, crate::driver::DbErr> {
+            self.inner.execute_unprepared(sql).await
+        }
+
+        async fn query_one(
+            &self,
+            statement: Statement,
+        ) -> Result<Option<crate::driver::QueryResult>, crate::driver::DbErr> {
+            self.inner.query_one(statement).await
+        }
+
+        async fn query_all(
+            &self,
+            statement: Statement,
+        ) -> Result<Vec<crate::driver::QueryResult>, crate::driver::DbErr> {
+            let left = self
+                .budget
+                .fetch_update(
+                    std::sync::atomic::Ordering::Relaxed,
+                    std::sync::atomic::Ordering::Relaxed,
+                    |budget| budget.checked_sub(1),
+                )
+                .unwrap_or(0);
+            if left == 0 {
+                return Err(crate::driver::DbErr::query("scan batch failed"));
+            }
+            self.inner.query_all(statement).await
+        }
+    }
+
+    #[tokio::test]
+    async fn sqlite_empty_in_keeps_scope_and_returns_an_empty_page() {
+        let db = memory().await;
+        fixture(&db).await;
+        exercise_empty_membership(&db).await;
+    }
+
+    #[tokio::test]
+    async fn sqlite_scan_reads_the_row_after_one_hundred_without_keeping_every_page() {
+        let db = memory().await;
+        exercise_bounded_scan(&db).await;
+        let mut expected = Item::query().limit(80).scan().unwrap();
+        let _first = expected.next_batch(&db).await.unwrap();
+        let second = expected.next_batch(&db).await.unwrap();
+        let failing = FailAfter {
+            inner: &db,
+            budget: std::sync::atomic::AtomicUsize::new(1),
+        };
+        let mut scan = Item::query().limit(80).scan().unwrap();
+        let error = scan
+            .collect_bounded(&failing, 5_000, || false)
+            .await
+            .unwrap_err();
+        assert!(matches!(error, FexuError::Database(_)));
+        assert_eq!(scan.next_batch(&db).await.unwrap(), second);
+    }
+
+    #[tokio::test]
+    #[ignore = "requires DATABASE_URL, CREATEDB, and an approved PostgreSQL test database"]
+    async fn postgres_empty_in_and_bounded_scan() {
+        let admin = std::env::var("DATABASE_URL").expect("DATABASE_URL");
+        let disposable = crate::DisposablePostgres::create(&admin)
+            .await
+            .expect("isolated postgres");
+        let db = connect(disposable.url()).await.expect("postgres");
+        db.execute(Statement::from_string(
+            DatabaseBackend::Postgres,
+            Item::schema_sql(DatabaseKind::Postgres),
+        ))
+        .await
+        .expect("create query table");
+        fixture(&db).await;
+        exercise_empty_membership(&db).await;
+        db.execute(Statement::from_string(
+            DatabaseBackend::Postgres,
+            "DROP TABLE IF EXISTS fexu_query_items".to_owned(),
+        ))
+        .await
+        .unwrap();
+        db.execute(Statement::from_string(
+            DatabaseBackend::Postgres,
+            Item::schema_sql(DatabaseKind::Postgres),
+        ))
+        .await
+        .unwrap();
+        exercise_bounded_scan(&db).await;
+        let failing = FailAfter {
+            inner: &db,
+            budget: std::sync::atomic::AtomicUsize::new(1),
+        };
+        let mut scan = Item::query().limit(80).scan().unwrap();
+        let error = scan
+            .collect_bounded(&failing, 5_000, || false)
+            .await
+            .unwrap_err();
+        assert!(matches!(error, FexuError::Database(_)));
         db.close().await.expect("close");
         disposable
             .drop_database()
