@@ -79,6 +79,8 @@ HTML CRUD pages put the consumed messages in `flashes` as `{ level, text }`. Ren
 
 `render_flashes` remains for a caller that wants one escaped HTML fragment.
 
+`redirect_with_flash(db, session_id, level, text, target)` checks the same local-path rules as `redirect_to` before it stores anything. A rejected target, a control character, or a missing `_fexu_flashes` table produces an error and does not set `Location`. A stored message is still removed by the next `take_flashes` for that session only. This helper does not change session cookies or list pagination.
+
 ## Sitemap, robots, redirects and conditional responses
 
 | Helper | Behavior |

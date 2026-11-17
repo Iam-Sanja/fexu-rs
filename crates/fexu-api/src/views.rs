@@ -79,6 +79,35 @@ pub fn json(value: &serde_json::Value) -> Response {
     Json(value).into_response()
 }
 
+/// Stores one session flash and answers 303, only when `target` is already a local path.
+///
+/// A rejected target or a rejected message does not write a row and does not set `Location`.
+pub async fn redirect_with_flash(
+    db: &fexu_db::driver::DatabaseConnection,
+    session_id: uuid::Uuid,
+    level: crate::flash::FlashLevel,
+    text: &str,
+    target: &str,
+) -> Result<Response, ViewError> {
+    let Some(target) = normalized_local(target) else {
+        return Err(redirect_rejected());
+    };
+    if let Err(error) = crate::flash::push_flash(db, session_id, level, text).await {
+        let status = if matches!(error, fexu_core::FexuError::Validation(_)) {
+            StatusCode::UNPROCESSABLE_ENTITY
+        } else {
+            StatusCode::INTERNAL_SERVER_ERROR
+        };
+        tracing::warn!(error = %error, "flash redirect was not stored");
+        return Err(ViewError::new(
+            status,
+            "view.flash",
+            "Die Meldung konnte nicht gespeichert werden.",
+        ));
+    }
+    redirect_to(&target)
+}
+
 pub fn redirect_to(target: &str) -> Result<Response, ViewError> {
     let Some(target) = normalized_local(target) else {
         return Err(redirect_rejected());
@@ -901,5 +930,87 @@ mod tests {
         .unwrap();
         assert!(fallback_body.contains("<h1>"), "{fallback_body}");
         assert!(!fallback_body.contains("PROJECT-404"), "{fallback_body}");
+    }
+
+    #[tokio::test]
+    async fn flash_redirect_stays_local_and_is_consumed_once() {
+        use super::redirect_with_flash;
+        use crate::flash::{create_flash_table, render_flashes, take_flashes, FlashLevel};
+
+        let db = fexu_db::connect("sqlite::memory:").await.unwrap();
+        create_flash_table(&db).await.unwrap();
+        let session = uuid::Uuid::new_v4();
+        let other = uuid::Uuid::new_v4();
+        crate::flash::push_flash(&db, other, FlashLevel::Error, "other")
+            .await
+            .unwrap();
+
+        let rejected = redirect_with_flash(
+            &db,
+            session,
+            FlashLevel::Success,
+            "saved",
+            "https://evil.example/board",
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(rejected.status, StatusCode::BAD_REQUEST);
+        assert!(take_flashes(&db, session).await.unwrap().is_empty());
+
+        for target in ["//evil.example", "/%2e%2e/secret", "/board/%255csecret"] {
+            assert!(
+                redirect_with_flash(&db, session, FlashLevel::Info, "saved", target)
+                    .await
+                    .is_err(),
+                "{target}"
+            );
+        }
+        assert!(take_flashes(&db, session).await.unwrap().is_empty());
+
+        let control =
+            redirect_with_flash(&db, session, FlashLevel::Info, "bad\nline", "/board/items")
+                .await
+                .unwrap_err();
+        assert_eq!(control.status, StatusCode::UNPROCESSABLE_ENTITY);
+        assert!(take_flashes(&db, session).await.unwrap().is_empty());
+
+        let missing = fexu_db::connect("sqlite::memory:").await.unwrap();
+        let unavailable = redirect_with_flash(
+            &missing,
+            session,
+            FlashLevel::Success,
+            "saved",
+            "/board/items",
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(unavailable.status, StatusCode::INTERNAL_SERVER_ERROR);
+
+        let response = redirect_with_flash(
+            &db,
+            session,
+            FlashLevel::Warning,
+            "<b>saved</b>",
+            "/board/items?page=2",
+        )
+        .await
+        .unwrap();
+        assert_eq!(response.status(), StatusCode::SEE_OTHER);
+        assert_eq!(
+            response
+                .headers()
+                .get(axum::http::header::LOCATION)
+                .and_then(|value| value.to_str().ok()),
+            Some("/board/items?page=2")
+        );
+        let taken = take_flashes(&db, session).await.unwrap();
+        assert_eq!(taken.len(), 1);
+        let html = render_flashes(&taken);
+        assert!(html.contains("&lt;b&gt;saved&lt;/b&gt;"), "{html}");
+        assert!(!html.contains("<b>"), "{html}");
+        assert!(take_flashes(&db, session).await.unwrap().is_empty());
+        let remaining = take_flashes(&db, other).await.unwrap();
+        assert_eq!(remaining.len(), 1);
+        assert_eq!(remaining[0].text, "other");
     }
 }

@@ -2,10 +2,11 @@
 
 use crate::html::{self, error_page, locale_of, parse_form, require_get, require_post};
 use crate::registry::AdminRegistry;
-use crate::views::{UploadedFile, ViewRequest};
+use crate::views::{internal_admin_location, UploadedFile, ViewOutcome, ViewQuery, ViewRequest};
 use axum::body::Bytes;
-use axum::extract::{Extension, Path, State};
-use axum::http::{HeaderMap, StatusCode};
+use axum::extract::{Extension, OriginalUri, Path, State};
+use axum::http::{header, HeaderMap, HeaderValue, StatusCode};
+use axum::response::IntoResponse;
 use axum::response::Response;
 use fexu_auth::AppState;
 use std::collections::HashMap;
@@ -13,20 +14,22 @@ use std::collections::HashMap;
 pub async fn show(
     State(state): State<AppState>,
     headers: HeaderMap,
+    OriginalUri(uri): OriginalUri,
     Extension(registry): Extension<AdminRegistry>,
     Path(key): Path<String>,
 ) -> Response {
-    render(&state, &headers, &registry, &key, None).await
+    render(&state, &headers, &registry, &key, uri.query(), None).await
 }
 
 pub async fn submit(
     State(state): State<AppState>,
     headers: HeaderMap,
+    OriginalUri(uri): OriginalUri,
     Extension(registry): Extension<AdminRegistry>,
     Path(key): Path<String>,
     body: Bytes,
 ) -> Response {
-    render(&state, &headers, &registry, &key, Some(body)).await
+    render(&state, &headers, &registry, &key, uri.query(), Some(body)).await
 }
 
 async fn render(
@@ -34,6 +37,7 @@ async fn render(
     headers: &HeaderMap,
     registry: &AdminRegistry,
     key: &str,
+    raw_query: Option<&str>,
     body: Option<Bytes>,
 ) -> Response {
     let locale = locale_of(
@@ -195,54 +199,149 @@ async fn render(
         None => (HashMap::new(), Vec::new()),
     };
     let (form, uploads) = parsed;
-    let request = ViewRequest {
-        user: &user,
-        db: &state.db,
-        locale: &locale,
-        form: &form,
-        uploads: &uploads,
-    };
-    let rendered = match handler.handle(&request).await {
-        Ok(page) => page,
+    let query = match ViewQuery::parse(raw_query) {
+        Ok(query) => query,
         Err(error) => {
-            tracing::error!(
-                code = error.code,
-                detail = %error.detail,
-                "custom admin view failed"
-            );
+            tracing::warn!(code = error.code, "custom admin query rejected");
             return error_page(
                 state,
                 headers,
                 registry,
                 &locale,
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "forbidden",
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "invalid_filter",
                 true,
                 &user.email,
             )
             .await;
         }
     };
-    let csrf = html::session_csrf(state.auth.as_ref().unwrap(), headers).await;
-    let data = serde_json::Value::Object(rendered.data);
-    html::page_as(
-        state,
-        &user,
-        registry,
-        view.template_name(),
-        &locale,
-        html::theme_of(headers),
-        view.title(&locale),
-        true,
-        user.is_superuser,
-        &user.email,
-        &csrf,
-        &format!("/admin/pages/{key}"),
-        &clip(&rendered.notice),
-        &clip(&rendered.alert),
-        data,
-    )
-    .await
+    let request = ViewRequest {
+        user: &user,
+        db: &state.db,
+        locale: &locale,
+        query: &query,
+        form: &form,
+        uploads: &uploads,
+    };
+    let outcome = match handler.handle(&request).await {
+        Ok(outcome) => outcome,
+        Err(error) => {
+            let (status, key) = match error.code {
+                "extension.query" => (StatusCode::UNPROCESSABLE_ENTITY, "invalid_filter"),
+                "extension.redirect" => (StatusCode::BAD_REQUEST, "redirect_rejected"),
+                _ => (StatusCode::INTERNAL_SERVER_ERROR, "forbidden"),
+            };
+            if status == StatusCode::INTERNAL_SERVER_ERROR {
+                tracing::error!(
+                    code = error.code,
+                    detail = %error.detail,
+                    "custom admin view failed"
+                );
+            } else {
+                tracing::warn!(code = error.code, "custom admin view rejected");
+            }
+            return error_page(
+                state,
+                headers,
+                registry,
+                &locale,
+                status,
+                key,
+                true,
+                &user.email,
+            )
+            .await;
+        }
+    };
+    match outcome {
+        ViewOutcome::Page(rendered) => {
+            let csrf = html::session_csrf(state.auth.as_ref().unwrap(), headers).await;
+            let data = serde_json::Value::Object(rendered.data);
+            html::page_as(
+                state,
+                &user,
+                registry,
+                view.template_name(),
+                &locale,
+                html::theme_of(headers),
+                view.title(&locale),
+                true,
+                user.is_superuser,
+                &user.email,
+                &csrf,
+                &format!("/admin/pages/{key}"),
+                &clip(&rendered.notice),
+                &clip(&rendered.alert),
+                data,
+            )
+            .await
+        }
+        ViewOutcome::Redirect(location) => match internal_admin_location(&location) {
+            Some(safe) if safe == location => see_other(&safe),
+            _ => {
+                error_page(
+                    state,
+                    headers,
+                    registry,
+                    &locale,
+                    StatusCode::BAD_REQUEST,
+                    "redirect_rejected",
+                    true,
+                    &user.email,
+                )
+                .await
+            }
+        },
+        ViewOutcome::NotFound => {
+            error_page(
+                state,
+                headers,
+                registry,
+                &locale,
+                StatusCode::NOT_FOUND,
+                "not_found",
+                true,
+                &user.email,
+            )
+            .await
+        }
+        ViewOutcome::Conflict => {
+            error_page(
+                state,
+                headers,
+                registry,
+                &locale,
+                StatusCode::CONFLICT,
+                "conflict",
+                true,
+                &user.email,
+            )
+            .await
+        }
+        ViewOutcome::Invalid => {
+            error_page(
+                state,
+                headers,
+                registry,
+                &locale,
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "invalid_filter",
+                true,
+                &user.email,
+            )
+            .await
+        }
+    }
+}
+
+fn see_other(location: &str) -> Response {
+    let mut response = StatusCode::SEE_OTHER.into_response();
+    let Ok(value) = HeaderValue::from_str(location) else {
+        return StatusCode::BAD_REQUEST.into_response();
+    };
+    response.headers_mut().insert(header::LOCATION, value);
+    response
 }
 
 fn clip(value: &str) -> String {
@@ -292,11 +391,13 @@ async fn holds(state: &AppState, user: &fexu_auth::AuthUser, code: &str) -> Resu
 
 #[cfg(test)]
 mod tests {
-    use super::submit;
+    use super::{show, submit};
     use crate::registry::AdminRegistry;
-    use crate::views::{AdminView, ExtensionError, ViewHandler, ViewPage, ViewRequest};
+    use crate::views::{
+        AdminView, ExtensionError, ViewHandler, ViewOutcome, ViewPage, ViewRequest,
+    };
     use axum::body::Bytes;
-    use axum::extract::{Extension, Path, State};
+    use axum::extract::{Extension, OriginalUri, Path, State};
     use axum::http::{HeaderMap, StatusCode};
     use fexu_auth::{AppState, AuthConfig, AuthService};
     use std::sync::{Arc, Mutex};
@@ -313,14 +414,14 @@ mod tests {
 
     #[async_trait::async_trait]
     impl ViewHandler for Capture {
-        async fn handle(&self, request: &ViewRequest<'_>) -> Result<ViewPage, ExtensionError> {
+        async fn handle(&self, request: &ViewRequest<'_>) -> Result<ViewOutcome, ExtensionError> {
             let file = request.uploads.first();
             *self.0.lock().expect("capture") = Some((
                 request.form.get("title").cloned().unwrap_or_default(),
                 file.map(|file| file.filename.clone()).unwrap_or_default(),
                 file.map(|file| file.size()).unwrap_or(0),
             ));
-            Ok(ViewPage::new(Default::default()))
+            Ok(ViewPage::new(Default::default()).into())
         }
     }
 
@@ -367,6 +468,7 @@ mod tests {
         let response = submit(
             State(state),
             headers,
+            OriginalUri(axum::http::Uri::from_static("/admin/pages/uploads")),
             Extension(registry),
             Path("uploads".to_owned()),
             body,
@@ -533,5 +635,367 @@ mod tests {
         .await;
         assert_eq!(status, StatusCode::PAYLOAD_TOO_LARGE);
         assert!(capture.lock().unwrap().is_none());
+    }
+
+    #[derive(Clone, Copy)]
+    enum Mode {
+        Page,
+        Redirect,
+        External,
+        OffMount,
+        Missing,
+        Conflict,
+        Invalid,
+    }
+
+    struct FilterView {
+        calls: Arc<Mutex<u32>>,
+        reads: Arc<Mutex<u32>>,
+        mode: Arc<Mutex<Mode>>,
+    }
+
+    #[async_trait::async_trait]
+    impl ViewHandler for FilterView {
+        async fn handle(&self, request: &ViewRequest<'_>) -> Result<ViewOutcome, ExtensionError> {
+            *self.calls.lock().expect("calls") += 1;
+            match *self.mode.lock().expect("mode") {
+                Mode::Page => {
+                    let date = request.query.date("date")?;
+                    *self.reads.lock().expect("reads") += 1;
+                    let mut data = serde_json::Map::new();
+                    data.insert(
+                        "body".to_owned(),
+                        serde_json::json!("<script>alert(1)</script>"),
+                    );
+                    data.insert(
+                        "date".to_owned(),
+                        serde_json::json!(date.map(|value| value.to_string()).unwrap_or_default()),
+                    );
+                    let mut page = ViewPage::new(data);
+                    page.notice = "<b>ok</b>".to_owned();
+                    Ok(page.into())
+                }
+                Mode::Redirect => ViewOutcome::redirect("/admin/pages/reports?date=2026-01-02"),
+                Mode::External => ViewOutcome::redirect("https://evil.example/admin"),
+                Mode::OffMount => ViewOutcome::redirect("/api/secret"),
+                Mode::Missing => Ok(ViewOutcome::not_found()),
+                Mode::Conflict => Ok(ViewOutcome::conflict()),
+                Mode::Invalid => Ok(ViewOutcome::invalid()),
+            }
+        }
+    }
+
+    fn filter_registry(
+        calls: Arc<Mutex<u32>>,
+        reads: Arc<Mutex<u32>>,
+        mode: Arc<Mutex<Mode>>,
+    ) -> AdminRegistry {
+        let handler = FilterView {
+            calls: calls.clone(),
+            reads: reads.clone(),
+            mode: mode.clone(),
+        };
+        AdminRegistry::new()
+            .view(
+                AdminView::new("reports")
+                    .titles("Reports", "Reports")
+                    .permission("reports.read")
+                    .on_get(FilterView { calls, reads, mode })
+                    .on_post(handler),
+            )
+            .unwrap()
+            .seal()
+            .unwrap()
+    }
+
+    async fn text(response: axum::response::Response) -> String {
+        use http_body_util::BodyExt;
+        String::from_utf8(
+            response
+                .into_body()
+                .collect()
+                .await
+                .expect("body")
+                .to_bytes()
+                .to_vec(),
+        )
+        .expect("utf-8")
+    }
+
+    fn location(response: &axum::response::Response) -> Option<String> {
+        response
+            .headers()
+            .get(axum::http::header::LOCATION)
+            .and_then(|value| value.to_str().ok())
+            .map(str::to_owned)
+    }
+
+    #[tokio::test]
+    async fn custom_page_reads_filters_and_rejects_open_redirects() {
+        let auth = service().await;
+        let password = memory_fixture_password();
+        let root = auth
+            .create_user("root@example.com", &password, true, true)
+            .await
+            .unwrap();
+        let issued = auth
+            .login("root@example.com", &password, "peer")
+            .await
+            .unwrap();
+        let _ = root;
+        let calls = Arc::new(Mutex::new(0));
+        let reads = Arc::new(Mutex::new(0));
+        let mode = Arc::new(Mutex::new(Mode::Page));
+        let registry = filter_registry(calls.clone(), reads.clone(), mode.clone());
+        let state = AppState {
+            db: auth.database().clone(),
+            auth: Some(auth.clone()),
+            mail: None,
+        };
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            axum::http::header::COOKIE,
+            cookie_pair(&issued.cookie).parse().unwrap(),
+        );
+
+        let page = show(
+            State(state.clone()),
+            headers.clone(),
+            OriginalUri("/admin/pages/reports?date=2026-01-02".parse().unwrap()),
+            Extension(registry.clone()),
+            Path("reports".to_owned()),
+        )
+        .await;
+        assert_eq!(page.status(), StatusCode::OK);
+        assert!(location(&page).is_none());
+        let body = text(page).await;
+        assert!(body.contains("class=\"filter\">2026-01-02"), "{body}");
+        assert!(
+            body.contains("&lt;script&gt;alert(1)&lt;&#x2F;script&gt;"),
+            "{body}"
+        );
+        assert!(body.contains("&lt;b&gt;ok&lt;&#x2F;b&gt;"), "{body}");
+        assert!(!body.contains("<script>alert(1)</script>"), "{body}");
+        assert!(!body.contains("<b>ok</b>"), "{body}");
+        assert!(
+            body.contains("value=\"&#x2F;admin&#x2F;pages&#x2F;reports\""),
+            "{body}"
+        );
+        assert_eq!(*calls.lock().unwrap(), 1);
+        assert_eq!(*reads.lock().unwrap(), 1);
+
+        *calls.lock().unwrap() = 0;
+        *reads.lock().unwrap() = 0;
+        let invalid = show(
+            State(state.clone()),
+            headers.clone(),
+            OriginalUri("/admin/pages/reports?date=2026-99-99".parse().unwrap()),
+            Extension(registry.clone()),
+            Path("reports".to_owned()),
+        )
+        .await;
+        assert_eq!(invalid.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        assert!(location(&invalid).is_none());
+        let invalid_body = text(invalid).await;
+        assert!(
+            invalid_body.contains("filter is invalid")
+                || invalid_body.contains("Filter ist ungültig"),
+            "{invalid_body}"
+        );
+        assert_eq!(*calls.lock().unwrap(), 1);
+        assert_eq!(*reads.lock().unwrap(), 0);
+
+        *calls.lock().unwrap() = 0;
+        let hostile = show(
+            State(state.clone()),
+            headers.clone(),
+            OriginalUri("/admin/pages/reports?date=%3Cscript%3E".parse().unwrap()),
+            Extension(registry.clone()),
+            Path("reports".to_owned()),
+        )
+        .await;
+        assert_eq!(hostile.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        assert_eq!(*calls.lock().unwrap(), 0);
+        assert!(!text(hostile).await.contains("<script>"));
+
+        *mode.lock().unwrap() = Mode::Redirect;
+        headers.insert(
+            axum::http::header::CONTENT_TYPE,
+            "application/x-www-form-urlencoded".parse().unwrap(),
+        );
+        let redirected = submit(
+            State(state.clone()),
+            headers.clone(),
+            OriginalUri("/admin/pages/reports".parse().unwrap()),
+            Extension(registry.clone()),
+            Path("reports".to_owned()),
+            Bytes::from(format!("csrf_token={}", issued.csrf_token)),
+        )
+        .await;
+        assert_eq!(redirected.status(), StatusCode::SEE_OTHER);
+        assert_eq!(
+            location(&redirected).as_deref(),
+            Some("/admin/pages/reports?date=2026-01-02")
+        );
+        assert!(!location(&redirected).unwrap().contains("evil"));
+
+        *mode.lock().unwrap() = Mode::External;
+        let external = submit(
+            State(state.clone()),
+            headers.clone(),
+            OriginalUri("/admin/pages/reports".parse().unwrap()),
+            Extension(registry.clone()),
+            Path("reports".to_owned()),
+            Bytes::from(format!("csrf_token={}", issued.csrf_token)),
+        )
+        .await;
+        assert_eq!(external.status(), StatusCode::BAD_REQUEST);
+        assert!(location(&external).is_none());
+        let external_body = text(external).await;
+        assert!(
+            external_body.contains("redirect was rejected")
+                || external_body.contains("Weiterleitung wurde abgelehnt"),
+            "{external_body}"
+        );
+        assert!(!external_body.contains("evil.example"), "{external_body}");
+
+        *mode.lock().unwrap() = Mode::OffMount;
+        let off_mount = submit(
+            State(state.clone()),
+            headers.clone(),
+            OriginalUri("/admin/pages/reports".parse().unwrap()),
+            Extension(registry.clone()),
+            Path("reports".to_owned()),
+            Bytes::from(format!("csrf_token={}", issued.csrf_token)),
+        )
+        .await;
+        assert_eq!(off_mount.status(), StatusCode::BAD_REQUEST);
+        assert!(location(&off_mount).is_none());
+
+        *mode.lock().unwrap() = Mode::Missing;
+        let missing = show(
+            State(state.clone()),
+            headers.clone(),
+            OriginalUri("/admin/pages/reports".parse().unwrap()),
+            Extension(registry.clone()),
+            Path("reports".to_owned()),
+        )
+        .await;
+        assert_eq!(missing.status(), StatusCode::NOT_FOUND);
+
+        *mode.lock().unwrap() = Mode::Conflict;
+        let conflict = show(
+            State(state.clone()),
+            headers.clone(),
+            OriginalUri("/admin/pages/reports".parse().unwrap()),
+            Extension(registry.clone()),
+            Path("reports".to_owned()),
+        )
+        .await;
+        assert_eq!(conflict.status(), StatusCode::CONFLICT);
+        let conflict_body = text(conflict).await;
+        assert!(
+            conflict_body.contains("conflicts with the current state")
+                || conflict_body.contains("widerspricht"),
+            "{conflict_body}"
+        );
+
+        *mode.lock().unwrap() = Mode::Invalid;
+        let rejected = show(
+            State(state.clone()),
+            headers.clone(),
+            OriginalUri("/admin/pages/reports".parse().unwrap()),
+            Extension(registry.clone()),
+            Path("reports".to_owned()),
+        )
+        .await;
+        assert_eq!(rejected.status(), StatusCode::UNPROCESSABLE_ENTITY);
+
+        let calls_before = *calls.lock().unwrap();
+        let forged = submit(
+            State(state.clone()),
+            headers.clone(),
+            OriginalUri(
+                "/admin/pages/reports?next=https://evil.example"
+                    .parse()
+                    .unwrap(),
+            ),
+            Extension(registry.clone()),
+            Path("reports".to_owned()),
+            Bytes::from("csrf_token=forged"),
+        )
+        .await;
+        assert_eq!(forged.status(), StatusCode::FORBIDDEN);
+        assert!(location(&forged).is_none());
+        assert_eq!(*calls.lock().unwrap(), calls_before);
+
+        let anonymous = show(
+            State(state.clone()),
+            HeaderMap::new(),
+            OriginalUri(
+                "/admin/pages/reports?next=https://evil.example"
+                    .parse()
+                    .unwrap(),
+            ),
+            Extension(registry.clone()),
+            Path("reports".to_owned()),
+        )
+        .await;
+        assert_eq!(anonymous.status(), StatusCode::SEE_OTHER);
+        let login = location(&anonymous).unwrap();
+        assert_eq!(login, "/admin/login?next=/admin/pages/reports");
+        assert!(!login.contains("evil"));
+        assert_eq!(*calls.lock().unwrap(), calls_before);
+
+        let visitor = auth
+            .create_user("visitor@example.com", &password, false, false)
+            .await
+            .unwrap();
+        let visitor_session = auth
+            .login("visitor@example.com", &password, "peer")
+            .await
+            .unwrap();
+        let _ = visitor;
+        let mut visitor_headers = HeaderMap::new();
+        visitor_headers.insert(
+            axum::http::header::COOKIE,
+            cookie_pair(&visitor_session.cookie).parse().unwrap(),
+        );
+        let denied_staff = show(
+            State(state.clone()),
+            visitor_headers,
+            OriginalUri("/admin/pages/reports?date=2026-01-02".parse().unwrap()),
+            Extension(registry.clone()),
+            Path("reports".to_owned()),
+        )
+        .await;
+        assert_eq!(denied_staff.status(), StatusCode::FORBIDDEN);
+        assert_eq!(*calls.lock().unwrap(), calls_before);
+
+        let clerk = auth
+            .create_user("clerk@example.com", &password, true, false)
+            .await
+            .unwrap();
+        let clerk_session = auth
+            .login("clerk@example.com", &password, "peer")
+            .await
+            .unwrap();
+        let _ = clerk;
+        let mut clerk_headers = HeaderMap::new();
+        clerk_headers.insert(
+            axum::http::header::COOKIE,
+            cookie_pair(&clerk_session.cookie).parse().unwrap(),
+        );
+        let denied = show(
+            State(state),
+            clerk_headers,
+            OriginalUri("/admin/pages/reports?date=2026-01-02".parse().unwrap()),
+            Extension(registry),
+            Path("reports".to_owned()),
+        )
+        .await;
+        assert_eq!(denied.status(), StatusCode::FORBIDDEN);
+        assert_eq!(*calls.lock().unwrap(), calls_before);
+        assert_eq!(*reads.lock().unwrap(), 0);
     }
 }

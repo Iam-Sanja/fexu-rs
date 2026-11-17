@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% block content %}
+{% if date %}<p class="filter">{{ date }}</p>{% endif %}
 {% if body %}<p>{{ body }}</p>{% endif %}
 {% if rows %}
 <ul class="cards">
