@@ -184,19 +184,15 @@ impl LocalStorage {
         let partial = directory.join(format!("{id}.partial"));
         let target = directory.join(id.to_string());
         let meta_path = directory.join(format!("{id}.json"));
-        if let Err(error) = write_new(&partial, bytes) {
-            let _ = std::fs::remove_file(&partial);
-            return Err(error);
-        }
+        let mut pending = PendingFiles::default();
+        pending.track(partial.clone());
+        pending.track(target.clone());
+        pending.track(meta_path.clone());
+        write_new(&partial, bytes)?;
         if std::fs::rename(&partial, &target).is_err() {
-            let _ = std::fs::remove_file(&partial);
-            let _ = std::fs::remove_file(&target);
             return Err(StorageError::Failed);
         }
-        if let Err(error) = ensure_regular_inside(&self.root, &target) {
-            let _ = std::fs::remove_file(&partial);
-            return Err(error);
-        }
+        ensure_regular_inside(&self.root, &target)?;
         let stored = StoredFile {
             id,
             owner,
@@ -208,15 +204,9 @@ impl LocalStorage {
             sha256: hex(Sha256::digest(bytes)),
         };
         let json = serde_json::to_vec(&stored).map_err(|_| StorageError::Failed)?;
-        if write_new(&meta_path, &json).is_err() {
-            let _ = std::fs::remove_file(&target);
-            let _ = std::fs::remove_file(&meta_path);
-            return Err(StorageError::Failed);
-        }
-        if let Err(error) = ensure_regular_inside(&self.root, &meta_path) {
-            let _ = std::fs::remove_file(&target);
-            return Err(error);
-        }
+        write_new(&meta_path, &json)?;
+        ensure_regular_inside(&self.root, &meta_path)?;
+        pending.commit();
         Ok(stored)
     }
 
@@ -394,6 +384,9 @@ impl Storage for LocalStorage {
         }
         let path = Self::contained(&directory, &path)?;
         let bytes = std::fs::read(path).map_err(|_| StorageError::NotFound)?;
+        if !bytes_match(&meta, &bytes) {
+            return Err(StorageError::Failed);
+        }
         Ok((meta, bytes))
     }
 
@@ -460,6 +453,41 @@ fn canonicalize_existing(path: &Path) -> Result<PathBuf, StorageError> {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Err(StorageError::NotFound),
         Err(_) => Err(StorageError::Failed),
     }
+}
+
+/// Removes every tracked path unless [`PendingFiles::commit`] ran.
+#[derive(Default)]
+struct PendingFiles {
+    paths: Vec<PathBuf>,
+    keep: bool,
+}
+
+impl PendingFiles {
+    fn track(&mut self, path: PathBuf) {
+        self.paths.push(path);
+    }
+
+    fn commit(mut self) {
+        self.keep = true;
+    }
+}
+
+impl Drop for PendingFiles {
+    fn drop(&mut self) {
+        if self.keep {
+            return;
+        }
+        for path in &self.paths {
+            let _ = std::fs::remove_file(path);
+        }
+    }
+}
+
+fn bytes_match(meta: &StoredFile, bytes: &[u8]) -> bool {
+    if bytes.len() as u64 != meta.size {
+        return false;
+    }
+    meta.sha256.is_empty() || hex(Sha256::digest(bytes)) == meta.sha256
 }
 
 fn write_new(path: &Path, bytes: &[u8]) -> Result<(), StorageError> {
@@ -1061,6 +1089,125 @@ mod tests {
         assert!(outside.join("secret.txt").is_file());
         let _ = std::fs::remove_dir_all(&root);
         let _ = std::fs::remove_dir_all(&outside);
+    }
+
+    #[test]
+    fn an_uncommitted_write_removes_the_partial_file() {
+        let root = std::env::temp_dir().join(format!("fexu-pending-{}", Uuid::new_v4()));
+        std::fs::create_dir_all(&root).unwrap();
+        let partial = root.join("job.partial");
+        let data = root.join("job");
+        let sidecar = root.join("job.json");
+        std::fs::write(&partial, b"cut").unwrap();
+        {
+            let mut pending = super::PendingFiles::default();
+            pending.track(partial.clone());
+            pending.track(data.clone());
+            pending.track(sidecar.clone());
+        }
+        assert!(!partial.exists());
+        std::fs::write(&data, b"kept").unwrap();
+        {
+            let mut pending = super::PendingFiles::default();
+            pending.track(data.clone());
+            pending.commit();
+        }
+        assert_eq!(std::fs::read(&data).unwrap(), b"kept");
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[tokio::test]
+    async fn tampered_bytes_are_not_returned_and_names_cannot_spoof_a_type() {
+        let root = std::env::temp_dir().join(format!("fexu-tamper-{}", Uuid::new_v4()));
+        let storage = LocalStorage::open(
+            &root,
+            32,
+            &["text/plain", "image/png", "image/gif", "application/pdf"],
+        )
+        .unwrap();
+        let owner = Uuid::new_v4();
+        let other = Uuid::new_v4();
+        for name in [
+            "../notes.txt",
+            "..\\notes.txt",
+            "/etc/notes.txt",
+            r"C:\Windows\notes.txt",
+            "notes.txt\r\nX-Injected: 1",
+            ".htaccess",
+        ] {
+            let stored = storage.save(owner, name, b"hello").await;
+            match stored {
+                Ok(stored) => {
+                    assert!(!stored.original_name.contains(['/', '\\', '\r', '\n']));
+                    assert!(root
+                        .join(owner.to_string())
+                        .join(stored.id.to_string())
+                        .is_file());
+                }
+                Err(super::StorageError::TypeRejected) => {}
+                Err(error) => panic!("unexpected {error:?} for {name}"),
+            }
+        }
+        assert!(!root.join("etc").exists());
+        assert!(!root.join("Windows").exists());
+        assert!(matches!(
+            storage.save(owner, "notes.png", b"hello").await,
+            Err(super::StorageError::TypeRejected)
+        ));
+        assert!(matches!(
+            storage.save(owner, "notes.txt.exe", b"hello").await,
+            Err(super::StorageError::TypeRejected)
+        ));
+        assert!(matches!(
+            storage.save(owner, "notes.txt.", b"hello").await,
+            Err(super::StorageError::TypeRejected)
+        ));
+        assert!(matches!(
+            storage.save(owner, "empty.txt", b"").await,
+            Err(super::StorageError::TypeRejected)
+        ));
+        assert!(matches!(
+            storage
+                .save(owner, "big.txt", b"0123456789abcdef0123456789abcdef!")
+                .await,
+            Err(super::StorageError::TooLarge)
+        ));
+        assert_eq!(super::detect_type(b"GIF89a"), Some("image/gif"));
+        assert!(super::inspect_image(b"\x89PNG\r\n\x1a\ncut", limits()).is_err());
+        assert!(super::inspect_image(b"GIF89a", limits()).is_err());
+
+        let stored = storage.save(owner, "notes.txt", b"hello").await.unwrap();
+        let data = root.join(owner.to_string()).join(stored.id.to_string());
+        std::fs::write(&data, b"hellp").unwrap();
+        assert!(matches!(
+            storage.read(owner, stored.id).await,
+            Err(super::StorageError::Failed)
+        ));
+        assert!(data.is_file());
+        std::fs::write(&data, b"hello").unwrap();
+        let (_, bytes) = storage.read(owner, stored.id).await.unwrap();
+        assert_eq!(bytes, b"hello");
+        std::fs::write(&data, b"hi").unwrap();
+        assert!(storage.read(owner, stored.id).await.is_err());
+
+        let legacy = Uuid::new_v4();
+        let directory = root.join(owner.to_string());
+        std::fs::write(directory.join(legacy.to_string()), b"hello").unwrap();
+        std::fs::write(
+            directory.join(format!("{legacy}.json")),
+            format!(
+                "{{\"id\":\"{legacy}\",\"owner\":\"{owner}\",\"original_name\":\"old.txt\",\"content_type\":\"text/plain\",\"size\":5}}"
+            ),
+        )
+        .unwrap();
+        let (meta, bytes) = storage.read(owner, legacy).await.unwrap();
+        assert_eq!(bytes, b"hello");
+        assert!(meta.sha256.is_empty());
+        assert!(matches!(
+            storage.read_for(other, owner, legacy).await,
+            Err(super::StorageError::Forbidden)
+        ));
+        let _ = std::fs::remove_dir_all(root);
     }
 
     fn link_dir(target: &std::path::Path, link: &std::path::Path) {

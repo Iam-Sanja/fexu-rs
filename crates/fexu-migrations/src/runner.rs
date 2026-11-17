@@ -725,7 +725,10 @@ async fn apply_sqlite_on_one_connection(
     let restored = restore_sqlite_enforcement(&pinned).await;
     match (outcome, restored) {
         (Err(migration), _) => Err(migration),
-        (Ok(()), Err(restore)) => Err(restore),
+        (Ok(()), Err(restore)) => Err(MigrationError::new(format!(
+            "Migration {} was committed and its history row was saved. Foreign key enforcement could not be restored on this connection, so the connection is closed instead of being reused. The schema change was not rolled back. {}",
+            file.id, restore.0
+        ))),
         (Ok(()), Ok(())) => Ok(()),
     }
 }

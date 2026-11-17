@@ -447,6 +447,7 @@ impl Queue {
         .await?
             != Finish::Stored
         {
+            transaction.rollback().await.map_err(database)?;
             return Ok(Finish::LostLease);
         }
         if let (Some(interval), Some(schedule_key)) =
@@ -1076,8 +1077,9 @@ fn next_slot(available_at: i64, interval: i64, now: i64) -> i64 {
 }
 
 pub fn delay_secs(attempt: u32, now: i64, jitter: bool) -> i64 {
-    let shift = attempt.saturating_sub(1).min(8);
-    let base = (1_i64 << shift).min(300);
+    let shift = attempt.saturating_sub(1);
+    // 2^9 is 512, which is already above the 300 second cap.
+    let base = if shift >= 9 { 300 } else { 1_i64 << shift };
     if !jitter {
         return base;
     }

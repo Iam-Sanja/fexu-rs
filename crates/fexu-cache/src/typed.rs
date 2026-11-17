@@ -108,8 +108,12 @@ impl<B: CacheBackend> TypedCache<B> {
         self.backend.invalidate_namespace(namespace).await
     }
 
-    /// Gleichzeitige Aufrufe auf diesem `TypedCache` warten auf den ersten Produzenten.
-    /// Ein zweiter `TypedCache`, auch auf demselben Speicher, und ein zweiter Prozess rechnen selbst.
+    /// Concurrent calls on this `TypedCache` wait for the first producer.
+    /// Another `TypedCache`, even on the same store, and another process compute on their own.
+    ///
+    /// The leader reads a write token and looks the key up again before producing.
+    /// A `set` that lands after the first miss is returned from that lookup, or it
+    /// stays stored when its epoch is newer than the token.
     pub async fn get_or_set<T, F, Fut>(
         &self,
         namespace: &str,
@@ -149,6 +153,25 @@ impl<B: CacheBackend> TypedCache<B> {
                 return Err(error);
             }
         };
+        match self.backend.lookup_raw(namespace, key).await {
+            Ok(RawLookup::Hit(bytes)) => {
+                return match decode::<T>(&bytes, self.version) {
+                    Ok(value) => {
+                        guard.finish(Ok(bytes));
+                        Ok(value)
+                    }
+                    Err(error) => {
+                        guard.finish(Err(error.clone()));
+                        Err(error)
+                    }
+                };
+            }
+            Ok(RawLookup::Miss | RawLookup::Expired) => {}
+            Err(error) => {
+                guard.finish(Err(error.clone()));
+                return Err(error);
+            }
+        }
         let produced = produce().await;
         let value = match produced {
             Ok(value) => value,
