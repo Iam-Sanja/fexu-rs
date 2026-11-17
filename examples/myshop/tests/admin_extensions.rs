@@ -315,7 +315,8 @@ async fn extensions_keep_auth_scopes_and_validation() {
     .await
     .unwrap();
     assert_eq!(report.status, 200);
-    assert!(report.body.contains("Berichte"));
+    // Unconfigured applications now use English. Explicitly configured German remains supported.
+    assert!(report.body.contains("Reports"));
     assert!(report.body.contains("&lt;script&gt;"));
     assert!(!report.body.contains("<script>"));
     let bare = call(

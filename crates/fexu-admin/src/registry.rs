@@ -109,7 +109,7 @@ impl Default for AdminBranding {
             site_header: "Fexu Verwaltung".to_owned(),
             app_name: "Fexu".to_owned(),
             primary_color: "#0f172a".to_owned(),
-            default_locale: "de".to_owned(),
+            default_locale: "en".to_owned(),
             fallback_locale: "en".to_owned(),
             currency: "EUR".to_owned(),
         }
@@ -1343,6 +1343,13 @@ mod tests {
     use super::AdminBranding;
 
     #[test]
+    fn branding_defaults_to_english() {
+        let branding = AdminBranding::default();
+        assert_eq!(branding.default_locale, "en");
+        assert_eq!(branding.fallback_locale, "en");
+    }
+
+    #[test]
     fn branding_rejects_css_and_unknown_locale() {
         let branding = AdminBranding {
             primary_color: "red;background:url(x)".to_owned(),
@@ -1353,7 +1360,7 @@ mod tests {
         .sanitized();
         assert_eq!(branding.primary_color, "#0f172a");
         assert_eq!(branding.currency, "EUR");
-        assert_eq!(branding.default_locale, "de");
+        assert_eq!(branding.default_locale, "en");
     }
 }
 
