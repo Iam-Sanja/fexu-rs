@@ -80,7 +80,7 @@ pub fn dev() -> ExitCode {
     loop {
         if dirty && last_restart.elapsed() >= Duration::from_millis(400) {
             stop_child(&mut child);
-            match start_server(&project.root, &package) {
+            match start_server(&project, &package) {
                 Ok(running) => child = Some(running),
                 Err(error) => eprintln!("{error}"),
             }
@@ -203,14 +203,24 @@ fn current_project() -> Result<fexu_migrations::ProjectConfig, String> {
     discover_project(&current).map_err(|error| error.to_string())
 }
 
-fn start_server(root: &Path, package: &str) -> Result<Child, String> {
+fn start_server(project: &fexu_migrations::ProjectConfig, package: &str) -> Result<Child, String> {
+    let root = &project.root;
     let status = Command::new("cargo")
         .args(["build", "--bin", package])
         .current_dir(root)
         .status()
         .map_err(|error| format!("Could not start cargo build: {error}"))?;
     if !status.success() {
-        return Err("The build failed. The previous server remains stopped.".to_owned());
+        return Err(
+            "The build failed. The previous server remains stopped. Fix the compiler error and save a file. No migration was applied."
+                .to_owned(),
+        );
+    }
+    if !crate::diagnose::port_available(&project.host, project.port) {
+        return Err(format!(
+            "Port {} on {} is already in use. The new process was not started. Stop the other process or change server.port. No migration was applied.",
+            project.port, project.host
+        ));
     }
     let binary = binary_path(root, package);
     Command::new(&binary)
@@ -263,7 +273,7 @@ pub fn relevant(path: &Path) -> bool {
     }
     matches!(
         path.extension().and_then(|value| value.to_str()),
-        Some("rs" | "toml" | "json")
+        Some("rs" | "toml" | "json" | "html" | "css")
     )
 }
 
@@ -279,6 +289,9 @@ mod tests {
         assert!(!relevant(Path::new("node_modules/react/index.js")));
         assert!(!relevant(Path::new("app.sqlite")));
         assert!(relevant(Path::new("src/main.rs")));
+        assert!(relevant(Path::new("templates/index.html")));
+        assert!(relevant(Path::new("static/app.css")));
+        assert!(!relevant(Path::new("target/debug/app.html")));
     }
 
     #[test]

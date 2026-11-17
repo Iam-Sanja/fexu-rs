@@ -61,7 +61,7 @@ enum Command {
         #[arg(long)]
         yes: bool,
     },
-    /// Starts the development server and restarts it when Rust files change.
+    /// Starts the development server and restarts it when source files change. Does not migrate.
     Dev,
     /// Builds the project. Fullstack embeds the admin frontend.
     Build,
