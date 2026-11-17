@@ -63,11 +63,16 @@ pub fn doctor() -> ExitCode {
                     report("ERROR", &format!("{relative} is missing."));
                 }
             }
-            if project.host == "0.0.0.0" {
+            if wildcard_interface(&project.host) && !project.allow_wildcard_bind {
                 errors += 1;
                 report(
                     "ERROR",
-                    "server.host is 0.0.0.0. New projects should bind to 127.0.0.1.",
+                    "server.host is a wildcard interface. Set server.allow_wildcard_bind = true to opt in. The bind address is not a public origin.",
+                );
+            } else if wildcard_interface(&project.host) {
+                report(
+                    "OK",
+                    "server.host is an explicit wildcard bind. It is not a public origin.",
                 );
             } else {
                 report(
@@ -193,7 +198,8 @@ pub fn check(strict: bool, deploy: bool) -> ExitCode {
     let warnings = counts.warnings + project_counts.warnings;
     let mut errors = counts.errors + project_counts.errors;
     if deploy {
-        let deploy_errors = deploy_findings(project.debug, &project.host);
+        let deploy_errors =
+            deploy_findings(project.debug, &project.host, project.allow_wildcard_bind);
         errors += deploy_errors;
     }
     if errors > 0 {
@@ -302,6 +308,21 @@ pub fn port_available(host: &str, port: u16) -> bool {
     std::net::TcpListener::bind((host, port)).is_ok()
 }
 
+fn wildcard_interface(value: &str) -> bool {
+    let value = value.trim();
+    value == "0.0.0.0"
+        || value == "::"
+        || value.starts_with("0.0.0.0:")
+        || value.starts_with("[::]:")
+}
+
+fn wildcard_bind_opt_in() -> bool {
+    matches!(
+        std::env::var("FEXU_ALLOW_WILDCARD_BIND").ok().as_deref(),
+        Some("1" | "true" | "TRUE")
+    )
+}
+
 /// Counts proxy peers. Empty entries and `*` are ignored. The text is not logged.
 pub fn configured_proxy_peers(value: &str) -> usize {
     value
@@ -312,7 +333,7 @@ pub fn configured_proxy_peers(value: &str) -> usize {
 }
 
 /// Read-only deployment findings. Secret values and peer addresses are not printed.
-pub fn deploy_findings(debug: bool, host: &str) -> i32 {
+pub fn deploy_findings(debug: bool, host: &str, file_wildcard_opt_in: bool) -> i32 {
     let mut errors = 0;
     if debug || std::env::var("FEXU_DEBUG").ok().as_deref() == Some("true") {
         errors += 1;
@@ -323,14 +344,28 @@ pub fn deploy_findings(debug: bool, host: &str) -> i32 {
     } else {
         report("OK", "deploy.debug Debug is off.");
     }
-    if host == "0.0.0.0" || host.starts_with("0.0.0.0:") {
-        errors += 1;
-        report(
-            "ERROR",
-            "deploy.bind The server is bound to 0.0.0.0. Bind to 127.0.0.1 behind a proxy.",
-        );
+    let bind = match std::env::var("BIND_ADDRESS") {
+        Ok(value) if !value.trim().is_empty() => value,
+        _ => host.to_owned(),
+    };
+    if wildcard_interface(bind.trim()) {
+        if file_wildcard_opt_in || wildcard_bind_opt_in() {
+            report(
+                "OK",
+                "deploy.bind Wildcard bind is explicit. It is not added to allowed origins.",
+            );
+        } else {
+            errors += 1;
+            report(
+                "ERROR",
+                "deploy.bind A wildcard bind requires server.allow_wildcard_bind = true or FEXU_ALLOW_WILDCARD_BIND=true. The bind address is not a public origin.",
+            );
+        }
     } else {
-        report("OK", "deploy.bind The bind address is not 0.0.0.0.");
+        report(
+            "OK",
+            "deploy.bind The bind address is not a wildcard interface.",
+        );
     }
     let production = std::env::var("FEXU_ENV").ok().as_deref() == Some("production");
     let cookie_secure = match std::env::var("FEXU_COOKIE_SECURE").ok().as_deref() {
@@ -860,5 +895,58 @@ mod tests {
         ));
         assert!(!origins_are_https("http://shop.example"));
         assert!(!origins_are_https(""));
+    }
+
+    #[test]
+    fn wildcard_bind_is_an_error_until_it_is_explicit() {
+        static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        let _guard = LOCK.lock().expect("env lock");
+        let keys = [
+            "BIND_ADDRESS",
+            "DATABASE_URL",
+            "FEXU_ALLOW_WILDCARD_BIND",
+            "FEXU_ALLOWED_ORIGINS",
+            "FEXU_COOKIE_SECURE",
+            "FEXU_CSRF_SECRET",
+            "FEXU_DEBUG",
+            "FEXU_ENV",
+            "FEXU_MFA_KEY",
+            "FEXU_TRUST_PROXY",
+            "FEXU_TRUSTED_PROXIES",
+        ];
+        let saved: Vec<_> = keys
+            .iter()
+            .map(|key| (*key, std::env::var(key).ok()))
+            .collect();
+        let secret = "ab".repeat(32);
+        std::env::set_var("BIND_ADDRESS", "0.0.0.0:8080");
+        std::env::remove_var("DATABASE_URL");
+        std::env::remove_var("FEXU_ALLOW_WILDCARD_BIND");
+        std::env::set_var("FEXU_ALLOWED_ORIGINS", "https://app.example.test");
+        std::env::set_var("FEXU_COOKIE_SECURE", "1");
+        std::env::set_var("FEXU_CSRF_SECRET", &secret);
+        std::env::set_var("FEXU_MFA_KEY", &secret);
+        std::env::remove_var("FEXU_DEBUG");
+        std::env::remove_var("FEXU_ENV");
+        std::env::remove_var("FEXU_TRUST_PROXY");
+        std::env::remove_var("FEXU_TRUSTED_PROXIES");
+
+        assert_eq!(super::deploy_findings(false, "127.0.0.1", false), 1);
+        std::env::set_var("FEXU_ALLOW_WILDCARD_BIND", "true");
+        assert_eq!(super::deploy_findings(false, "127.0.0.1", false), 0);
+        std::env::set_var("BIND_ADDRESS", "[::]:8080");
+        std::env::remove_var("FEXU_ALLOW_WILDCARD_BIND");
+        assert_eq!(super::deploy_findings(false, "127.0.0.1", false), 1);
+        assert_eq!(super::deploy_findings(false, "127.0.0.1", true), 0);
+        std::env::set_var("FEXU_TRUSTED_PROXIES", "*");
+        std::env::set_var("FEXU_TRUST_PROXY", "1");
+        assert_eq!(super::deploy_findings(false, "127.0.0.1", true), 1);
+
+        for (key, value) in saved {
+            match value {
+                Some(value) => std::env::set_var(key, value),
+                None => std::env::remove_var(key),
+            }
+        }
     }
 }
