@@ -18,7 +18,7 @@ Zones:
 | `fixed+HH:MM` or `fixed-HH:MM` | Constant offset |
 | `europe/berlin` | CET (`+01:00`) and CEST (`+02:00`). DST starts on the last Sunday of March at 01:00 UTC and ends on the last Sunday of October at 01:00 UTC |
 
-`America/New_York` returns `job.schedule`.
+`America/New_York` returns `job.schedule`. Other IANA zones, a zone database, and silent fallback to UTC are not implemented.
 
 ## Idempotency
 

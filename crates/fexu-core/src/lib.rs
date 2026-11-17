@@ -377,13 +377,39 @@ fn secret_at(lower: &str, index: usize) -> Option<(usize, usize)> {
         "fexu_anonymous=",
     ];
     let rest = lower.get(index..)?;
-    let key = KEYS.iter().copied().find(|key| rest.starts_with(key))?;
-    let mut end = index + key.len();
+    let key_len = KEYS
+        .iter()
+        .copied()
+        .find(|key| rest.starts_with(key))
+        .map(str::len)
+        .or_else(|| namespaced_cookie_key(rest))?;
+    let mut end = index + key_len;
     let bytes = lower.as_bytes();
     while end < bytes.len() && !matches!(bytes[end], b' ' | b'\n' | b'\r' | b'\t' | b'&' | b';') {
         end += 1;
     }
-    Some((key.len(), end))
+    Some((key_len, end))
+}
+
+/// Session, anonymous, login, reset and exchange cookies, including app namespaces.
+fn namespaced_cookie_key(rest: &str) -> Option<usize> {
+    let name_end = rest.find('=')?;
+    if name_end == 0 || name_end > 64 {
+        return None;
+    }
+    let name = &rest[..name_end];
+    if !name
+        .bytes()
+        .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
+    {
+        return None;
+    }
+    let sensitive = name.ends_with("_session")
+        || name.ends_with("_anonymous")
+        || name.ends_with("_login_csrf")
+        || name.ends_with("_reset_csrf")
+        || (name.ends_with("_reset") && name != "password_reset");
+    sensitive.then_some(name_end + 1)
 }
 
 /// Models with both managed timestamps.
@@ -471,6 +497,16 @@ mod diagnostic_tests {
         assert!(chain.contains("csrf_token=[redacted]"));
         assert!(!chain.contains("hunter2"));
         assert!(!chain.contains("abc123"));
+        let namespaced = diagnostic_chain(&FexuError::database(std::io::Error::other(
+            "salon_session=sekret shop_login_csrf=deadbeef fexu_reset=exchange status=keep",
+        )));
+        assert!(namespaced.contains("salon_session=[redacted]"));
+        assert!(namespaced.contains("shop_login_csrf=[redacted]"));
+        assert!(namespaced.contains("fexu_reset=[redacted]"));
+        assert!(namespaced.contains("status=keep"));
+        assert!(!namespaced.contains("sekret"));
+        assert!(!namespaced.contains("deadbeef"));
+        assert!(!namespaced.contains("exchange"));
     }
 }
 

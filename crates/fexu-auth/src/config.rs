@@ -156,6 +156,50 @@ impl AuthConfig {
         let _ = self.with_loopback_address(address);
     }
 
+    /// Names every browser cookie for this application.
+    ///
+    /// `fexu`, in any ASCII case, keeps the historical names `fexu_session`,
+    /// `fexu_anonymous`, `fexu_login_csrf`, `fexu_reset_csrf` and `fexu_reset`.
+    /// Any other label uses `{label}_session`, `{label}_anonymous` and the CSRF
+    /// names derived from the session cookie. The label is not a `Domain`
+    /// attribute and the request host is not read. An application that only
+    /// replaces `cookie_name` keeps that name; login, reset and exchange cookies
+    /// then follow [`Self::login_csrf_cookie`]. They are not the historical
+    /// `fexu_*` CSRF cookies, so another app on the same host is not authenticated
+    /// or cleared.
+    pub fn with_cookie_namespace(mut self, label: &str) -> Result<Self, String> {
+        let label = label.trim();
+        if !valid_cookie_namespace(label) {
+            return Err(
+                "cookie namespace must be 1 to 32 ASCII letters or digits and start with a letter"
+                    .to_owned(),
+            );
+        }
+        if label.eq_ignore_ascii_case("fexu") {
+            self.cookie_name = "fexu_session".to_owned();
+            self.anonymous_cookie_name = "fexu_anonymous".to_owned();
+            return Ok(self);
+        }
+        self.cookie_name = format!("{label}_session");
+        self.anonymous_cookie_name = format!("{label}_anonymous");
+        Ok(self)
+    }
+
+    /// Login double-submit cookie. The default session name keeps `fexu_login_csrf`.
+    pub fn login_csrf_cookie(&self) -> String {
+        namespaced_cookie(&self.cookie_name, "login_csrf")
+    }
+
+    /// Password-reset double-submit cookie. The default session name keeps `fexu_reset_csrf`.
+    pub fn reset_csrf_cookie(&self) -> String {
+        namespaced_cookie(&self.cookie_name, "reset_csrf")
+    }
+
+    /// Short-lived reset exchange cookie. The default session name keeps `fexu_reset`.
+    pub fn reset_cookie_name(&self) -> String {
+        namespaced_cookie(&self.cookie_name, "reset")
+    }
+
     /// Setzt die erlaubten Origins auf die Loopback-Namen des Ports.
     /// Public hosts are not inferred. `0.0.0.0` and `::` are treated only as bind addresses
     /// und ergeben `127.0.0.1` sowie `localhost`, nie sich selbst als Origin.
@@ -167,6 +211,30 @@ impl AuthConfig {
         self.allowed_origins = origins;
         true
     }
+}
+
+fn valid_cookie_namespace(label: &str) -> bool {
+    let mut chars = label.chars();
+    let Some(first) = chars.next() else {
+        return false;
+    };
+    (1..=32).contains(&label.len())
+        && first.is_ascii_alphabetic()
+        && chars.all(|char| char.is_ascii_alphanumeric())
+}
+
+/// CSRF and exchange cookie names that belong to one session cookie.
+///
+/// `desk_session` yields `desk_login_csrf`. A session name without that suffix
+/// is kept as a prefix, so `sid` yields `sid_login_csrf`. The historical
+/// `fexu_session` name yields the historical `fexu_*` cookies.
+pub(crate) fn namespaced_cookie(session: &str, suffix: &str) -> String {
+    if let Some(prefix) = session.strip_suffix("_session") {
+        if valid_cookie_namespace(prefix) {
+            return format!("{prefix}_{suffix}");
+        }
+    }
+    format!("{session}_{suffix}")
 }
 
 /// Loopback-Origins aus der Adresse, an die der Prozess selbst bindet.
@@ -328,6 +396,42 @@ mod tests {
     fn session_cookie_uses_the_current_framework_name() {
         let config = AuthConfig::development();
         assert_eq!(config.cookie_name, "fexu_session");
+        assert_eq!(config.anonymous_cookie_name, "fexu_anonymous");
+        assert_eq!(config.login_csrf_cookie(), "fexu_login_csrf");
+        assert_eq!(config.reset_csrf_cookie(), "fexu_reset_csrf");
+        assert_eq!(config.reset_cookie_name(), "fexu_reset");
+    }
+
+    #[test]
+    fn cookie_namespace_isolates_every_browser_cookie() {
+        let salon = AuthConfig::development()
+            .with_cookie_namespace("salon")
+            .expect("salon");
+        let shop = AuthConfig::development()
+            .with_cookie_namespace("Shop")
+            .expect("shop");
+        let historical = AuthConfig::development()
+            .with_cookie_namespace("FEXU")
+            .expect("historical");
+        assert_eq!(salon.cookie_name, "salon_session");
+        assert_eq!(salon.anonymous_cookie_name, "salon_anonymous");
+        assert_eq!(salon.login_csrf_cookie(), "salon_login_csrf");
+        assert_eq!(salon.reset_csrf_cookie(), "salon_reset_csrf");
+        assert_eq!(salon.reset_cookie_name(), "salon_reset");
+        assert_eq!(shop.cookie_name, "Shop_session");
+        assert_eq!(historical.cookie_name, "fexu_session");
+        assert_eq!(historical.login_csrf_cookie(), "fexu_login_csrf");
+        let mut custom = AuthConfig::development();
+        custom.cookie_name = "desk_session".to_owned();
+        assert_eq!(custom.login_csrf_cookie(), "desk_login_csrf");
+        assert_eq!(custom.anonymous_cookie_name, "fexu_anonymous");
+        assert!(AuthConfig::development()
+            .with_cookie_namespace("salon_shop")
+            .is_err());
+        assert!(AuthConfig::development()
+            .with_cookie_namespace("9shop")
+            .is_err());
+        assert!(AuthConfig::development().with_cookie_namespace("").is_err());
     }
 
     #[test]

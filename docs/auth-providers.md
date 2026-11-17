@@ -10,6 +10,12 @@
 
 `RemoteProtocol` lists `Oidc`, `OAuthAuthorizationCode` and `Passkey`. `is_implemented` is always `false`. There is no method that reports a remote login as success.
 
+## Local account lifecycle
+
+`LocalAccountLifecycle` is the first account boundary. `AuthService` implements it for `AccountOrigin::LocalPassword` only. `provision_local` creates the user and does not open a session. `suspend_local` deactivates the user, revokes sessions and deletes pending login challenges in one transaction. `restore_local` activates the user again and does not invent a session. `revoke_local_sessions` revokes open sessions and deletes pending login challenges in one transaction, and leaves the account active. None of these methods write a cookie or check CSRF. Existing `login` still creates the session.
+
+`AccountOrigin::accepts_remote_assertion` is false. This interface does not enroll TOTP, complete a challenge, or accept an OIDC, OAuth or passkey assertion. Those protocols stay unimplemented until their own threat model and tests exist.
+
 ## Second factor
 
 `begin_totp` stores a 20-byte secret with AES-256-GCM. New TOTP secrets use the independent 32-byte `FEXU_MFA_KEY` (AES-256-GCM), not a key derived from the CSRF secret. Legacy records use the historical HMAC-SHA256 derivation only for backwards-compatible reads and migration. The user id is additional authenticated data. `confirm_totp` checks a 6-digit RFC 6238 SHA-1 code in a window of one step and returns eight recovery codes once. Codes look like `XXXXX-XXXXX` and avoid ambiguous characters. Only an HMAC is stored. Each code works once.
@@ -22,7 +28,7 @@ Disabling TOTP requires the password and a current code or recovery code, then r
 
 `list_sessions` returns id and timestamps, not token hashes. `revoke_session_for` revokes the actor's own session. Another user's session is `Forbidden` unless the actor is a superuser. Staff is not enough. `revoke_other_sessions` keeps the current session.
 
-`reauthenticate` returns a proof `v1.{expires}.{mac}` bound to the user id and the session id, valid for at most 300 seconds. It is not consumed. A second session cannot reuse it. `require_reauth` checks that binding.
+`reauthenticate` returns a proof bound to the user id and the session id, valid for at most 300 seconds. `require_reauth` accepts that proof once in the current process. Another session cannot reuse it. A restart can accept it again until it expires.
 
 `close_account` checks the password, sets the user inactive, revokes sessions and deletes TOTP, recovery codes and login challenges. The user row remains, so the email stays reserved. It does not delete stored files. The application calls storage `purge_owner`.
 
