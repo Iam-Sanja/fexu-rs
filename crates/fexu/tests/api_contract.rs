@@ -3,7 +3,6 @@
 use axum::http::{Method, StatusCode};
 use fexu::prelude::*;
 use fexu::testing::TestClient;
-use serde_json::Value;
 
 #[derive(Debug, fexu::FexuModel, fexu::serde::Serialize, fexu::serde::Deserialize)]
 #[fexu(
@@ -18,6 +17,9 @@ struct ContractItem {
     #[field(required, min_length = 1, max_length = 40)]
     #[admin(filterable, sortable, label = "Name")]
     name: String,
+    #[field(max_length = 80)]
+    #[admin(filterable, label = "Note")]
+    note: Option<String>,
     #[field(write_only, required, min_length = 8, max_length = 80)]
     #[admin(hidden)]
     secret: String,
@@ -43,6 +45,7 @@ async fn exercise(mut client: TestClient) {
             .json()
             .unwrap();
         assert!(created.get("secret").is_none(), "{created}");
+        assert!(created["note"].is_null(), "{created}");
         assert!(created["id"].is_string());
     }
 
@@ -94,14 +97,121 @@ async fn exercise(mut client: TestClient) {
     assert_eq!(filtered["data"][0]["name"], "Bea");
     assert_eq!(filtered["has_more"], false);
 
-    let hidden = client
-        .get("/api/v1/contract_items?filter=secret:eq:supersecret")
+    for index in 0..98 {
+        client
+            .post_json(
+                "/api/v1/contract_items",
+                &serde_json::json!({
+                    "name": format!("row-{index:03}"),
+                    "secret": "supersecret"
+                }),
+            )
+            .await
+            .unwrap()
+            .assert_status(StatusCode::CREATED)
+            .unwrap();
+    }
+    let mut remaining = 101_usize;
+    let mut cursor: Option<String> = None;
+    let mut pages = 0_usize;
+    while remaining > 0 && pages < 4 {
+        let path = match &cursor {
+            Some(token) => format!("/api/v1/contract_items?cursor={}", encode_query(token)),
+            None => "/api/v1/contract_items".to_owned(),
+        };
+        let page = client
+            .get(&path)
+            .await
+            .unwrap()
+            .assert_status(StatusCode::OK)
+            .unwrap()
+            .json()
+            .unwrap();
+        assert_eq!(page["limit"], 100);
+        let rows = page["data"].as_array().unwrap();
+        assert!(rows.len() <= 100);
+        assert!(rows.iter().all(|row| row.get("secret").is_none()));
+        remaining -= rows.len();
+        pages += 1;
+        if page["has_more"] == true {
+            assert_eq!(rows.len(), 100);
+            cursor = Some(page["next"].as_str().unwrap().to_owned());
+        } else {
+            assert!(page["next"].is_null());
+            break;
+        }
+    }
+    assert_eq!(remaining, 0);
+    assert!(pages >= 2);
+
+    let oversized = client
+        .get("/api/v1/contract_items?limit=101")
         .await
-        .unwrap()
-        .assert_status(StatusCode::UNPROCESSABLE_ENTITY)
+        .unwrap();
+    assert_eq!(oversized.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    assert_problem(&oversized);
+    assert_eq!(oversized.json().unwrap()["code"], "list.limit");
+
+    let listed = client
+        .get("/api/v1/contract_items?limit=1")
+        .await
         .unwrap()
         .json()
         .unwrap();
+    let id = listed["data"][0]["id"].as_str().unwrap();
+    let rejected = client
+        .patch_json(
+            &format!("/api/v1/contract_items/{id}"),
+            &serde_json::json!({"name": null}),
+        )
+        .await
+        .unwrap();
+    assert_eq!(rejected.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    assert_problem(&rejected);
+    let kept = client
+        .patch_json(
+            &format!("/api/v1/contract_items/{id}"),
+            &serde_json::json!({"note": "kept"}),
+        )
+        .await
+        .unwrap()
+        .assert_status(StatusCode::OK)
+        .unwrap()
+        .json()
+        .unwrap();
+    assert_eq!(kept["note"], "kept");
+    assert!(kept.get("secret").is_none());
+    let cleared = client
+        .patch_json(
+            &format!("/api/v1/contract_items/{id}"),
+            &serde_json::json!({"note": null}),
+        )
+        .await
+        .unwrap()
+        .assert_status(StatusCode::OK)
+        .unwrap()
+        .json()
+        .unwrap();
+    assert!(cleared["note"].is_null());
+
+    let missing_note = client
+        .get("/api/v1/contract_items?filter=note:isnull&limit=1")
+        .await
+        .unwrap()
+        .assert_status(StatusCode::OK)
+        .unwrap()
+        .json()
+        .unwrap();
+    assert!(missing_note["data"][0]["note"].is_null());
+    assert_eq!(missing_note["has_more"], true);
+
+    let hidden_response = client
+        .get("/api/v1/contract_items?filter=secret:eq:supersecret")
+        .await
+        .unwrap();
+    assert_eq!(hidden_response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    assert_problem(&hidden_response);
+    let hidden = hidden_response.json().unwrap();
     assert_eq!(hidden["code"], "list.filter");
     assert_eq!(hidden["status"], 422);
 
@@ -125,18 +235,17 @@ async fn exercise(mut client: TestClient) {
         .unwrap();
     assert_eq!(bad_cursor["code"], "list.cursor");
 
-    let broken = client
+    let broken_response = client
         .request(Method::POST, "/api/v1/contract_items")
         .header("content-type", "application/json")
         .unwrap()
         .bytes(b"{".to_vec())
         .send()
         .await
-        .unwrap()
-        .assert_status(StatusCode::UNPROCESSABLE_ENTITY)
-        .unwrap()
-        .json()
         .unwrap();
+    assert_eq!(broken_response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    assert_problem(&broken_response);
+    let broken = broken_response.json().unwrap();
     assert_eq!(broken["type"], "about:blank");
     assert_eq!(broken["code"], "validation.invalid_type");
     assert!(broken.get("title").is_some());
@@ -178,12 +287,30 @@ async fn exercise(mut client: TestClient) {
         .unwrap()
         .json()
         .unwrap();
-    assert_matches_object(page_schema, &sample);
+    fexu::openapi::matches_schema(&document, page_schema, &sample).unwrap();
     let item_schema = &document["components"]["schemas"]["ContractItem"];
     assert!(item_schema["properties"].get("secret").is_none());
-    assert_matches_object(item_schema, &sample["data"][0]);
+    assert_eq!(
+        item_schema["properties"]["note"]["type"],
+        serde_json::json!(["string", "null"])
+    );
+    fexu::openapi::matches_schema(&document, item_schema, &sample["data"][0]).unwrap();
+    fexu::openapi::matches_schema(&document, item_schema, &item_schema["example"]).unwrap();
     let create = &document["components"]["schemas"]["ContractItemCreate"];
     assert_eq!(create["properties"]["secret"]["writeOnly"], true);
+    let request = serde_json::json!({"name": "Ada", "secret": "supersecret"});
+    fexu::openapi::matches_schema(&document, create, &request).unwrap();
+    fexu::openapi::matches_schema(&document, create, &create["example"]).unwrap();
+    let update = &document["components"]["schemas"]["ContractItemUpdate"];
+    assert_eq!(update["properties"]["name"]["type"], "string");
+    assert_eq!(
+        update["properties"]["note"]["type"],
+        serde_json::json!(["string", "null"])
+    );
+    fexu::openapi::matches_schema(&document, update, &update["example"]).unwrap();
+    let problem = &document["components"]["schemas"]["Problem"];
+    fexu::openapi::matches_schema(&document, problem, &hidden).unwrap();
+    fexu::openapi::matches_schema(&document, problem, &broken).unwrap();
     let parameters = document["paths"]["/api/v1/contract_items"]["get"]["parameters"]
         .as_array()
         .unwrap();
@@ -217,19 +344,11 @@ async fn postgres_cursor_filters_and_openapi_describe_the_same_list() {
     disposable.drop_database().await.unwrap();
 }
 
-fn assert_matches_object(schema: &Value, body: &Value) {
-    let properties = schema["properties"].as_object().unwrap();
-    let object = body.as_object().expect("json object");
-    for key in object.keys() {
-        assert!(
-            properties.contains_key(key),
-            "{key} is not in the OpenAPI schema"
-        );
-    }
-    for required in schema["required"].as_array().unwrap() {
-        let name = required.as_str().unwrap();
-        assert!(object.contains_key(name), "missing {name}");
-    }
+fn assert_problem(response: &fexu::testing::TestResponse) {
+    assert_eq!(
+        response.header("content-type").unwrap(),
+        Some("application/problem+json")
+    );
 }
 
 fn encode_query(value: &str) -> String {

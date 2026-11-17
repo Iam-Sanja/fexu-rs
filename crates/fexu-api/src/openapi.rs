@@ -659,10 +659,10 @@ fn cache_control(options: &OpenApiOptions, static_asset: bool) -> HeaderValue {
 fn docs_problem(status: StatusCode, title: &str, detail: &str) -> Response {
     (
         status,
-        [(
-            header::CACHE_CONTROL,
-            HeaderValue::from_static("private, no-store"),
-        )],
+        [
+            (header::CACHE_CONTROL, "private, no-store"),
+            (header::CONTENT_TYPE, "application/problem+json"),
+        ],
         Json(problem_json(status.as_u16(), title, detail)),
     )
         .into_response()
@@ -766,6 +766,7 @@ enum SchemaRole {
 fn object_schema(model: &DocumentedModel, role: SchemaRole) -> Value {
     let mut properties = Map::new();
     let mut required = Vec::new();
+    let mut example = Map::new();
     for column in model.columns {
         let contract = contract_for(model, column.name);
         let include = match role {
@@ -792,14 +793,19 @@ fn object_schema(model: &DocumentedModel, role: SchemaRole) -> Value {
         }
         properties.insert(
             column.name.to_owned(),
-            column_schema(model, column, contract, matches!(role, SchemaRole::Update)),
+            column_schema(model, column, contract),
+        );
+        example.insert(
+            column.name.to_owned(),
+            example_value(model, column, contract),
         );
     }
     json!({
         "type": "object",
         "additionalProperties": false,
         "required": required,
-        "properties": Value::Object(properties)
+        "properties": Value::Object(properties),
+        "example": Value::Object(example)
     })
 }
 
@@ -807,9 +813,9 @@ fn column_schema(
     model: &DocumentedModel,
     column: &ColumnSpec,
     contract: Option<&FieldContract>,
-    patch: bool,
 ) -> Value {
-    let nullable = column.nullable || patch;
+    // Absence on PATCH is `required: false`. Null is accepted only for a nullable column.
+    let nullable = column.nullable;
     let mut schema = match column.kind {
         ColumnKind::Uuid => typed("string", nullable, Some("uuid")),
         ColumnKind::Text => typed("string", nullable, None),
@@ -1458,6 +1464,247 @@ fn on_delete_name(action: Option<ReferentialAction>) -> &'static str {
         Some(ReferentialAction::Cascade) => "cascade",
         Some(ReferentialAction::SetNull) => "set_null",
         Some(ReferentialAction::Restrict) | None => "restrict",
+    }
+}
+
+fn example_value(
+    model: &DocumentedModel,
+    column: &ColumnSpec,
+    contract: Option<&FieldContract>,
+) -> Value {
+    if column.nullable {
+        return Value::Null;
+    }
+    match column.kind {
+        ColumnKind::Uuid => json!("00000000-0000-4000-8000-000000000001"),
+        ColumnKind::Text => Value::String(example_text(contract)),
+        ColumnKind::Json => {
+            let text = example_text(contract);
+            Value::String(if text.chars().count() <= 2 {
+                "{}".to_owned()
+            } else {
+                text
+            })
+        }
+        ColumnKind::BigInt => {
+            let number = model
+                .bounds
+                .iter()
+                .find(|bound| bound.column == column.name)
+                .and_then(|bound| bound.min)
+                .unwrap_or(1);
+            json!(number)
+        }
+        ColumnKind::Boolean => json!(column.default_bool.unwrap_or(false)),
+        ColumnKind::Date => json!("2026-01-02"),
+        ColumnKind::Time => json!("12:00:00"),
+        ColumnKind::DateTime => json!("2026-01-02T12:00:00Z"),
+        ColumnKind::Decimal => {
+            if column.scale == 0 {
+                json!("1")
+            } else {
+                json!(format!("1.{}", "0".repeat(column.scale as usize)))
+            }
+        }
+        ColumnKind::Choice => json!(column
+            .choices
+            .first()
+            .map(|choice| choice.value)
+            .unwrap_or("")),
+    }
+}
+
+fn example_text(contract: Option<&FieldContract>) -> String {
+    let minimum = contract
+        .and_then(|item| item.min_length)
+        .unwrap_or(1)
+        .max(1) as usize;
+    let maximum = contract
+        .and_then(|item| item.max_length)
+        .map(|value| value as usize)
+        .unwrap_or(minimum);
+    "a".repeat(minimum.min(maximum).max(1))
+}
+
+/// Returns whether `instance` satisfies a schema emitted by this generator.
+///
+/// Local `#/components/schemas/` references are resolved. The check covers the
+/// types, `null`, `required`, `additionalProperties`, `enum`, string length
+/// and numeric bounds this document emits.
+pub fn matches_schema(document: &Value, schema: &Value, instance: &Value) -> Result<(), String> {
+    match_schema(document, schema, instance, 0, "$")
+}
+
+fn match_schema(
+    document: &Value,
+    schema: &Value,
+    instance: &Value,
+    depth: u8,
+    path: &str,
+) -> Result<(), String> {
+    if depth > 8 {
+        return Err(format!("{path} schema reference is too deep"));
+    }
+    let schema = resolve_schema(document, schema, depth, path)?;
+    let object = schema
+        .as_object()
+        .ok_or_else(|| format!("{path} schema must be an object"))?;
+    if let Some(expected) = object.get("const") {
+        if instance != expected {
+            return Err(format!("{path} must equal {expected}"));
+        }
+        return Ok(());
+    }
+    if instance.is_null() {
+        let names = type_names(object);
+        if names.contains(&"null") {
+            return Ok(());
+        }
+        return Err(format!("{path} is null"));
+    }
+    if let Some(values) = object.get("enum").and_then(Value::as_array) {
+        if !values.iter().any(|value| value == instance) {
+            return Err(format!("{path} is outside the enum"));
+        }
+    }
+    let names = type_names(object);
+    if names.contains(&"object") || object.contains_key("properties") {
+        let value = instance
+            .as_object()
+            .ok_or_else(|| format!("{path} must be an object"))?;
+        let properties = object.get("properties").and_then(Value::as_object);
+        let additional = object.get("additionalProperties");
+        if additional.and_then(Value::as_bool) == Some(false) {
+            let properties =
+                properties.ok_or_else(|| format!("{path} object schema has no properties"))?;
+            for key in value.keys() {
+                if !properties.contains_key(key) {
+                    return Err(format!("{path}.{key} is not in the schema"));
+                }
+            }
+        }
+        if let Some(required) = object.get("required").and_then(Value::as_array) {
+            for name in required {
+                let name = name.as_str().unwrap_or("");
+                if !value.contains_key(name) {
+                    return Err(format!("{path}.{name} is required"));
+                }
+            }
+        }
+        if let Some(properties) = properties {
+            for (key, property) in properties {
+                if let Some(child) = value.get(key) {
+                    match_schema(
+                        document,
+                        property,
+                        child,
+                        depth + 1,
+                        &format!("{path}.{key}"),
+                    )?;
+                }
+            }
+        }
+        if let Some(extra) = additional.filter(|item| item.is_object()) {
+            for (key, child) in value {
+                if properties.is_some_and(|map| map.contains_key(key)) {
+                    continue;
+                }
+                match_schema(document, extra, child, depth + 1, &format!("{path}.{key}"))?;
+            }
+        }
+        return Ok(());
+    }
+    if names.contains(&"array") {
+        let items = instance
+            .as_array()
+            .ok_or_else(|| format!("{path} must be an array"))?;
+        let item_schema = object
+            .get("items")
+            .ok_or_else(|| format!("{path} array schema has no items"))?;
+        for (index, item) in items.iter().enumerate() {
+            match_schema(
+                document,
+                item_schema,
+                item,
+                depth + 1,
+                &format!("{path}[{index}]"),
+            )?;
+        }
+        return Ok(());
+    }
+    if names.contains(&"string") {
+        let text = instance
+            .as_str()
+            .ok_or_else(|| format!("{path} must be a string"))?;
+        if object.get("format").and_then(Value::as_str) == Some("uuid")
+            && uuid::Uuid::parse_str(text).is_err()
+        {
+            return Err(format!("{path} must be a uuid"));
+        }
+        let length = text.chars().count();
+        if let Some(min) = object.get("minLength").and_then(Value::as_u64) {
+            if length < min as usize {
+                return Err(format!("{path} is shorter than minLength"));
+            }
+        }
+        if let Some(max) = object.get("maxLength").and_then(Value::as_u64) {
+            if length > max as usize {
+                return Err(format!("{path} is longer than maxLength"));
+            }
+        }
+        return Ok(());
+    }
+    if names.contains(&"integer") {
+        let number = instance
+            .as_i64()
+            .ok_or_else(|| format!("{path} must be an integer"))?;
+        if let Some(min) = object.get("minimum").and_then(Value::as_i64) {
+            if number < min {
+                return Err(format!("{path} is below minimum"));
+            }
+        }
+        if let Some(max) = object.get("maximum").and_then(Value::as_i64) {
+            if number > max {
+                return Err(format!("{path} is above maximum"));
+            }
+        }
+        return Ok(());
+    }
+    if names.contains(&"boolean") {
+        if !instance.is_boolean() {
+            return Err(format!("{path} must be a boolean"));
+        }
+        return Ok(());
+    }
+    Err(format!("{path} has no supported schema type"))
+}
+
+fn resolve_schema<'a>(
+    document: &'a Value,
+    schema: &'a Value,
+    depth: u8,
+    path: &str,
+) -> Result<&'a Value, String> {
+    let Some(reference) = schema.get("$ref").and_then(Value::as_str) else {
+        return Ok(schema);
+    };
+    let name = reference
+        .strip_prefix("#/components/schemas/")
+        .ok_or_else(|| format!("{path} reference `{reference}` is not local"))?;
+    let next = document
+        .pointer(&format!("/components/schemas/{name}"))
+        .ok_or_else(|| format!("{path} reference `{reference}` is missing"))?;
+    if depth > 8 {
+        return Err(format!("{path} schema reference is too deep"));
+    }
+    Ok(next)
+}
+
+fn type_names(schema: &Map<String, Value>) -> Vec<&str> {
+    match schema.get("type") {
+        Some(Value::String(name)) => vec![name.as_str()],
+        Some(Value::Array(items)) => items.iter().filter_map(Value::as_str).collect(),
+        _ => Vec::new(),
     }
 }
 

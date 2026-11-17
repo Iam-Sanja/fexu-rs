@@ -371,6 +371,7 @@ pub(crate) fn error_response(
 ) -> axum::response::Response {
     (
         status,
+        [(axum::http::header::CONTENT_TYPE, "application/problem+json")],
         Json(fexu_core::problem_json(status.as_u16(), title, detail)),
     )
         .into_response()
