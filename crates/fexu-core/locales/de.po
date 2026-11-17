@@ -116,6 +116,22 @@ msgctxt "validation.datetime_offset"
 msgid "The timestamp needs an offset."
 msgstr "Der Zeitpunkt braucht ein Offset."
 
+msgctxt "validation.datetime_gap"
+msgid "That local time does not exist because of a daylight-saving change."
+msgstr "Diese Ortszeit gibt es wegen der Zeitumstellung nicht."
+
+msgctxt "validation.datetime_ambiguous"
+msgid "That local time occurs twice. Choose earlier or later."
+msgstr "Diese Ortszeit gibt es zweimal. earlier oder later ist erforderlich."
+
+msgctxt "validation.datetime_fold"
+msgid "The earlier or later choice does not match this local time."
+msgstr "Die Angabe earlier oder later passt nicht zu dieser Ortszeit."
+
+msgctxt "validation.timezone"
+msgid "The time zone is not a known IANA name."
+msgstr "Die Zeitzone ist kein bekannter IANA-Name."
+
 msgctxt "form.csrf"
 msgid "The security check failed."
 msgstr "Die Sicherheitsprüfung ist fehlgeschlagen."

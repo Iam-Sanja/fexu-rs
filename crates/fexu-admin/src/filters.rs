@@ -213,13 +213,19 @@ fn typed(column: &ColumnSpec, value: &str) -> Result<DbValue, String> {
         ColumnKind::Time => fexu_core::parse_time(value)
             .map(DbValue::from)
             .map_err(|_| format!("filter {} must be a time", column.name)),
-        ColumnKind::DateTime => fexu_core::parse_datetime_utc(value)
-            .map(DbValue::from)
-            .map_err(|_| format!("filter {} must be a utc datetime", column.name)),
+        ColumnKind::DateTime => filter_datetime(column, value),
         ColumnKind::Decimal => decimal_filter(column, value),
         ColumnKind::Choice => choice_filter(column, value),
         ColumnKind::Json => Err("json columns have no portable filter".into()),
     }
+}
+
+fn filter_datetime(column: &ColumnSpec, value: &str) -> Result<DbValue, String> {
+    let zone = fexu_core::project_zone_from_env()
+        .map_err(|_| format!("filter {} {}", column.name, "validation.timezone"))?;
+    fexu_core::parse_filter_datetime(value, zone)
+        .map(DbValue::from)
+        .map_err(|code| format!("filter {} {code}", column.name))
 }
 
 fn decimal_filter(column: &ColumnSpec, value: &str) -> Result<DbValue, String> {

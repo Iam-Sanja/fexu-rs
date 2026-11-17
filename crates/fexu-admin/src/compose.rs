@@ -617,9 +617,11 @@ fn typed(column: &ColumnSpec, text: &str) -> Result<Value, &'static str> {
         ColumnKind::Time => {
             temporal::parse_time(text).map(|value| Value::String(temporal::format_time(value)))
         }
-        ColumnKind::DateTime => temporal::parse_datetime_local(text)
-            .or_else(|_| temporal::parse_datetime_utc(text))
-            .map(|value| Value::String(temporal::format_datetime(value))),
+        ColumnKind::DateTime => {
+            let zone = fexu_core::project_zone_from_env().map_err(|_| "validation.timezone")?;
+            fexu_core::parse_form_datetime(text, zone, None)
+                .map(|value| Value::String(temporal::format_datetime(value)))
+        }
         ColumnKind::Uuid | ColumnKind::Text => Ok(Value::String(text.to_owned())),
         ColumnKind::Json => fexu_core::canonical_json_text(text).map(Value::String),
         ColumnKind::Decimal => fexu_core::format_decimal_text(text, column.precision, column.scale)

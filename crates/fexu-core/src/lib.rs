@@ -3,6 +3,7 @@
 pub mod i18n;
 
 pub mod choice;
+pub mod civil;
 pub mod decimal;
 mod messages;
 mod problem;
@@ -10,6 +11,10 @@ pub mod temporal;
 mod validation;
 
 pub use choice::{choice_is_known, choice_label, ChoiceValue, FexuChoice};
+pub use civil::{
+    display_datetime_local, format_civil_datetime, parse_civil_datetime, parse_filter_datetime,
+    parse_form_datetime, project_zone_from_env, CivilFold, LocalDateTimeInput, ProjectTimeZone,
+};
 pub use decimal::{
     decimal_sql_literal, decode_decimal, encode_decimal, format_decimal, format_decimal_text,
     parse_decimal, prepare_decimal, validate_decimal_meta, DecimalError,

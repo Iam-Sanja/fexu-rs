@@ -5087,7 +5087,10 @@ fn list_editor(locale: &str, column: &ColumnSpec, value: &Value) -> Value {
         _ => "text",
     };
     let shown = if column.kind == ColumnKind::DateTime {
-        text.replace(' ', "T")
+        match fexu_core::project_zone_from_env() {
+            Ok(zone) if !zone.is_utc() => fexu_core::display_datetime_local(&text, zone).0,
+            _ => text.replace(' ', "T"),
+        }
     } else {
         text
     };
@@ -7193,7 +7196,7 @@ async fn save_form(
     if !posted_links.is_empty() {
         raw.insert("_m2m".into(), Value::Object(posted_links));
     }
-    if let Err((field, code)) = normalize_temporal(model.columns(), &mut object) {
+    if let Err((field, code)) = normalize_temporal(model.columns(), &mut object, &form) {
         let text = validation_text(&locale, code);
         raw.insert("__error".into(), json!({ "field": field, "text": text }));
         return form_page(
@@ -7768,13 +7771,33 @@ async fn input_fields(
                 ColumnKind::Decimal => "text",
             });
             if column.kind == ColumnKind::DateTime {
-                if let Some(text) = input["value"].as_str() {
-                    input["value"] = json!(fexu_core::temporal::datetime_local_value(text));
+                let zone = fexu_core::project_zone_from_env();
+                if let Some(text) = input["value"].as_str().map(str::to_owned) {
+                    match zone {
+                        Ok(zone) if !zone.is_utc() => {
+                            let (value, fold) = fexu_core::display_datetime_local(&text, zone);
+                            input["value"] = json!(value);
+                            if let Some(fold) = fold {
+                                input["fold"] = json!(fold.as_str());
+                            }
+                        }
+                        _ => {
+                            input["value"] =
+                                json!(fexu_core::temporal::datetime_local_value(&text));
+                        }
+                    }
                 }
-                input["hint"] = json!(catalog(locale)
+                let utc_hint = catalog(locale)
                     .get("utc_hint")
                     .and_then(Value::as_str)
-                    .unwrap_or("UTC"));
+                    .unwrap_or("UTC")
+                    .to_owned();
+                let hint = match zone {
+                    Ok(zone) if !zone.is_utc() => zone.label(),
+                    Ok(_) => utc_hint.as_str(),
+                    Err(_) => "validation.timezone",
+                };
+                input["hint"] = json!(hint);
             }
         }
         fields.push(input);
@@ -8075,6 +8098,10 @@ fn payload(
             continue;
         }
         if key == "m2m_present" || key.starts_with("m2m.") {
+            continue;
+        }
+        if key.ends_with("__fold") {
+            raw.insert(key.clone(), json!(value));
             continue;
         }
         if key == "_draft" {
@@ -12831,9 +12858,25 @@ fn hierarchy_href(
     }
 }
 
+fn posted_fold(
+    form: &HashMap<String, String>,
+    field: &str,
+) -> Result<Option<fexu_core::CivilFold>, &'static str> {
+    match form
+        .get(&format!("{field}__fold"))
+        .map(String::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        None => Ok(None),
+        Some(value) => fexu_core::CivilFold::parse(value).map(Some),
+    }
+}
+
 fn normalize_temporal(
     columns: &[ColumnSpec],
     object: &mut Map<String, Value>,
+    form: &HashMap<String, String>,
 ) -> Result<(), (String, &'static str)> {
     for column in columns {
         let Some(value) = object.get(column.name).cloned() else {
@@ -12858,10 +12901,15 @@ fn normalize_temporal(
             ColumnKind::Time => fexu_core::parse_time(text)
                 .map(fexu_core::temporal::format_time)
                 .map_err(|code| (column.name.to_owned(), code))?,
-            ColumnKind::DateTime => fexu_core::parse_datetime_local(text)
-                .or_else(|_| fexu_core::parse_datetime_utc(text))
-                .map(fexu_core::temporal::format_datetime)
-                .map_err(|code| (column.name.to_owned(), code))?,
+            ColumnKind::DateTime => {
+                let zone = fexu_core::project_zone_from_env()
+                    .map_err(|code| (column.name.to_owned(), code))?;
+                let fold = posted_fold(form, column.name)
+                    .map_err(|code| (column.name.to_owned(), code))?;
+                fexu_core::parse_form_datetime(text, zone, fold)
+                    .map(fexu_core::temporal::format_datetime)
+                    .map_err(|code| (column.name.to_owned(), code))?
+            }
             ColumnKind::Json => fexu_core::canonical_json_text(text)
                 .map_err(|code| (column.name.to_owned(), code))?,
             _ => continue,
