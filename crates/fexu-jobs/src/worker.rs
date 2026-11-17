@@ -65,7 +65,7 @@ impl Worker {
             if stop.load(Ordering::SeqCst) || progressed {
                 continue;
             }
-            tokio::time::sleep(self.poll).await;
+            wait_for_poll(stop, self.poll).await;
         }
         Ok(())
     }
@@ -143,4 +143,21 @@ impl Worker {
 
 pub fn stop_flag() -> Arc<AtomicBool> {
     Arc::new(AtomicBool::new(false))
+}
+
+/// Wakes within 50ms of `stop` instead of waiting out a long poll interval.
+async fn wait_for_poll(stop: &AtomicBool, poll: Duration) {
+    let slice = Duration::from_millis(50).min(poll);
+    if slice.is_zero() {
+        return;
+    }
+    let mut waited = Duration::ZERO;
+    while waited < poll {
+        if stop.load(Ordering::SeqCst) {
+            return;
+        }
+        let step = slice.min(poll.saturating_sub(waited));
+        tokio::time::sleep(step).await;
+        waited = waited.saturating_add(step);
+    }
 }
