@@ -244,6 +244,18 @@ msgctxt "not_found"
 msgid "The record was not found."
 msgstr "The record was not found."
 
+msgctxt "invalid_filter"
+msgid "The filter is invalid."
+msgstr "The filter is invalid."
+
+msgctxt "conflict"
+msgid "The request conflicts with the current state."
+msgstr "The request conflicts with the current state."
+
+msgctxt "redirect_rejected"
+msgid "The redirect was rejected."
+msgstr "The redirect was rejected."
+
 msgctxt "staff_required"
 msgid "Administration requires staff access."
 msgstr "Administration requires staff access."

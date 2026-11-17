@@ -11,10 +11,12 @@ This page records attacks the current code is built to resist, and the protocols
 | Password guessing | Argon2id, dummy hash for unknown users, five failures per process and client key in 15 minutes |
 | Session fixation | Login creates a new session. The anonymous session is revoked only when that session is issued, not when MFA is still pending |
 | Stolen database | Session tokens and recovery codes are keyed hashes. TOTP secrets are AES-256-GCM with `FEXU_MFA_KEY` and the user id as AAD. A database copy without that key does not reveal the authenticator secret. Recovery codes are HMAC hashes, not ciphertext |
-| TOTP replay | The accepted step is stored. The same step is rejected. The window is the previous, current and next 30-second step |
-| Challenge as session | `authenticate_token` rejects the challenge. HTTP login sets no cookie while MFA is pending |
-| Cross-user session revoke | A non-superuser receives `Forbidden`. Staff does not bypass this |
-| Reauthentication replay on another session | The proof includes the session id. Another session fails closed |
+| TOTP replay | The accepted step is stored and a second writer cannot move it backwards or repeat it. The window is the previous, current and next 30-second step |
+| Challenge as session | `authenticate_token` rejects the challenge. HTTP login sets no cookie while MFA is pending. A challenge expires after five attempts or 300 seconds, counted in the database |
+| Disabled account | Deactivation revokes every session and deletes pending login challenges in one transaction. Login, MFA completion and session rotation refuse an inactive user |
+| Cross-user session revoke | The stored superuser flag is read again. A non-superuser receives `Forbidden`. Staff does not bypass this. The actor session must still be live |
+| MFA changes | Enrollment, confirmation, disable, password change, account close and reauthentication require the actor's live session |
+| Reauthentication replay | The proof is bound to the user and the session, lasts at most 300 seconds, and is accepted once in the process |
 | Privilege through staff | `authorize` still requires the permission code or a stored superuser flag |
 
 ## Out of scope until a real implementation exists
@@ -25,9 +27,9 @@ The required authorization-code flow, the refusal to link on email equality, and
 
 ## Residual risk
 
-The login rate limit and the MFA attempt limit live in process memory. A restart clears them. The database also counts challenge attempts, so one challenge still stops after five tries.
+The login rate limit, the per-user factor limit and the remembered reauthentication proofs live in process memory. A restart clears them. The database also counts challenge attempts, so one challenge still stops after five tries even if the process restarts. A second process can still accept a reauthentication proof until it expires. Password change still revokes sessions.
 
-The reauthentication proof can be replayed on the same session until it expires. Password change still revokes sessions.
+Failed passwords and failed authenticator codes on a live session share one counter: five failures in the login window, then `RateLimited`. That counter is not shared across processes.
 
 `FEXU_MFA_KEY` is 32 bytes, encoded as 64 hexadecimal characters with no prefix. Those bytes are the AES-256-GCM key. There is no `FEXU_MFA_KEY` alias. Production refuses to start when the variable is missing or not 64 hex characters, and the error does not include the value. Development reads `.fexu/mfa.key` as 32 raw bytes, or creates that file once. `AuthConfig::development` draws a process-local random MFA key. It is not the CSRF development key and it is not a published constant.
 

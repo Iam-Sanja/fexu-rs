@@ -135,8 +135,17 @@ pub async fn set_totp_step(
     query
         .table(Alias::new(MFA_TOTP))
         .values([(Alias::new("last_used_step"), number(step))])
-        .and_where(Expr::col(Alias::new("user_id")).eq(uuid_expr(db, user_id)));
-    execute(db, &query).await
+        .and_where(Expr::col(Alias::new("user_id")).eq(uuid_expr(db, user_id)))
+        .and_where(
+            Expr::col(Alias::new("last_used_step"))
+                .is_null()
+                .or(Expr::col(Alias::new("last_used_step")).lt(number(step))),
+        );
+    if execute_rows(db, &query).await? == 1 {
+        Ok(())
+    } else {
+        Err(AuthError::InvalidCredentials)
+    }
 }
 
 pub async fn delete_totp(db: &impl ConnectionTrait, user_id: Uuid) -> Result<(), AuthError> {
@@ -282,15 +291,24 @@ pub async fn find_challenge(
 pub async fn bump_challenge(
     db: &impl ConnectionTrait,
     id: Uuid,
-    attempts: i64,
+    now: i64,
 ) -> Result<(), AuthError> {
     let mut query = Query::update();
     query
         .table(Alias::new(LOGIN_CHALLENGES))
-        .values([(Alias::new("attempts"), number(attempts))])
+        .values([(
+            Alias::new("attempts"),
+            Expr::col(Alias::new("attempts")).add(1),
+        )])
         .and_where(Expr::col(Alias::new("id")).eq(uuid_expr(db, id)))
-        .and_where(Expr::col(Alias::new("consumed_at")).is_null());
-    execute(db, &query).await
+        .and_where(Expr::col(Alias::new("consumed_at")).is_null())
+        .and_where(Expr::col(Alias::new("expires_at")).gt(number(now)))
+        .and_where(Expr::col(Alias::new("attempts")).lt(5));
+    if execute_rows(db, &query).await? == 1 {
+        Ok(())
+    } else {
+        Err(AuthError::InvalidCredentials)
+    }
 }
 
 pub async fn consume_challenge(

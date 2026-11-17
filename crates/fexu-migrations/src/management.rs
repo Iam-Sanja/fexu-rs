@@ -72,15 +72,13 @@ impl<'a> Invocation<'a> {
     /// Opens the project database only when the command needs it.
     /// `--database-url` applies only to this invocation and is not logged.
     pub async fn database(&self) -> Result<DatabaseConnection, CommandError> {
-        let url = match self.options.get("database-url") {
-            Some(url) if !url.trim().is_empty() => url.clone(),
-            Some(_) => {
-                return Err(CommandError::usage(
-                    "--database-url needs a non-empty value.".to_owned(),
-                ))
-            }
-            None => self.project.resolved_database_url(),
-        };
+        let target = crate::resolve_database_target(
+            self.options.get("database-url").map(String::as_str),
+            Some(self.project),
+            crate::MissingDatabase::DocumentedSqlite,
+        )
+        .map_err(|error| CommandError::usage(error.0))?;
+        let url = target.url;
         fexu_db::connect(&url)
             .await
             .map_err(|error| CommandError::new(error.to_string().replace(&url, "[database]")))

@@ -13,8 +13,8 @@
   </ul>
   <h1>{{ record.title }}</h1>
   <p>{{ record.body }}</p>
-  <a href="{{ edit_url | safe }}">Edit</a>
-  <a href="{{ delete_url | safe }}">Delete</a>
+  {% if edit_url %}<a href="{{ edit_url | safe }}">Edit</a>{% endif %}
+  {% if delete_url %}<a href="{{ delete_url | safe }}">Delete</a>{% endif %}
   <a href="{{ list_url | safe }}">Back</a>
 </body>
 </html>

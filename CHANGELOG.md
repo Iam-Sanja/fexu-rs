@@ -1,24 +1,72 @@
 # Changelog
 
+## Unreleased — safe schema evolution
+
+- Explicit `rename_column` and `rename_table` remain the only rename path. A removed name plus a new name is not guessed, and a rename that leaves more than one name changed is rejected. A rename whose old and new names are equal is rejected before any file or statement is written. Identifiers are checked again before SQL, and a rejected name that is not a plain identifier is not copied into the error.
+- Boolean default changes, default removal, secondary indexes, and unique indexes keep existing rows. A unique index over duplicate values rolls back and writes no history row. Unsupported type changes stay refused. Destructive drops still require `--allow-destructive`.
+- After a SQLite rebuild commits, a failed `PRAGMA foreign_keys = ON` does not roll the migration back. The error states that the history row was saved, and the connection is closed instead of being reused with enforcement off.
+
+## Unreleased — Docker bind, proxy headers and database role
+
+- `fexu check --deploy` reads `BIND_ADDRESS`. `0.0.0.0` and `::` stay errors until `server.allow_wildcard_bind` or `FEXU_ALLOW_WILDCARD_BIND=true`. The explicit case is not an allowed origin. `FEXU_TRUST_PROXY=1` with only `*` remains an error.
+- `Host`, `Forwarded`, `X-Forwarded-Host` and `X-Forwarded-Proto` are still not origins. An `http` origin is rejected when the `Secure` cookie flag is on. A missing or wrong CSRF token stays rejected.
+- `deploy/compose.yaml` sets the wildcard opt-in, keeps PostgreSQL unpublished, and connects the app as `fexu_app`. The first database start creates that `NOSUPERUSER` role. Migrations stay on the owner role. `deploy/nginx-proxy-manager.example.conf` shows the proxy headers and does not start NPM.
+
 ## 0.1.2 — synchronized workspace version
 
 - All 16 publishable crates and their internal path dependencies are `0.1.2`. Examples stay unpublished. `0.1.0` and `fexu-cli` `0.1.1` remain the versions already on crates.io.
 - `fexu new` writes `fexu = "=0.1.2"` unless `--fexu-path` is set. The fullstack template keeps `features = ["admin-ui"]` on that registry dependency.
 - The publish planner skips a version that is already in the crates.io index and waits until a new upload is visible before the next crate. Trusted-publishing tokens still expire after 30 minutes. This entry is not a crates.io publication.
 
+## Unreleased — API contract pagination
+
+- Generated list routes keep the keyset page of at most 100 rows and return `has_more` with `next` instead of dropping the rest. `limit` outside 1..=100 is 422. Filters and sorts stay on the readable admin allow-list.
+- OpenAPI update schemas allow JSON `null` only for nullable columns. Object schemas include an example. `fexu::openapi::matches_schema` checks a JSON value against that document.
+- Model, auth, documentation and view problem responses use `Content-Type: application/problem+json`. Admin and storage JSON errors stay `application/json`.
+- `ModelRepository::list` and offset `page` still report `truncated` at 100 rows. Changing that repository cap is left to the query work in #144.
+
+## Unreleased — selectable HTML CRUD parts
+
+- `crud_urls_for` mounts a chosen subset of list, detail, create, update and delete. `crud_urls` and `crud_urls_with` still mount all five. An omitted part has no route, and its template link stays empty (#89).
+
+## Unreleased — admin view queries and local flash redirects
+
+- A custom admin page reads checked GET parameters from `ViewRequest.query`. Invalid parameters answer 422. `ViewHandler` returns `ViewOutcome`: a page, a 303 to a canonical `/admin` path, 404, 409 or 422. External and off-admin targets do not set `Location`. Staff, permission and CSRF checks still run before the handler (#146).
+- `redirect_with_flash` stores a session flash only after the existing local-path check. A rejected target or message does not write a row and does not redirect. `take_flashes` still consumes each message once (#89).
+
 ## Unreleased — development CSRF keys
 
 - `AuthConfig::development` draws a new 32-byte CSRF key on every call. `try_from_env` still loads `FEXU_CSRF_SECRET` or `.fexu/csrf.key`. Token and HMAC formats are unchanged. Debug output keeps both secrets redacted.
 
+## Unreleased — contract suite
+
+- `examples/contract` runs the same admin-login contract on SQLite and, when `DATABASE_URL` is set, on one disposable PostgreSQL database. The PostgreSQL CI job names `postgres_fixture_parallel_create_isolate_and_cleanup` and `postgres_contract_login_matches_sqlite` exactly and fails unless each reports one pass. `tests/browser/login-form.spec.js` submits the myshop login form from a fresh profile. That database has no auth tables, so the response is the `403` error page and not the `401` login form. No session cookie is set.
+- No PostgreSQL server was listening on the workstation that added this suite, so those ignored tests were not executed locally. The suite does not generate a project, open TLS, bind a LAN address, or start Docker.
+
 ## Unreleased — parallel PostgreSQL fixtures
 
 - Disposable PostgreSQL fixtures clone `template0` and keep administrative sessions off `template0` and `template1`. Concurrent `STRATEGY FILE_COPY` is not used; those copies stalled on Windows PostgreSQL 18. `drop_database` still drops only `fexu_test_` plus 32 hexadecimal characters, and only when the current role owns that database (#117).
+
+## Unreleased — configured database target
+
+- CLI migrations, status, plan, check, doctor, auth, fixtures, and workers use the same database as the generated runtime: `--database-url`, then `DATABASE_URL`, then `database.url`, then the documented SQLite default only when no project file is available. Empty and unsupported values fail instead of selecting another database. Relative SQLite paths in `fexu.toml` are resolved from the project root. The chosen target is printed redacted (#141).
+
+## Unreleased — read-only migration plan
+
+- `migrate plan` reports missing-app, self-dependency, and cycle errors for declared apps without writing migration files. It also reports pending IDs and live drift for the embedded auth and job snapshots. A checksum or order conflict stays an error and skips that live comparison. An embedded plan compares only the tables in that package snapshot. Another component's table stays visible to that component's own plan and is not framework drift.
+- An embedded framework package with a duplicate ID or an ID outside the expected auth or jobs list fails by name. Existing migration IDs and checksums are unchanged. No data is migrated and no schema is reset.
 
 ## Unreleased — embedded framework migrations
 
 - Auth and job migrations stay embedded in the binary. A relocated `embedded-migrate` process no longer needs the crate `migrations/` directories. `scripts/cold-start-embedded.sh` hides those directories, and CI runs that check for SQLite and for `fexu_test_relocated`.
 - `inspect_framework` and the auth and jobs status commands report a missing table or a missing column from the latest applied framework snapshot as an error. The latest snapshot is the highest migration number, not the last array entry. They do not recreate the table or column and do not describe that database as fully migrated. Empty and absent application directories stay optional. Checksums of the checked-in migration files are unchanged.
 - Cold-start Bash and PowerShell accept a PostgreSQL URL only when it has no query string, the decoded database name starts with `fexu_test_`, and the host is the literal form `127.0.0.1`, `localhost`, or `[::1]`. The host is not percent-decoded. Every query parameter is refused. The URL user must already be a disposable test role; the scripts do not verify that role's privileges. Both scripts require `login=ok` and a reported job. Linux CI runs the Bash script and Windows CI runs the PowerShell script.
+
+## Unreleased — per-application browser cookies
+
+- `AuthConfig::with_cookie_namespace` names session, anonymous, login-CSRF, reset-CSRF and reset-exchange cookies for one application. The label `fexu` keeps `fexu_session`, `fexu_anonymous`, `fexu_login_csrf`, `fexu_reset_csrf` and `fexu_reset`.
+- A configured `cookie_name` still authenticates that application. Its login and reset cookies follow that name instead of the historical `fexu_*` CSRF cookies. Logout and login clear only those names. Another application's cookies are not read and are not deleted.
+- The default names are unchanged, so existing `fexu_session` deployments keep their cookies. Two applications on one host must use two namespaces because browsers share cookies across ports.
 
 ## Unreleased — browser security and native admin login
 

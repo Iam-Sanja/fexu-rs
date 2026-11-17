@@ -222,7 +222,7 @@ mod catalog_tests {
     fn bundled_catalogs_have_matching_keys_and_preserve_existing_labels() {
         let en = parse_catalog(EN_PO);
         let de = parse_catalog(DE_PO);
-        assert_eq!(en.len(), 313);
+        assert_eq!(en.len(), 316);
         assert_eq!(en.keys().collect::<Vec<_>>(), de.keys().collect::<Vec<_>>());
         assert_eq!(en["save"], "Save");
         assert_eq!(de["save"], "Speichern");

@@ -23,9 +23,12 @@ pub struct WorkerConfig {
 }
 
 impl WorkerConfig {
-    pub fn from_project(project: &ProjectConfig) -> Self {
-        Self {
-            database_url: project.resolved_database_url(),
+    pub fn from_project(project: &ProjectConfig) -> Result<Self, JobError> {
+        let database_url = project
+            .resolved_database_url()
+            .map_err(|error| JobError::message("job.database", error.0))?;
+        Ok(Self {
+            database_url,
             enabled: project.jobs_enabled,
             poll_ms: project.jobs_poll_ms,
             concurrency: project.jobs_concurrency,
@@ -35,7 +38,7 @@ impl WorkerConfig {
                 jitter: project.jobs_jitter,
                 lease_secs: i64::try_from(project.jobs_lease_secs).unwrap_or(60),
             },
-        }
+        })
     }
 }
 
@@ -55,8 +58,8 @@ impl WorkerHost {
         }
     }
 
-    pub fn from_project(project: &ProjectConfig) -> Self {
-        Self::new(WorkerConfig::from_project(project))
+    pub fn from_project(project: &ProjectConfig) -> Result<Self, JobError> {
+        Ok(Self::new(WorkerConfig::from_project(project)?))
     }
 
     pub fn with_mail(mut self, mail: MailService) -> Self {

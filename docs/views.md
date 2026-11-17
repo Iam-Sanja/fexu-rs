@@ -15,6 +15,7 @@
 | `render(request, "home.html", context)` | `views::render(site, "home.html", context, debug)` |
 | `JsonResponse({"ok": True})` | `views::json(&fexu::serde_json::json!({"ok": true}))` |
 | `redirect("/home")` | `views::redirect_to("/home")` |
+| redirect plus one-shot message | `views::redirect_with_flash(db, session, level, text, "/home")` |
 | `Http404` | `views::fail(..., StatusCode::NOT_FOUND, code, detail, debug)`. HTML uses `templates/errors/404.html` when `mount_pages` installed the project templates. |
 | `PermissionDenied` |`views::fail(..., StatusCode::FORBIDDEN, ...)` or `require_staff`|
 | `login_required` |`require_user` for an existing session|
@@ -87,7 +88,7 @@ If `Accept` contains `text/html` and not `application/json`, the response is HTM
 
 An `Accept-Language` value beginning with `en` selects the English heading; otherwise the heading is German. Without debug mode, a 500 response hides internal details. Details containing `password`, `secret`, `token` or `stack backtrace` become `Request rejected`. Logs include the request ID, code and status, not the detail.
 
-`fail` builds the safe HTML or JSON answer. `fail_in` uses the same answer and, for HTML, first tries `templates/errors/{status}.html` for 400, 401, 403, 404, 405, 409, 422 and 500. A missing template stays on the original status and uses the built-in page. The built-in page and the template context contain the localized title and detail, not a stack trace, SQL text or the template error chain. `mount_pages` uses the same 404 and 405 pages. JSON requests keep `problem_json`, the status and `application/json`.
+`fail` builds the safe HTML or JSON answer. `fail_in` uses the same answer and, for HTML, first tries `templates/errors/{status}.html` for 400, 401, 403, 404, 405, 409, 422 and 500. A missing template stays on the original status and uses the built-in page. The built-in page and the template context contain the localized title and detail, not a stack trace, SQL text or the template error chain. `mount_pages` uses the same 404 and 405 pages. JSON requests keep `problem_json`, the status and `Content-Type: application/problem+json`.
 
 ## Access
 

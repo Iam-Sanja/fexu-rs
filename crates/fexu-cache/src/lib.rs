@@ -24,7 +24,7 @@ mod tests {
     use super::*;
     use serde::ser::Error;
     use serde::{Deserialize, Serialize, Serializer};
-    use std::sync::atomic::{AtomicI64, AtomicU32, Ordering};
+    use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU32, Ordering};
     use std::sync::Arc;
     use std::time::Duration;
 
@@ -1291,6 +1291,118 @@ mod tests {
         assert_eq!(leader.await.expect("leader"), Err(CacheError::Superseded));
         assert_eq!(
             cache
+                .get::<String>("app", "page")
+                .await
+                .expect("read")
+                .as_deref(),
+            Some("newer")
+        );
+    }
+
+    struct HoldMiss {
+        inner: MemoryCache,
+        entered: Arc<tokio::sync::Barrier>,
+        release: Arc<tokio::sync::Barrier>,
+        arm: AtomicBool,
+    }
+
+    #[async_trait::async_trait]
+    impl CacheBackend for HoldMiss {
+        async fn lookup_raw(&self, namespace: &str, key: &str) -> Result<RawLookup, CacheError> {
+            let found = self.inner.lookup_raw(namespace, key).await?;
+            if namespace == "app" && key == "page" && self.arm.swap(false, Ordering::SeqCst) {
+                self.entered.wait().await;
+                self.release.wait().await;
+            }
+            Ok(found)
+        }
+
+        async fn current_token(
+            &self,
+            namespace: &str,
+            key: &str,
+        ) -> Result<WriteToken, CacheError> {
+            self.inner.current_token(namespace, key).await
+        }
+
+        async fn put_raw(
+            &self,
+            namespace: &str,
+            key: &str,
+            bytes: Vec<u8>,
+            ttl: Option<Duration>,
+        ) -> Result<(), CacheError> {
+            self.inner.put_raw(namespace, key, bytes, ttl).await
+        }
+
+        async fn put_raw_if_current(
+            &self,
+            namespace: &str,
+            key: &str,
+            bytes: Vec<u8>,
+            ttl: Option<Duration>,
+            token: WriteToken,
+        ) -> Result<Publish, CacheError> {
+            self.inner
+                .put_raw_if_current(namespace, key, bytes, ttl, token)
+                .await
+        }
+
+        async fn delete_raw(&self, namespace: &str, key: &str) -> Result<(), CacheError> {
+            self.inner.delete_raw(namespace, key).await
+        }
+
+        async fn invalidate_namespace(&self, namespace: &str) -> Result<(), CacheError> {
+            self.inner.invalidate_namespace(namespace).await
+        }
+    }
+
+    #[tokio::test]
+    async fn set_after_observed_miss_is_not_replaced() {
+        let memory = MemoryCache::new(MemoryLimits {
+            max_entries: 8,
+            max_bytes: 4096,
+        })
+        .expect("memory");
+        let direct = TypedCache::new(memory.clone(), 1);
+        let entered = Arc::new(tokio::sync::Barrier::new(2));
+        let release = Arc::new(tokio::sync::Barrier::new(2));
+        let calls = Arc::new(AtomicU32::new(0));
+        let cached = TypedCache::new(
+            HoldMiss {
+                inner: memory,
+                entered: entered.clone(),
+                release: release.clone(),
+                arm: AtomicBool::new(true),
+            },
+            1,
+        );
+        let calls_for_producer = calls.clone();
+        let worker = tokio::spawn(async move {
+            cached
+                .get_or_set("app", "page", None, || {
+                    let calls_for_producer = calls_for_producer.clone();
+                    async move {
+                        calls_for_producer.fetch_add(1, Ordering::SeqCst);
+                        Ok::<_, CacheError>("computed".to_owned())
+                    }
+                })
+                .await
+        });
+        entered.wait().await;
+        direct
+            .set("app", "page", &"newer".to_owned(), None)
+            .await
+            .expect("set");
+        release.wait().await;
+        assert_eq!(
+            worker.await.expect("join").as_deref(),
+            Ok("newer"),
+            "computed value replaced the concurrent set"
+        );
+        assert_eq!(calls.load(Ordering::SeqCst), 0);
+        assert_eq!(
+            direct
                 .get::<String>("app", "page")
                 .await
                 .expect("read")

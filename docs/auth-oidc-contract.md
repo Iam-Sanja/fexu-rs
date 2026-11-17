@@ -4,7 +4,7 @@
 
 This document is the binding design for a future OpenID Connect authorization-code login. It is not an implementation. `RemoteProtocol::Oidc`, `RemoteProtocol::OAuthAuthorizationCode` and `RemoteProtocol::Passkey` stay `is_implemented() == false`. No route accepts an ID token, an authorization code, or a provider subject. No type in `fexu-auth` performs remote login.
 
-The contract does not depend on the unmerged account-lifecycle or session-hardening pull requests. It describes the code on `main` and the rules a later implementation must meet. It does not change `IdentityProvider`, cookies, CSRF, admin routes, migrations, or SQLx.
+The contract describes the local password, MFA, session and cookie behavior already on `main`. That includes `provision_local`, `suspend_local`, `restore_local`, `revoke_local_sessions`, transactional deactivation, single-use reauthentication proofs, and application cookie namespaces. A later implementation must meet the rules below. This document does not change `IdentityProvider`, cookies, CSRF, admin routes, migrations, the OpenAPI document, or SQLx. Future HTTP failures stay on the existing `problem_json` contract. This design adds no security scheme and no route.
 
 ## Already implemented
 
@@ -14,8 +14,8 @@ These controls exist for local password accounts and stay the only login path:
 |---|---|
 | Provider verification | `IdentityProvider::verify` checks an email and a secret. `PasswordProvider` is the only implementation. Unknown emails pay the dummy Argon2 hash. Inactive users return `InvalidCredentials`. |
 | Identity result | `VerifiedIdentity` carries `user_id`, `email` and `method`. It has no `is_staff`, `is_superuser`, or role field. |
-| Session issuance | `login` and `login_replacing` create a new session only after verification. An anonymous session is revoked in that transaction and is never promoted. Confirmed TOTP returns `MfaPending` and does not issue a session. |
-| Local account | `create_user`, `set_user_active` and `close_account` own the user row. Deactivation revokes sessions. Close keeps the row so the email stays reserved and does not delete files. |
+| Session issuance | `login` and `login_replacing` create a new session only after `PasswordProvider` verification. Confirmed TOTP returns `MfaPending`, sets no session cookie, and does not revoke the anonymous session. When a session is issued, the anonymous session is revoked in that transaction and is never promoted. The cookie name comes from `AuthConfig`, including `with_cookie_namespace`. |
+| Local account | `create_user`, `LocalAccountLifecycle`, `set_user_active` and `close_account` own the user row. `set_user_active(false)` and `suspend_local` deactivate the user, revoke sessions and delete pending login challenges in one transaction. `revoke_local_sessions` revokes sessions and deletes those challenges while the account stays active. Close keeps the row so the email stays reserved and does not delete files. |
 | Local authorization | `authorize` reads `is_active`, the stored superuser flag, and role permission codes. `is_staff` does not grant model permissions. Staff and superuser are columns on the local user, written by the admin or CLI, not by a provider result. |
 
 `PasswordProvider` does not insert a session and does not create a user. A local contract test locks that boundary.
@@ -33,7 +33,7 @@ A future login crosses five separate steps. Collapsing any two of them is an acc
 1. **External identity.** The pair `(issuer, subject)`. `issuer` is the configured issuer URL. `subject` is the `sub` claim. The pair is stable for that provider. It is not an email address, not a display name, and not a local user id.
 2. **Local account.** The existing `_fexu_users` row: id, normalized email, password hash, `is_active`, `is_staff`, `is_superuser`. Only local administration changes staff, superuser, and roles.
 3. **Account link.** A row that maps one external identity to one local user id. The link is created only by the explicit linking rules below. It is not inferred.
-4. **Session issuance.** The existing session insert: new session id, new token, privileges copied from the local user row at authentication time. The provider does not receive a session cookie and does not choose the session id.
+4. **Session issuance.** The existing session insert: new session id, new token, privileges copied from the local user row at authentication time. The provider does not receive a session cookie and does not choose the session id. The cookie name is the configured name for that application.
 5. **Local roles and object permissions.** `assign_role`, `grant_permission`, and object policies. Provider claims named `groups`, `roles`, `admin`, or `staff` are ignored.
 
 An external provider must not set `is_staff` or `is_superuser`, must not call `assign_role` or `grant_permission`, and must not write those columns. A compromised or malicious identity provider then yields an ordinary local user, or no user, never an administrator.
@@ -64,7 +64,7 @@ No log line, tracing field, or error string may contain an authorization code, r
 
 ### Start
 
-1. The browser sends a state-changing request to start login. That request uses the existing CSRF check. This contract does not change cookie or CSRF code.
+1. The browser sends a state-changing request to start login. That request uses the existing CSRF check and the configured cookie names, including a namespace from `with_cookie_namespace`. This contract does not change cookie or CSRF code and does not hard-code `fexu_session`.
 2. Fexu draws `state` and `nonce` from the system random source, at least 128 bits each, and stores only their hashes, bound to the current anonymous session id, with a 10-minute expiry. Raw values are placed only in the redirect that leaves the server.
 3. Fexu draws a PKCE `code_verifier` of 43 to 128 unreserved characters and stores it server-side on that same record. The authorize request carries `code_challenge = BASE64URL(SHA256(verifier))` and `code_challenge_method=S256`. The plain method is rejected.
 4. `redirect_uri` is the one configured value. A query parameter cannot replace it. Comparison is an exact string match. Wildcards, open redirects, and user-supplied URIs are rejected.
@@ -99,8 +99,8 @@ Validation order is fixed. A later check must not run if an earlier check fails.
 1. Resolve the link by `(issuer, subject)` using the rules in the next section.
 2. On `Unlinked` or `Refused`, issue no session and do not write staff, superuser, or roles.
 3. On `Linked`, load the local user. If the user is missing or `is_active` is false, issue no session. Do not reactivate the user.
-4. If the local user has confirmed TOTP, stop with the existing `MfaPending` challenge. The OIDC result does not skip the second factor.
-5. Otherwise call the existing session insert. The new session id must differ from the anonymous session id. The anonymous session is revoked only in that insert, which is the same fixation rule as password login.
+4. If the local user has confirmed TOTP, stop with the existing `MfaPending` challenge. Do not set a session cookie and do not revoke the anonymous session. The OIDC result does not skip the second factor. A later `complete_pending_login` still refuses an inactive user and consumes the challenge.
+5. Otherwise call the existing session insert only when `is_active` is true in that same transaction. Reading the flag earlier and inserting later is not enough, because `suspend_local` can commit in between. The new session id must differ from the anonymous session id. The anonymous session is revoked only in that insert, which is the same fixation rule as password login. The issued cookie uses the configured session name.
 6. Privileges on the issued session come from the local row and from role tables. They are not taken from the token.
 
 ### Logout, replay, and provider failure
@@ -120,7 +120,7 @@ Email equality never selects an existing local user and never writes a link. The
 | Situation | Required result |
 |---|---|
 | First login, no link | `Unlinked`. Default policy creates neither a user nor a link. A deployment may later opt in to creating an inactive, non-staff, non-superuser user with no roles, but that switch is off and is not part of this contract's implementation. Silent creation of an active user is forbidden. |
-| Local account already uses that email | `Refused`. The user may link only after a local password login, and TOTP when it is enabled, on a live session, followed by an explicit confirmation. The confirmation stores `(issuer, subject)` for that session's user id. |
+| Local account already uses that email | `Refused`. The user may link only after a local password login, and TOTP when it is enabled, on a live session, followed by an explicit confirmation. That confirmation consumes the existing reauthentication proof. The proof is bound to that user and that session, lasts at most 300 seconds, and is accepted once in the current process. The confirmation stores `(issuer, subject)` for that session's user id. |
 | Identity already linked | `Linked` to that local user. Claims do not change email, staff, superuser, or roles. |
 | Second provider | A new `(issuer, subject)` is a new link. It does not replace another issuer. The same `sub` at two issuers is two identities. Linking the second provider requires the same local reauthentication and confirmation. |
 | Provider changes the email claim | The link stays on `(issuer, subject)`. The local email does not change. A local email change stays a separate, already-authenticated account operation. |

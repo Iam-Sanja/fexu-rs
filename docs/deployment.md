@@ -19,7 +19,7 @@ The admin does not need a node process. `cargo build` is sufficient. Put `FEXU_C
 
 `fexu::serve` stops the process on Ctrl+C and, on Unix, on SIGTERM. `FEXU_LOG_FORMAT=json` selects JSON logs. The access log records method, path, status, elapsed time and `x-request-id`. Query strings are not logged. An inbound `x-request-id` is kept only when it is 8 to 64 ASCII letters, digits or hyphens. OpenTelemetry is not bundled. `/healthz` does not touch the database. `/readyz` runs `SELECT 1` and does not migrate. `App::strict_migrations` refuses startup when migrations are pending and does not apply them.
 
-A different `BIND_ADDRESS`, in particular `0.0.0.0:3000`, can make the service accessible on other networks. With the anonymous demo model, this is not an Internet deployment. Inside `deploy/compose.yaml` the app listens on `0.0.0.0` only on the Compose network. The published port is the proxy on `127.0.0.1:8443`. The database port is not published.
+A different `BIND_ADDRESS`, in particular `0.0.0.0:3000`, can make the service accessible on other networks. `ProjectConfig::bind_address` rejects `0.0.0.0` and `::` unless `server.allow_wildcard_bind = true` or `FEXU_ALLOW_WILDCARD_BIND=true`. That opt-in does not add the bind address to `FEXU_ALLOWED_ORIGINS`. With the anonymous demo model, this is not an Internet deployment. Inside `deploy/compose.yaml` the app listens on `0.0.0.0` only on the Compose network and sets the opt-in. The published port is the proxy on `127.0.0.1:8443`. The database port is not published. The app connects as `fexu_app`, which is `LOGIN NOSUPERUSER`. Migrations stay on the owner role `fexu`.
 
 ## Optional PostgreSQL (Implemented)
 
@@ -55,7 +55,16 @@ SQLite can carry local development and testing. For several app processes, it is
 
 ## Docker, Portainer and Nginx Proxy Manager
 
-`deploy/compose.yaml` uses an internal network and Caddy. Portainer and Nginx Proxy Manager are not part of this repository.
+`deploy/compose.yaml` uses an internal network and Caddy. Portainer is not part of this repository. `deploy/nginx-proxy-manager.example.conf` is a header snippet for one NPM Proxy Host. It is not started by Compose.
+
+Four layouts use the same rules:
+
+1. Direct local HTTP. Bind `127.0.0.1:3000`. Leave `FEXU_ALLOW_WILDCARD_BIND` and `FEXU_TRUST_PROXY` unset. Set `FEXU_ALLOWED_ORIGINS` to the loopback `http` origins you actually open. `Secure` cookies stay off only while `FEXU_COOKIE_SECURE` is unset and `FEXU_ENV` is not `production`.
+2. Docker Compose with PostgreSQL. `deploy/compose.yaml` binds the app to `0.0.0.0:8080` with `FEXU_ALLOW_WILDCARD_BIND=true`, publishes only Caddy on `127.0.0.1:8443`, and does not publish PostgreSQL. The runtime role is `fexu_app`. The owner `fexu` remains for migrations. Both passwords in the file are local defaults.
+3. HTTPS behind Nginx Proxy Manager. Terminate TLS in NPM. Forward `Host`, `X-Forwarded-Proto`, `X-Forwarded-Host`, `X-Forwarded-For`, `Origin` and `Referer` with the snippet. Set `FEXU_ALLOWED_ORIGINS` to that public `https` origin and `FEXU_COOKIE_SECURE=1`.
+4. A trusted proxy peer is optional and separate. Set `FEXU_TRUST_PROXY=1` only together with `FEXU_TRUSTED_PROXIES` set to the proxy's immediate address. Read that address from the running container. The framework does not require a fixed private IP, and `*` trusts nobody.
+
+Untrusted `Host`, `Forwarded`, `X-Forwarded-Host`, `X-Forwarded-Proto` and `X-Forwarded-For` never become an allowed origin. CSRF still requires the session cookie and the matching token. An `http` origin is rejected when the `Secure` cookie flag is on.
 
 ## Acceptance criteria
 
