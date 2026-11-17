@@ -12,7 +12,7 @@ Stored codes contain only lowercase letters, digits, periods and underscores, up
 
 ## Backoff
 
-The waiting time in seconds is `min(300, 2^(attempt-1))`. The first failed attempt waits one second, the second two, then four, until 300 seconds. `jobs.jitter = true` adds a portion from the UTC second. Tests set `JobPolicy.jitter` to `false` and advance `ManualClock`. There is no real waiting time in the test.
+The waiting time in seconds is `min(300, 2^(attempt-1))`. The first failed attempt waits one second, the second two, then four. From the tenth attempt the wait stays at 300 seconds, so a handler cannot spin without a delay. `max_attempts` is 1 to 20. After that the row is `failed` with `job.attempts`. `jobs.jitter = true` adds a portion from the UTC second and never exceeds twice the base wait. Tests set `JobPolicy.jitter` to `false` and advance `ManualClock`. There is no real waiting time in the test.
 
 `next_attempt_at` and `available_at` must both be reached before the job is claimed again.
 
@@ -20,10 +20,13 @@ The waiting time in seconds is `min(300, 2^(attempt-1))`. The first failed attem
 
 ```powershell
 fexu jobs list
+fexu jobs failed
 fexu jobs inspect <job-id>
 fexu jobs retry <job-id> --yes
 fexu jobs cancel <job-id> --yes
 ```
+
+`fexu jobs failed` lists rows with status `failed`. It is read-only, prints the error code, and does not print the payload. Those rows are the dead-letter set. Retention still deletes old failed rows. There is no separate dead-letter status and no exactly-once delivery.
 
 `list` and `inspect` open SQLite with `mode=ro` and do not write. `retry` applies to `failed` and `cancelled`. It sets `pending`, `attempts = 0` and deletes lease and error code. `cancel` applies to `pending` and `retry`. A `running` job remains untouched and delivers `job.running`.
 

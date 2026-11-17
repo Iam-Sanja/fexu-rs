@@ -10,7 +10,13 @@ Three settings are independent.
 
 A wildcard bind is an explicit opt-in. Set `server.allow_wildcard_bind = true` in `fexu.toml`, or set `FEXU_ALLOW_WILDCARD_BIND=true` when `BIND_ADDRESS` is `0.0.0.0:port` or `[::]:port`. The bind address is not added to the origin allowlist. `Host`, `X-Forwarded-Host` and `X-Forwarded-Proto` are not public origins.
 
-`FEXU_TRUST_PROXY=true` alone does not trust forwarded headers. The immediate peer address must also be listed in `FEXU_TRUSTED_PROXIES`. A `*` entry is ignored. `Origin: null` is rejected unless the browser also sends `Sec-Fetch-Site: same-origin`.
+`FEXU_TRUST_PROXY=true` alone does not trust forwarded headers. The immediate peer address must also be listed in `FEXU_TRUSTED_PROXIES`. A `*` entry is ignored. `Origin: null` is rejected unless the browser also sends `Sec-Fetch-Site: same-origin`. `Forwarded` is not read as an origin or as a client address.
+
+`fexu check --deploy` reads `BIND_ADDRESS` when it is set. A wildcard value is an error until `server.allow_wildcard_bind` or `FEXU_ALLOW_WILDCARD_BIND=true` makes it explicit. The OK line states that the bind address is not an origin. `FEXU_TRUST_PROXY=1` with only `*` is an error because no peer remains.
+
+The disposable stack in `deploy/` is the Compose example. Its app sets `FEXU_ALLOW_WILDCARD_BIND=true` and does not set `FEXU_TRUST_PROXY`. PostgreSQL has no published port. The first database start runs `deploy/postgres/init-app-role.sh`, which creates `fexu_app` as `LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION` and grants `CONNECT` plus default table and sequence privileges for objects the owner creates afterwards. `/readyz` is `SELECT 1` and needs that `CONNECT`. Migrations use the owner role, not `fexu_app`. The local passwords `fexu_dev_only` and `fexu_app_dev_only` are defaults for this disposable database. An existing volume does not rerun the init script.
+
+`deploy/Caddyfile` forwards `X-Forwarded-Proto` and `X-Forwarded-Host` from the proxy connection and leaves the browser `Origin` unchanged. `deploy/nginx-proxy-manager.example.conf` shows the same headers for NPM, including `X-Forwarded-For`, `Origin` and `Referer`. Neither file is a public origin allowlist. A real NPM process, a LAN browser, and a live proxy were not part of the automated checks. See [deploy/README.md](../deploy/README.md).
 
 The example in `examples/deploy` is a multi-stage image. The runtime stage copies only `embedded-migrate`. Auth and job migration JSON is compiled into that binary, so the image does not need the Rust source tree or those JSON files. PostgreSQL has no published host port. Caddy publishes HTTPS on `127.0.0.1:443` only.
 

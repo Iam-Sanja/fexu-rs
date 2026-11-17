@@ -689,7 +689,8 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {{
     }}
     let settings = settings::load()?;
     tracing_subscriber::fmt().with_env_filter("info").init();
-    let db = fexu::db::connect(&settings.resolved_database_url()).await?;
+    let database_url = settings.resolved_database_url()?;
+    let db = fexu::db::connect(&database_url).await?;
     let address = settings.bind_address()?;
     let mut auth_config = fexu::auth::AuthConfig::from_env();
     auth_config.apply_project_session(settings.session_hours, settings.idle_minutes);
@@ -727,6 +728,13 @@ mod tests {
             assert!(source.contains("fallback_locale = \"en\""));
             assert!(!source.contains("default_locale = \"de\""));
         }
+    }
+
+    #[test]
+    fn generated_runtime_uses_the_shared_database_resolver() {
+        let source = super::project_source(super::Template::Api);
+        assert!(source.contains("settings.resolved_database_url()?"));
+        assert!(source.contains("fexu::db::connect(&database_url)"));
     }
 
     #[test]

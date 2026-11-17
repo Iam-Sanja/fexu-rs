@@ -103,7 +103,7 @@ Set-Location ..
 fexu new project demo --template fullstack --fexu-path $fexuRepo
 ```
 
-The CLI prompts for the admin password; there is **no default password**. New projects do not include shop-specific business models. See [project generation](docs/project-generator.md) and [CLI reference](docs/cli.md).
+The CLI prompts for the admin password; there is **no default password**. New projects do not include shop-specific business models. The short command list, and which of those commands this repository actually ran, is in [quickstart](docs/quickstart.md). See [project generation](docs/project-generator.md) and [CLI reference](docs/cli.md).
 
 > [!NOTE]
 > Independent projects do not add a `[patch.crates-io]` entry. SQLite is rusqlite inside Fexu. Published `sqlx-sqlite` cannot be added beside this graph, because both bindings set `links = "sqlite3"`. See [SQLite consumer instructions](docs/security/sqlite-rustsec-2026-0459.md).

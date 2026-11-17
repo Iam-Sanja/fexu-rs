@@ -30,7 +30,7 @@ The manifest itself is not in `files`. An SHA-256 applies only to the recorded c
 
 ## Generation
 
-`fexu new` writes a manifest after generating all API or fullstack project files. The manifest is not required at runtime. Generated projects currently use a local Fexu path dependency.
+`fexu new` writes a manifest after generating all API or fullstack project files. The manifest is not required at runtime. The dependency is `fexu` `=0.1.2` from crates.io unless `--fexu-path` points at a local checkout.
 
 ## Legacy
 

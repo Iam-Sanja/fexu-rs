@@ -599,6 +599,24 @@ pub async fn date_buckets(
     Ok(buckets)
 }
 
+pub(crate) fn month_group_sql(
+    backend: DatabaseBackend,
+    kind: ColumnKind,
+    column: &str,
+) -> Result<String, FexuError> {
+    if !is_safe_ident(column) {
+        return Err(FexuError::Validation(format!(
+            "column {column} is not available"
+        )));
+    }
+    if !matches!(kind, ColumnKind::Date | ColumnKind::DateTime) {
+        return Err(FexuError::Validation(format!(
+            "column {column} cannot be grouped by month"
+        )));
+    }
+    Ok(bucket_expression(backend, kind, column, 7))
+}
+
 fn bucket_expression(
     backend: DatabaseBackend,
     kind: ColumnKind,

@@ -7,6 +7,7 @@ mod anonymous;
 mod config;
 mod cookie;
 mod error;
+mod lifecycle;
 mod mfa;
 mod mfa_routes;
 mod password;
@@ -23,6 +24,8 @@ mod totp;
 #[cfg(test)]
 mod anonymous_tests;
 #[cfg(test)]
+mod lifecycle_tests;
+#[cfg(test)]
 mod reset_tests;
 #[cfg(test)]
 mod security_tests;
@@ -32,6 +35,7 @@ mod sqlite_tests;
 pub use anonymous::{AnonymousSession, BrowserActor};
 pub use config::{AuthConfig, CookieSameSite, Environment};
 pub use error::AuthError;
+pub use lifecycle::{AccountOrigin, LocalAccountLifecycle, ProvisionedAccount};
 pub use mfa::{AccountPhase, ReauthGrant, RecoverySet, SessionInfo, TotpEnrollment};
 pub use password::{hash_password, validate_new_password, verify_password};
 pub use policy::ObjectPolicy;
