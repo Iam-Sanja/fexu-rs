@@ -74,7 +74,7 @@ The example with Instant, Delay, Interval and Mail Job is in `examples/notes`. `
 2. Register handlers. The app implements `FexuApplication::register_jobs`. `App::install` does not call this method.
 3. Enqueue a job from the web process with `queue.enqueue::<Handler>(...)`. First create `_fexu_jobs` with `fexu migrate up`.
 4. Starting the worker. `fexu generate worker` creates `src/bin/worker.rs` if the file is missing. The process loads `fexu.toml`, connects the configured database and calls `WorkerHost::run_until_ctrl_c`. `fexu dev` does not start it.
-5. Inspect status with `fexu jobs list` or `fexu jobs inspect <id>`. Output includes the handler, version, attempt count, timestamps and error code. Payloads remain hidden unless `--show-payload` is supplied.
+5. Inspect status with `fexu jobs list`, `fexu jobs failed`, or `fexu jobs inspect <id>`. Output includes the handler, version, attempt count, timestamps and error code. Payloads remain hidden unless `inspect --show-payload` is supplied. `failed` lists permanently failed jobs only.
 6. Handle failures with `JobError::retry` or `JobError::permanent`. Operators can use `fexu jobs retry <id> --yes` or `fexu jobs cancel <id> --yes` for eligible states.
 
 An unknown handler remains `pending` and does not increase `attempts`. If the migration is missing, the worker ends with `job.migration.missing` and Exitcode 2.
