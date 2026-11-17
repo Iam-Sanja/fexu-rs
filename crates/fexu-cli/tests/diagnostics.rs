@@ -47,7 +47,7 @@ fn write_project(directory: &Path) {
     .unwrap();
     std::fs::write(
         directory.join("Cargo.toml"),
-        "[package]\nname = \"legacy\"\nversion = \"0.1.0\"\n\n[dependencies]\nfexu = { path = \"D:/04_Projekte_Arbeit/Projekte/fexu/crates/fexu\", features = [\"admin-ui\"] }\n",
+        "[package]\nname = \"legacy\"\nversion = \"0.1.0\"\n\n[dependencies]\nfexu = { path = \"vendor/fexu\", features = [\"admin-ui\"] }\n",
     )
     .unwrap();
     std::fs::write(directory.join("secret.txt"), "do not touch").unwrap();
@@ -186,7 +186,7 @@ fn check_strict_doctor_and_dev_warn_without_writing() {
 
     std::fs::write(
         directory.join("Cargo.toml"),
-        "[dependencies]\nfexu = { path = \"D:/04_Projekte_Arbeit/Projekte/fexu/crates/fexu\" }\n",
+        "[dependencies]\nfexu = { path = \"vendor/fexu\" }\n",
     )
     .unwrap();
     let dev = output(fexu(&directory).env("DATABASE_URL", &url).arg("dev"));

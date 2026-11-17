@@ -12,6 +12,7 @@ WORKDIR /home/fexu
 COPY --from=build /src/target/release/myshop /usr/local/bin/myshop
 USER fexu
 ENV BIND_ADDRESS=0.0.0.0:8080
+ENV FEXU_ALLOW_WILDCARD_BIND=true
 EXPOSE 8080
 HEALTHCHECK --interval=10s --timeout=3s --retries=5 CMD wget -qO- http://127.0.0.1:8080/readyz || exit 1
 CMD ["myshop"]

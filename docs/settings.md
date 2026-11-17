@@ -20,7 +20,7 @@ An unknown section or key remains an error. Exceptions are `[custom.<name>]`, de
 fn load() -> Result<fexu::migrations::ProjectConfig, Box<dyn std::error::Error>> {
     let settings = fexu::migrations::Settings::discover(std::path::Path::new("."))?;
     let project = settings.project();
-    let _url = project.resolved_database_url();
+    let _url = project.resolved_database_url()?;
     let _address = project.bind_address()?;
     Ok(project.clone())
 }
@@ -64,9 +64,22 @@ Development is the default. Generated projects set `debug = true` and bind to `1
 
 `ProjectConfig` implements `Debug` by hand. The database URL with user and password becomes `schema://[redacted]@host`. A URL with `password=` becomes `[redacted]`. Mail passwords, CSRF secrets and custom values with `password`, `secret`, `token` or `credential` in the key name are rejected when read without writing the value into the message.
 
+## Database target
+
+CLI commands, diagnostics, workers, and the generated runtime call the same resolver:
+
+1. `--database-url`, when the command has that option
+2. `DATABASE_URL`
+3. `database.url` in `fexu.toml`
+4. `sqlite://db.sqlite3?mode=rwc` only when no project file is available and the command already allowed that default
+
+An empty value or an unsupported scheme is an error. The resolver does not continue to the next source. A repeated `database.url` is also an error. Relative SQLite paths from the project file are resolved from the directory that contains `fexu.toml`, including when the command starts in a subdirectory. Override and environment URLs stay as written. Commands that open a database print `database: <redacted> (source)` on stderr. User names and passwords are replaced by `[redacted]`. `check`, `doctor`, `migrate status`, and `migrate plan` do not apply migrations.
+
+`fexu worker` and `fexu jobs` still refuse an implicit SQLite file when no project and no URL are present.
+
 ## CLI
 
-`fexu check` and `fexu doctor` read the file, check the runtime rules and report a set `DATABASE_URL` without outputting it. A static test is not combined.
+`fexu check` and `fexu doctor` read the file, check the runtime rules, and report the redacted database target. A set `DATABASE_URL` is reported as an override without printing its raw value. A static test is not combined.
 
 ## Example
 
@@ -103,4 +116,4 @@ The workspace file with only `migrations_dir` and `schema_command` remains valid
 
 ## Limitations
 
-`resolved_database_url` returns the environment value to the caller. Logging that value directly bypasses the redaction provided by `ProjectConfig::Debug`. HTML error responses from view helpers are separate from project templates under `templates/errors/`.
+`resolved_database_url` returns the selected URL to the caller. Logging that value directly bypasses the redaction provided by `ProjectConfig::Debug` and `redact_database_url`. HTML error responses from view helpers are separate from project templates under `templates/errors/`.
