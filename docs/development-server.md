@@ -26,7 +26,7 @@ Both commands read `fexu.toml` in the working directory or a parent directory.
 
 ## Data flow
 
-Restarting reloads Tera templates. `dev` launches the binary from `target/debug` or `CARGO_TARGET_DIR/debug`. Its recursive file watcher ignores `target`, `node_modules`, `.git`, `dist` and `embedded-admin`; only `.rs`, `.toml` and `.json` changes trigger restarts, at least 400 ms apart. It runs `cargo build --bin <paket>` before launching the binary. A crash waits for the next file change. Ctrl+C stops the child process, and only one server instance runs at a time.
+Restarting reloads Tera templates. `dev` launches the binary from `target/debug` or `CARGO_TARGET_DIR/debug`. Its recursive file watcher ignores `target`, `node_modules`, `.git`, `dist` and `embedded-admin`. Changes to `.rs`, `.toml`, `.json`, `.html` and `.css` trigger restarts, at least 400 ms apart. It runs `cargo build --bin <package>` before launching the binary. If that build fails, or the port is taken after the build, the previous process stays stopped and no second process is started. Neither case runs a migration. A crash waits for the next file change. Ctrl+C stops the child process.
 
 `build` runs `cargo build --release` and prints the resulting artifact paths. When `CARGO_TARGET_DIR` is set, artifacts are placed in its release directory. No frontend build is required.
 

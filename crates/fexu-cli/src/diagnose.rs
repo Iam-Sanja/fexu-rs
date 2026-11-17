@@ -45,13 +45,13 @@ pub fn doctor() -> ExitCode {
             if project.migrations_dir.is_dir() {
                 report(
                     "OK",
-                    &format!("Migrationsverzeichnis {}", project.migrations_dir.display()),
+                    &format!("migrations.dir {}", project.migrations_dir.display()),
                 );
             } else {
                 errors += 1;
                 report(
                     "ERROR",
-                    "The migrations directory is missing. Create it before running migrate up.",
+                    "migrations.missing The migrations directory is missing. Fix: create it, or generate the project again with fexu new project. doctor does not migrate.",
                 );
             }
             for relative in ["Cargo.toml", "src/main.rs", "src/lib.rs"] {
@@ -60,7 +60,12 @@ pub fn doctor() -> ExitCode {
                     report("OK", &format!("{relative} exists."));
                 } else {
                     errors += 1;
-                    report("ERROR", &format!("{relative} is missing."));
+                    report(
+                        "ERROR",
+                        &format!(
+                            "project.file.missing {relative} is missing. Fix: run this command inside a directory created by fexu new project."
+                        ),
+                    );
                 }
             }
             if project.host == "0.0.0.0" {
@@ -91,12 +96,15 @@ pub fn doctor() -> ExitCode {
             }
             if project.templates_enabled {
                 if project.templates_directory().is_dir() {
-                    report("OK", "Vorlagenverzeichnis exists.");
+                    report("OK", "templates.dir exists.");
                 } else {
                     errors += 1;
                     report(
                         "ERROR",
-                        "templates.enabled is true, but the templates directory is missing.",
+                        &format!(
+                            "templates.missing {} is missing. Fix: create that directory or set templates.enabled = false.",
+                            project.templates_directory().display()
+                        ),
                     );
                 }
             }
@@ -120,7 +128,7 @@ pub fn doctor() -> ExitCode {
                 errors += 1;
                 report(
                     "ERROR",
-                    "The database URL must start with sqlite: or postgres:.",
+                    "database.url The database URL must start with sqlite: or postgres:. Fix: set [database] url in fexu.toml or DATABASE_URL. The value is not shown. This command does not open a second resolver.",
                 );
             }
             let counts = migration_lines(&project, false, false);
@@ -167,7 +175,9 @@ pub fn check(strict: bool, deploy: bool) -> ExitCode {
             let valid = value.trim().len() == 64
                 && value.trim().chars().all(|char| char.is_ascii_hexdigit());
             if !valid {
-                eprintln!("FEXU_CSRF_SECRET must contain 64 hexadecimal characters.");
+                eprintln!(
+                    "FEXU_CSRF_SECRET must contain 64 hexadecimal characters. Fix: replace it with 64 hex characters. The current value is not shown."
+                );
                 return ExitCode::from(1);
             }
         }
@@ -291,7 +301,25 @@ fn tool(program: &str) -> Command {
 }
 
 fn report(level: &str, message: &str) {
-    println!("[{level}] {message}");
+    println!("[{level}] {}", public_detail(message));
+}
+
+/// Hides userinfo in database URLs and `password=` query text.
+fn public_detail(text: &str) -> String {
+    text.split_inclusive(char::is_whitespace)
+        .map(|token| {
+            let trimmed = token.trim();
+            if trimmed.contains("://") {
+                let bare = trimmed.trim_matches(|char| matches!(char, '"' | '\'' | ',' | ')'));
+                let redacted = fexu_migrations::redact_database_url(bare);
+                token.replacen(trimmed, &redacted, 1)
+            } else if trimmed.to_ascii_lowercase().contains("password=") {
+                "[redacted] ".to_owned()
+            } else {
+                token.to_owned()
+            }
+        })
+        .collect()
 }
 
 /// Binds the port only for validation and immediately releases it.
@@ -632,7 +660,13 @@ fn migration_lines(project: &ProjectConfig, compare_schema: bool, deploy: bool) 
             Counts { errors, warnings }
         }
         Err(error) => {
-            report("ERROR", &error);
+            report(
+                "ERROR",
+                &format!(
+                    "{} Fix: check [database] url or DATABASE_URL. This command does not create a database and does not migrate.",
+                    public_detail(&error)
+                ),
+            );
             Counts {
                 errors: 1,
                 warnings: 0,
@@ -829,7 +863,10 @@ fn project_lines(project: &ProjectConfig) -> ProjectCounts {
 
 #[cfg(test)]
 mod tests {
-    use super::{configured_proxy_peers, csrf_secret_shape_ok, origins_are_https, port_available};
+    use super::{
+        configured_proxy_peers, csrf_secret_shape_ok, origins_are_https, port_available,
+        public_detail,
+    };
 
     #[test]
     fn a_bound_port_is_reported_as_busy_and_released() {
@@ -860,5 +897,19 @@ mod tests {
         ));
         assert!(!origins_are_https("http://shop.example"));
         assert!(!origins_are_https(""));
+    }
+
+    #[test]
+    fn diagnostic_text_hides_database_credentials() {
+        let secret = "postgres://ada:s3cret-value@db.internal:5432/app";
+        let rendered = public_detail(&format!("migration.database.unavailable: {secret}"));
+        assert!(rendered.contains("postgres://[redacted]@db.internal:5432/app"));
+        assert!(!rendered.contains("s3cret-value"));
+        assert!(!rendered.contains("ada:"));
+        assert_eq!(
+            public_detail("sqlite://db.sqlite3?mode=rwc&password=hunter2"),
+            "[redacted]"
+        );
+        assert!(!public_detail("password=hunter2").contains("hunter2"));
     }
 }
