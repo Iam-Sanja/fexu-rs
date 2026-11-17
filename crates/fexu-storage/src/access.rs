@@ -26,3 +26,26 @@ impl StorageAccess for OwnerAccess {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{OwnerAccess, StorageAccess, StorageAction};
+    use uuid::Uuid;
+
+    #[test]
+    fn another_actor_cannot_upload_or_download() {
+        let actor = Uuid::new_v4();
+        let owner = Uuid::new_v4();
+        assert!(OwnerAccess
+            .permit(owner, owner, StorageAction::Upload)
+            .is_ok());
+        assert!(matches!(
+            OwnerAccess.permit(actor, owner, StorageAction::Download),
+            Err(crate::StorageError::Forbidden)
+        ));
+        assert!(matches!(
+            OwnerAccess.permit(actor, owner, StorageAction::Delete),
+            Err(crate::StorageError::Forbidden)
+        ));
+    }
+}
