@@ -12,7 +12,7 @@ Stored codes contain only lowercase letters, digits, periods and underscores, up
 
 ## Backoff
 
-The waiting time in seconds is `min(300, 2^(attempt-1))`. The first failed attempt waits one second, the second two, then four, until 300 seconds. `jobs.jitter = true` adds a portion from the UTC second. Tests set `JobPolicy.jitter` to `false` and advance `ManualClock`. There is no real waiting time in the test.
+The waiting time in seconds is `min(300, 2^(attempt-1))`. The first failed attempt waits one second, the second two, then four. From the tenth attempt the wait stays at 300 seconds, so a handler cannot spin without a delay. `max_attempts` is 1 to 20. After that the row is `failed` with `job.attempts`. `jobs.jitter = true` adds a portion from the UTC second and never exceeds twice the base wait. Tests set `JobPolicy.jitter` to `false` and advance `ManualClock`. There is no real waiting time in the test.
 
 `next_attempt_at` and `available_at` must both be reached before the job is claimed again.
 
