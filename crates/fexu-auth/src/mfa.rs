@@ -101,6 +101,7 @@ impl AuthService {
         user: &AuthUser,
         password: &str,
     ) -> Result<TotpEnrollment, AuthError> {
+        self.require_live_actor(user).await?;
         self.require_password(user, password).await?;
         if account_store::find_totp(self.database(), user.id)
             .await?
@@ -129,10 +130,22 @@ impl AuthService {
         user: &AuthUser,
         code: &str,
     ) -> Result<RecoverySet, AuthError> {
+        self.require_live_actor(user).await?;
+        let key = factor_key(user.id);
+        if self.limited(&key)? {
+            return Err(AuthError::RateLimited);
+        }
         let row = self.totp_row(user.id).await?;
         let secret = self.open_secret(user.id, &row).await?;
         let now = unix_now()?;
-        let step = accept_totp(&secret, code, now, None)?;
+        let step = match accept_totp(&secret, code, now, None) {
+            Ok(step) => step,
+            Err(AuthError::InvalidCredentials) => {
+                self.record_failure(&key)?;
+                return Err(AuthError::InvalidCredentials);
+            }
+            Err(error) => return Err(error),
+        };
         let codes = recovery_codes();
         let transaction = self.database().begin().await.map_err(AuthError::database)?;
         account_store::confirm_totp(&transaction, user.id, now, step).await?;
@@ -149,6 +162,7 @@ impl AuthService {
             .await?;
         }
         transaction.commit().await.map_err(AuthError::database)?;
+        self.clear_failures(&key)?;
         Ok(RecoverySet { codes })
     }
 
@@ -158,8 +172,16 @@ impl AuthService {
         password: &str,
         second_factor: &str,
     ) -> Result<(), AuthError> {
+        self.require_live_actor(user).await?;
         self.require_password(user, password).await?;
-        self.accept_second_factor(user.id, second_factor).await?;
+        match self.accept_second_factor(user.id, second_factor).await {
+            Ok(()) => {}
+            Err(AuthError::InvalidCredentials) => {
+                self.record_failure(&factor_key(user.id))?;
+                return Err(AuthError::InvalidCredentials);
+            }
+            Err(error) => return Err(error),
+        }
         let now = unix_now()?;
         let transaction = self.database().begin().await.map_err(AuthError::database)?;
         account_store::delete_totp(&transaction, user.id).await?;
@@ -188,24 +210,42 @@ impl AuthService {
             self.record_failure(&key)?;
             return Err(AuthError::InvalidCredentials);
         };
+        let factor = factor_key(row.user_id);
+        if self.limited(&factor)? {
+            return Err(AuthError::RateLimited);
+        }
         if !challenge_is_open(&row, now) {
             let _ = account_store::consume_challenge(self.database(), row.id, now).await;
             self.record_failure(&key)?;
             return Err(AuthError::InvalidCredentials);
         }
-        account_store::bump_challenge(self.database(), row.id, row.attempts.saturating_add(1))
-            .await?;
+        let account = store::find_user_by_id(self.database(), row.user_id).await?;
+        if account.as_ref().is_none_or(|user| !user.is_active) {
+            let _ = account_store::consume_challenge(self.database(), row.id, now).await;
+            self.record_failure(&key)?;
+            return Err(AuthError::InvalidCredentials);
+        }
+        if account_store::bump_challenge(self.database(), row.id, now)
+            .await
+            .is_err()
+        {
+            self.record_failure(&key)?;
+            return Err(AuthError::InvalidCredentials);
+        }
         if self.accept_second_factor(row.user_id, code).await.is_err() {
             self.record_failure(&key)?;
+            self.record_failure(&factor)?;
             return Err(AuthError::InvalidCredentials);
         }
         account_store::consume_challenge(self.database(), row.id, now).await?;
         self.clear_failures(&key)?;
+        self.clear_failures(&factor)?;
         self.issue_login_session(row.user_id, anonymous_token, now)
             .await
     }
 
     pub async fn list_sessions(&self, user: &AuthUser) -> Result<Vec<SessionInfo>, AuthError> {
+        self.require_live_actor(user).await?;
         let now = unix_now()?;
         let rows = account_store::list_open_sessions(self.database(), user.id).await?;
         Ok(rows
@@ -226,19 +266,20 @@ impl AuthService {
         actor: &AuthUser,
         session_id: Uuid,
     ) -> Result<(), AuthError> {
+        self.require_live_actor(actor).await?;
+        let account = store::find_user_by_id(self.database(), actor.id)
+            .await?
+            .ok_or(AuthError::Unauthenticated)?;
         let rows = account_store::list_open_sessions(self.database(), actor.id).await?;
         let own = rows.iter().any(|row| row.id == session_id);
-        if !own && !actor.is_superuser {
+        if !own && !account.is_superuser {
             return Err(AuthError::Forbidden);
-        }
-        if !own && actor.is_superuser {
-            store::revoke_session(self.database(), session_id, unix_now()?).await?;
-            return Ok(());
         }
         store::revoke_session(self.database(), session_id, unix_now()?).await
     }
 
     pub async fn revoke_other_sessions(&self, user: &AuthUser) -> Result<u64, AuthError> {
+        self.require_live_actor(user).await?;
         let now = unix_now()?;
         let rows = account_store::list_open_sessions(self.database(), user.id).await?;
         let mut revoked = 0u64;
@@ -257,12 +298,20 @@ impl AuthService {
         password: &str,
         second_factor: Option<&str>,
     ) -> Result<ReauthGrant, AuthError> {
+        self.require_live_actor(user).await?;
         self.require_password(user, password).await?;
         if self.totp_enabled(user.id).await? {
             let Some(code) = second_factor else {
                 return Err(AuthError::Validation("second factor is required".into()));
             };
-            self.accept_second_factor(user.id, code).await?;
+            match self.accept_second_factor(user.id, code).await {
+                Ok(()) => {}
+                Err(AuthError::InvalidCredentials) => {
+                    self.record_failure(&factor_key(user.id))?;
+                    return Err(AuthError::InvalidCredentials);
+                }
+                Err(error) => return Err(error),
+            }
         }
         let now = unix_now()?;
         let expires_at = now.saturating_add(300);
@@ -272,7 +321,7 @@ impl AuthService {
 
     pub fn require_reauth(&self, user: &AuthUser, proof: &str) -> Result<(), AuthError> {
         let now = unix_now()?;
-        if reauth_valid(
+        if !reauth_valid(
             &self.config().mfa_key,
             &legacy_mfa_key(&self.config().csrf_secret),
             user.id,
@@ -280,6 +329,13 @@ impl AuthService {
             proof,
             now,
         ) {
+            return Err(AuthError::Unauthenticated);
+        }
+        let expires_at = proof.split('.').nth(1).unwrap_or("0");
+        let Ok(expires_at) = expires_at.parse::<i64>() else {
+            return Err(AuthError::Unauthenticated);
+        };
+        if self.consume_reauth_proof(proof, expires_at)? {
             Ok(())
         } else {
             Err(AuthError::Unauthenticated)
@@ -298,6 +354,7 @@ impl AuthService {
     }
 
     pub async fn close_account(&self, user: &AuthUser, password: &str) -> Result<(), AuthError> {
+        self.require_live_actor(user).await?;
         self.require_password(user, password).await?;
         if self.totp_enabled(user.id).await? {
             return Err(AuthError::Validation(
@@ -321,6 +378,12 @@ impl AuthService {
         anonymous_token: Option<&str>,
         now: i64,
     ) -> Result<IssuedSession, AuthError> {
+        let account = store::find_user_by_id(self.database(), user_id)
+            .await?
+            .ok_or(AuthError::Unauthenticated)?;
+        if !account.is_active {
+            return Err(AuthError::InvalidCredentials);
+        }
         store::update_last_login(self.database(), user_id, now).await?;
         let expires_at = now.saturating_add(self.config().session_ttl_secs);
         let transaction = self.database().begin().await.map_err(AuthError::database)?;
@@ -361,13 +424,42 @@ impl AuthService {
         })
     }
 
-    async fn require_password(&self, user: &AuthUser, password: &str) -> Result<(), AuthError> {
+    pub(crate) async fn require_live_actor(&self, user: &AuthUser) -> Result<(), AuthError> {
+        let row = store::find_user_by_id(self.database(), user.id)
+            .await?
+            .ok_or(AuthError::Unauthenticated)?;
+        if !row.is_active {
+            return Err(AuthError::Unauthenticated);
+        }
+        let now = unix_now()?;
+        let rows = account_store::list_open_sessions(self.database(), user.id).await?;
+        let live = rows.into_iter().any(|row| {
+            row.id == user.session_id && session_live(&row, now, self.config().idle_timeout_secs)
+        });
+        if live {
+            Ok(())
+        } else {
+            Err(AuthError::Unauthenticated)
+        }
+    }
+
+    pub(crate) async fn require_password(
+        &self,
+        user: &AuthUser,
+        password: &str,
+    ) -> Result<(), AuthError> {
+        let key = factor_key(user.id);
+        if self.limited(&key)? {
+            return Err(AuthError::RateLimited);
+        }
         let row = store::find_user_by_id(self.database(), user.id)
             .await?
             .ok_or(AuthError::Unauthenticated)?;
         if !row.is_active || !verify_password(password, &row.password_hash)? {
+            self.record_failure(&key)?;
             return Err(AuthError::InvalidCredentials);
         }
+        self.clear_failures(&key)?;
         Ok(())
     }
 
@@ -435,6 +527,10 @@ impl AuthService {
         }
         Err(AuthError::InvalidCredentials)
     }
+}
+
+fn factor_key(user_id: Uuid) -> String {
+    format!("factor:{user_id}")
 }
 
 fn session_live(row: &SessionRow, now: i64, idle_timeout: i64) -> bool {

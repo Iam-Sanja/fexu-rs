@@ -29,7 +29,8 @@ pub use query::{
     all_of, any_of, col, group_by_parent, load_by_ids, load_children, load_many_to_many,
     load_one_to_one, not, read_model, Aggregate, AggregateFn, Annotated, Bound, Column, Compare,
     Direction, KeysetPage, ManyToMany, ModelQuery, NamedFilter, Predicate, QueryCounter, QueryPage,
-    Related, Select, IN_LIMIT, OFFSET_LIMIT, PAGE_LIMIT, TEXT_MATCH_LIMIT,
+    Related, RowScan, Select, IN_LIMIT, OFFSET_LIMIT, PAGE_LIMIT, SCAN_COLLECT_LIMIT,
+    TEXT_MATCH_LIMIT,
 };
 pub use report::{
     AverageValue, GroupKey, GroupRow, Having, HavingCompare, Measure, MeasureValue, Report,

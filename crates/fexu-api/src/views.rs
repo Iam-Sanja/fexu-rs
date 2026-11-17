@@ -5,7 +5,7 @@ use axum::http::{header, HeaderMap, StatusCode};
 use axum::response::{Html, IntoResponse, Redirect, Response};
 use axum::Json;
 use fexu_auth::{AuthService, AuthUser, ObjectPolicy};
-use fexu_core::{localize_detail, problem_json};
+use fexu_core::localize_detail;
 use fexu_middleware::RequestId;
 use tera::Context;
 
@@ -327,15 +327,7 @@ fn respond(
             });
         (status, Html(body)).into_response()
     } else {
-        (
-            status,
-            Json(problem_json(
-                status.as_u16(),
-                status_title(status),
-                &public_detail,
-            )),
-        )
-            .into_response()
+        crate::problem_http(status, status_title(status), &public_detail)
     }
 }
 
@@ -788,7 +780,7 @@ mod tests {
             .get(CONTENT_TYPE)
             .and_then(|value| value.to_str().ok())
             .unwrap_or("")
-            .contains("application/json"));
+            .contains("application/problem+json"));
     }
 
     #[tokio::test]
@@ -892,7 +884,7 @@ mod tests {
             .get(CONTENT_TYPE)
             .and_then(|value| value.to_str().ok())
             .unwrap_or("")
-            .contains("application/json"));
+            .contains("application/problem+json"));
         let api_body =
             String::from_utf8(api.into_body().collect().await.unwrap().to_bytes().to_vec())
                 .unwrap();

@@ -2,14 +2,17 @@
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 fn root() -> PathBuf {
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
     let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_nanos();
-    let path = std::env::temp_dir().join(format!("fexu-v021-{nanos}"));
+    let id = COUNTER.fetch_add(1, Ordering::Relaxed);
+    let path = std::env::temp_dir().join(format!("fexu-v021-{nanos}-{id}"));
     std::fs::create_dir_all(path.join("migrations")).unwrap();
     std::fs::create_dir_all(path.join("media")).unwrap();
     path
@@ -47,7 +50,7 @@ fn write_project(directory: &Path) {
     .unwrap();
     std::fs::write(
         directory.join("Cargo.toml"),
-        "[package]\nname = \"legacy\"\nversion = \"0.1.0\"\n\n[dependencies]\nfexu = { path = \"D:/04_Projekte_Arbeit/Projekte/fexu/crates/fexu\", features = [\"admin-ui\"] }\n",
+        "[package]\nname = \"legacy\"\nversion = \"0.1.0\"\n\n[dependencies]\nfexu = { path = \"vendor/fexu\", features = [\"admin-ui\"] }\n",
     )
     .unwrap();
     std::fs::write(directory.join("secret.txt"), "do not touch").unwrap();
@@ -186,7 +189,7 @@ fn check_strict_doctor_and_dev_warn_without_writing() {
 
     std::fs::write(
         directory.join("Cargo.toml"),
-        "[dependencies]\nfexu = { path = \"D:/04_Projekte_Arbeit/Projekte/fexu/crates/fexu\" }\n",
+        "[dependencies]\nfexu = { path = \"vendor/fexu\" }\n",
     )
     .unwrap();
     let dev = output(fexu(&directory).env("DATABASE_URL", &url).arg("dev"));

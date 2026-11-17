@@ -3,7 +3,9 @@
 
 use std::collections::BTreeMap;
 
-use crate::driver::sea_query::{Alias, Expr, ExprTrait, Func, Order, Query, SelectStatement};
+use crate::driver::sea_query::{
+    Alias, Expr, ExprTrait, Func, NullOrdering, Order, Query, SelectStatement,
+};
 use crate::driver::{ConnectionTrait, DatabaseBackend, QueryResult};
 use fexu_core::{ColumnKind, FexuError, FexuModel};
 use uuid::Uuid;
@@ -138,6 +140,20 @@ enum OrderKey {
     Measure(&'static str),
 }
 
+enum GroupOn {
+    Column(&'static str),
+    /// Calendar month of a date or datetime column. The result alias is the column name.
+    Month(&'static str),
+}
+
+impl GroupOn {
+    fn name(&self) -> &'static str {
+        match self {
+            Self::Column(name) | Self::Month(name) => name,
+        }
+    }
+}
+
 struct PlannedOrder {
     key: OrderKey,
     direction: Direction,
@@ -145,7 +161,7 @@ struct PlannedOrder {
 
 pub struct Report<M> {
     source: Select<M>,
-    groups: Vec<&'static str>,
+    groups: Vec<GroupOn>,
     measures: Vec<Measure>,
     having: Vec<Having>,
     orders: Vec<PlannedOrder>,
@@ -165,7 +181,19 @@ impl<M> Report<M> {
     }
 
     pub fn group_by(mut self, columns: &[&'static str]) -> Self {
-        self.groups.extend(columns.iter().copied());
+        self.groups
+            .extend(columns.iter().copied().map(GroupOn::Column));
+        self
+    }
+
+    /// Groups by the calendar month of a date or datetime column.
+    ///
+    /// The group key keeps the column name and is `YYYY-MM` text, or null when
+    /// the column is null. A datetime is read in UTC. SQLite uses the first
+    /// seven characters of the canonical text. PostgreSQL uses `to_char`.
+    /// The column must be a model field. This does not accept a SQL fragment.
+    pub fn group_by_month(mut self, column: &'static str) -> Self {
+        self.groups.push(GroupOn::Month(column));
         self
     }
 
@@ -217,19 +245,30 @@ impl<M> Report<M> {
         }
         let columns = M::columns();
         let mut seen_groups = Vec::new();
-        for name in &self.groups {
+        for group in &self.groups {
+            let name = group.name();
             let column = lookup(columns, name)?;
-            if !groupable(column.kind) {
-                return Err(FexuError::Validation(format!(
-                    "column {name} cannot be grouped"
-                )));
+            match group {
+                GroupOn::Column(_) if !groupable(column.kind) => {
+                    return Err(FexuError::Validation(format!(
+                        "column {name} cannot be grouped"
+                    )));
+                }
+                GroupOn::Month(_)
+                    if !matches!(column.kind, ColumnKind::Date | ColumnKind::DateTime) =>
+                {
+                    return Err(FexuError::Validation(format!(
+                        "column {name} cannot be grouped by month"
+                    )));
+                }
+                GroupOn::Column(_) | GroupOn::Month(_) => {}
             }
-            if seen_groups.contains(name) {
+            if seen_groups.contains(&name) {
                 return Err(FexuError::Validation(format!(
                     "column {name} is grouped more than once"
                 )));
             }
-            seen_groups.push(*name);
+            seen_groups.push(name);
         }
         let mut seen_alias = Vec::new();
         for measure in &self.measures {
@@ -264,7 +303,7 @@ impl<M> Report<M> {
         }
         for order in &self.orders {
             match order.key {
-                OrderKey::Column(name) if !self.groups.contains(&name) => {
+                OrderKey::Column(name) if !seen_groups.contains(&name) => {
                     return Err(FexuError::Validation(format!(
                         "column {name} is not grouped"
                     )));
@@ -289,9 +328,21 @@ impl<M> Report<M> {
         let backend = db.get_database_backend();
         let mut query = Query::select();
         query.from(Alias::new(M::descriptor().table));
-        for name in &self.groups {
-            query.expr_as(Expr::col(Alias::new(*name)), Alias::new(*name));
-            query.group_by_col(Alias::new(*name));
+        for group in &self.groups {
+            let name = group.name();
+            match group {
+                GroupOn::Column(_) => {
+                    query.expr_as(Expr::col(Alias::new(name)), Alias::new(name));
+                    query.group_by_col(Alias::new(name));
+                }
+                GroupOn::Month(_) => {
+                    let column = lookup(columns, name)?;
+                    let sql = crate::sql::month_group_sql(backend, column.kind, name)?;
+                    let expr = Expr::cust(sql);
+                    query.expr_as(expr.clone(), Alias::new(name));
+                    query.add_group_by([expr]);
+                }
+            }
         }
         for measure in &self.measures {
             push_measure(&mut query, columns, measure, backend)?;
@@ -325,21 +376,22 @@ impl<M> Report<M> {
                 OrderKey::Measure(alias) => alias,
             };
             if !ordered.contains(&name) {
-                query.order_by(Alias::new(name), sea_order(order.direction));
+                push_order(&mut query, name, order.direction);
                 ordered.push(name);
             }
         }
-        for name in &self.groups {
-            if !ordered.contains(name) {
-                query.order_by(Alias::new(*name), Order::Asc);
+        for name in seen_groups {
+            if !ordered.contains(&name) {
+                push_order(&mut query, name, Direction::Asc);
             }
         }
         query.limit(self.limit);
         crate::query::note_statement();
         let statement = crate::sql::statement(db, &query)?;
         let rows = db.query_all(statement).await.map_err(FexuError::database)?;
+        let names: Vec<&'static str> = self.groups.iter().map(GroupOn::name).collect();
         rows.into_iter()
-            .map(|row| read_row(&row, columns, &self.groups, &self.measures))
+            .map(|row| read_row(&row, columns, &names, &self.measures))
             .collect()
     }
 }
@@ -503,6 +555,10 @@ fn sea_order(direction: Direction) -> Order {
         Direction::Asc => Order::Asc,
         Direction::Desc => Order::Desc,
     }
+}
+
+fn push_order(query: &mut SelectStatement, name: &str, direction: Direction) {
+    query.order_by_with_nulls(Alias::new(name), sea_order(direction), NullOrdering::Last);
 }
 
 fn lookup<'a>(

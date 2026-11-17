@@ -1,6 +1,6 @@
 //! Password reset. The raw token exists only in memory and the email.
 
-use crate::cookie::{read_cookie, set_cookie};
+use crate::cookie::{clear_named_cookie, read_cookie, set_named_cookie};
 use crate::error::AuthError;
 use crate::password::{hash_password, validate_new_password, verify_password};
 use crate::routes::{AppState, ClientIp};
@@ -16,8 +16,6 @@ use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use uuid::Uuid;
 
-const RESET_COOKIE: &str = "fexu_reset";
-const CSRF_COOKIE: &str = "fexu_reset_csrf";
 const ACK_DE: &str = "Wenn ein Konto mit dieser Adresse existiert, wurde eine E-Mail mit weiteren Schritten angefordert.";
 const ACK_EN: &str =
     "If an account with this address exists, an email with further steps was requested.";
@@ -228,7 +226,12 @@ pub async fn exchange_token(
     .map_err(|_| CompleteError::Expired)?;
     let max_age = (expires_at - now).max(1);
     Ok(IssuedExchange {
-        cookie: reset_cookie(auth.config(), RESET_COOKIE, &secret, max_age),
+        cookie: reset_cookie(
+            auth.config(),
+            &auth.config().reset_cookie_name(),
+            &secret,
+            max_age,
+        ),
         secret,
     })
 }
@@ -354,7 +357,12 @@ pub async fn show_request(State(state): State<AppState>, headers: HeaderMap) -> 
         StatusCode::OK,
         &state,
         &page(locale, "request", None, Some(&csrf)),
-        vec![reset_cookie(&config, CSRF_COOKIE, &csrf, 30 * 60)],
+        vec![reset_cookie(
+            &config,
+            &config.reset_csrf_cookie(),
+            &csrf,
+            30 * 60,
+        )],
     )
 }
 
@@ -376,7 +384,11 @@ pub async fn submit_request(
     if auth
         .origin_allowed(&headers, &axum::http::Method::POST)
         .is_err()
-        || !csrf_matches(&headers, form.get("csrf_token").map(String::as_str))
+        || !csrf_matches(
+            auth.config(),
+            &headers,
+            form.get("csrf_token").map(String::as_str),
+        )
     {
         return forbidden_page(locale);
     }
@@ -443,7 +455,12 @@ pub async fn show_choose(State(state): State<AppState>, headers: HeaderMap) -> R
         StatusCode::OK,
         &state,
         &page(locale, "choose", None, Some(&csrf)),
-        vec![reset_cookie(auth.config(), CSRF_COOKIE, &csrf, 30 * 60)],
+        vec![reset_cookie(
+            auth.config(),
+            &auth.config().reset_csrf_cookie(),
+            &csrf,
+            30 * 60,
+        )],
     )
 }
 
@@ -463,11 +480,15 @@ pub async fn submit_choose(
     if auth
         .origin_allowed(&headers, &axum::http::Method::POST)
         .is_err()
-        || !csrf_matches(&headers, form.get("csrf_token").map(String::as_str))
+        || !csrf_matches(
+            auth.config(),
+            &headers,
+            form.get("csrf_token").map(String::as_str),
+        )
     {
         return forbidden_page(locale);
     }
-    let Some(secret) = read_cookie(&headers, RESET_COOKIE) else {
+    let Some(secret) = read_cookie(&headers, &auth.config().reset_cookie_name()) else {
         return html_response(
             StatusCode::BAD_REQUEST,
             &state,
@@ -496,8 +517,8 @@ pub async fn submit_choose(
             &state,
             &page(locale, "done", None, None),
             vec![
-                reset_cookie(auth.config(), RESET_COOKIE, "", 0),
-                reset_cookie(auth.config(), CSRF_COOKIE, "", 0),
+                reset_cookie(auth.config(), &auth.config().reset_cookie_name(), "", 0),
+                reset_cookie(auth.config(), &auth.config().reset_csrf_cookie(), "", 0),
             ],
         ),
         Err(CompleteError::Mismatch) => choose_again(&state, auth, locale, "mismatch"),
@@ -507,13 +528,19 @@ pub async fn submit_choose(
             StatusCode::BAD_REQUEST,
             &state,
             &page(locale, "expired", None, None),
-            vec![reset_cookie(auth.config(), RESET_COOKIE, "", 0)],
+            vec![reset_cookie(
+                auth.config(),
+                &auth.config().reset_cookie_name(),
+                "",
+                0,
+            )],
         ),
     }
 }
 
 async fn exchange_open(auth: &AuthService, headers: &HeaderMap) -> Result<(), CompleteError> {
-    let secret = read_cookie(headers, RESET_COOKIE).ok_or(CompleteError::Expired)?;
+    let secret =
+        read_cookie(headers, &auth.config().reset_cookie_name()).ok_or(CompleteError::Expired)?;
     let now = unix_now().map_err(|_| CompleteError::Expired)?;
     let Some((_, expires, reset)) = store::find_exchange(auth.database(), &digest(&secret))
         .await
@@ -553,7 +580,12 @@ fn choose_again(state: &AppState, auth: &AuthService, locale: &str, error: &str)
         StatusCode::UNPROCESSABLE_ENTITY,
         state,
         &page(locale, "choose", Some(error), Some(&csrf)),
-        vec![reset_cookie(auth.config(), CSRF_COOKIE, &csrf, 30 * 60)],
+        vec![reset_cookie(
+            auth.config(),
+            &auth.config().reset_csrf_cookie(),
+            &csrf,
+            30 * 60,
+        )],
     )
 }
 
@@ -621,16 +653,19 @@ fn cookie_config(auth: Option<&AuthService>) -> crate::AuthConfig {
 }
 
 fn reset_cookie(config: &crate::AuthConfig, name: &str, value: &str, max_age: i64) -> String {
-    let mut cookie = set_cookie(config, value, max_age);
-    cookie = cookie.replacen(&config.cookie_name, name, 1);
+    let cookie = if max_age == 0 {
+        clear_named_cookie(config, name)
+    } else {
+        set_named_cookie(config, name, value, max_age)
+    };
     cookie.replace("Path=/", "Path=/auth/password-reset")
 }
 
-fn csrf_matches(headers: &HeaderMap, field: Option<&str>) -> bool {
+fn csrf_matches(config: &crate::AuthConfig, headers: &HeaderMap, field: Option<&str>) -> bool {
     let Some(field) = field else {
         return false;
     };
-    let Some(cookie) = read_cookie(headers, CSRF_COOKIE) else {
+    let Some(cookie) = read_cookie(headers, &config.reset_csrf_cookie()) else {
         return false;
     };
     constant_eq(&cookie, field)

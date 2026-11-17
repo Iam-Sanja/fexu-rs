@@ -63,9 +63,9 @@ Paths must be absolute, must differ from each other, and must not start with `/a
 - Generated model routes: `GET` and `POST` on the collection, `GET`, `PATCH` and `DELETE` on `/{id}`. `PUT` is omitted because the generated handlers do not implement it.
 - Create, update and response schemas. Readonly fields stay on create and leave the update schema. Primary keys and managed timestamps stay on the response.
 - Required, nullable, decimal precision and scale, choice enums, `minLength`, `maxLength`, numeric `minimum` and `maximum`, and foreign-key relation metadata.
-- The list response is `data`, `limit`, `next` and `has_more`. Query parameters are `limit` (1..=100, default 100), `cursor`, `sort` and repeated `filter`. Sort and filter names are the admin allow-list, plus `id` for sort. A `write_only` or secret-named field is absent from the response schema. `contains` is text only. Offset is not a parameter.
+- The list response is `data`, `limit`, `next` and `has_more`. Query parameters are `limit` (1..=100, default 100), `cursor`, `sort` and repeated `filter`. Sort and filter names are the admin allow-list, plus `id` for sort. A `write_only` or secret-named field is absent from the response schema. Create and update schemas include it when the field is writable. `null` is part of a property schema only when the column is nullable. `contains` is text only. Offset is not a parameter. Each object schema carries an `example`.
 - Session cookie, anonymous cookie and `x-csrf-token`. Cookie writes say that Bearer authorization is not a session. Those are the only security schemes.
-- Problem JSON for 401, 403, 404, 422 and 500 where those statuses are produced. 409 is not documented because the handlers do not return it.
+- Problem JSON for 401, 403, 404, 422 and 500 where those statuses are produced. The runtime `Content-Type` is `application/problem+json`. 409 is not documented because the handlers do not return it.
 - `/healthz`, `/readyz` and the mounted `/auth` routes.
 
 ## Custom operations

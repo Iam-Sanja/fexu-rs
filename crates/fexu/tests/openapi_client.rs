@@ -497,12 +497,28 @@ async fn custom_routes_errors_and_admin_paths_follow_the_document() {
         .await
         .unwrap();
     assert_eq!(missing.status(), StatusCode::NOT_FOUND);
+    assert_eq!(
+        missing.header("content-type").unwrap(),
+        Some("application/problem+json")
+    );
+    let problem = &document["components"]["schemas"]["Problem"];
+    fexu::openapi::matches_schema(&document, problem, &missing.json().unwrap()).unwrap();
     assert_eq!(missing.json().unwrap()["code"], "resource.not_found");
     let private = client.get("/api/v1/private").await.unwrap();
     assert_eq!(private.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(
+        private.header("content-type").unwrap(),
+        Some("application/problem+json")
+    );
+    fexu::openapi::matches_schema(&document, problem, &private.json().unwrap()).unwrap();
     assert_eq!(private.json().unwrap()["status"], 401);
     let closed = client.get("/api/v1/closed").await.unwrap();
     assert_eq!(closed.status(), StatusCode::FORBIDDEN);
+    assert_eq!(
+        closed.header("content-type").unwrap(),
+        Some("application/problem+json")
+    );
+    fexu::openapi::matches_schema(&document, problem, &closed.json().unwrap()).unwrap();
     assert_eq!(closed.json().unwrap()["status"], 403);
     let leaked = client
         .get("/admin/leaks")
