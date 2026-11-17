@@ -13,6 +13,9 @@
 *.p12
 *.pfx
 
+# Local benchmark runs. Checked-in samples stay under examples/bench-baseline/samples/.
+examples/bench-baseline/runs/
+
 # Local databases and SQLite sidecars. Source migrations stay tracked.
 *.sqlite
 *.sqlite3

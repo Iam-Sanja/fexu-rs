@@ -840,6 +840,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "fexu-bench-baseline"
+version = "0.1.2"
+dependencies = [
+ "axum",
+ "fexu",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
 name = "fexu-cache"
 version = "0.1.2"
 dependencies = [

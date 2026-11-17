@@ -6,6 +6,10 @@
 - `fexu new` writes `fexu = "=0.1.2"` unless `--fexu-path` is set. The fullstack template keeps `features = ["admin-ui"]` on that registry dependency.
 - The publish planner skips a version that is already in the crates.io index and waits until a new upload is visible before the next crate. Trusted-publishing tokens still expire after 30 minutes. This entry is not a crates.io publication.
 
+## Unreleased — framework benchmark baseline
+
+- `examples/bench-baseline` measures one authenticated SQLite workload through the existing HTTP API: relations, keyset pages, writes and 401, 404 and 422 responses. `scripts/benchmark-baseline.ps1` and `scripts/benchmark-baseline.sh` record the host, the incremental release build and three fresh runs. Runique, Cot, Loco and PostgreSQL are listed as not measured. See `docs/benchmarks.md`.
+
 ## Unreleased — development CSRF keys
 
 - `AuthConfig::development` draws a new 32-byte CSRF key on every call. `try_from_env` still loads `FEXU_CSRF_SECRET` or `.fexu/csrf.key`. Token and HMAC formats are unchanged. Debug output keeps both secrets redacted.

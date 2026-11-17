@@ -1,0 +1,19 @@
+[package]
+name = "fexu-bench-baseline"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Reproducible Fexu HTTP baseline. Not a cross-framework score."
+repository.workspace = true
+homepage.workspace = true
+publish = false
+
+[dependencies]
+fexu = { path = "../../crates/fexu" }
+axum.workspace = true
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
