@@ -12,7 +12,7 @@
 
 ## Unreleased — contract suite
 
-- `examples/contract` runs the same admin-login contract on SQLite and, when `DATABASE_URL` is set, on one disposable PostgreSQL database. The PostgreSQL CI job names `postgres_fixture_parallel_create_isolate_and_cleanup` and `postgres_contract_login_matches_sqlite` exactly and fails unless each reports one pass. `tests/browser/login-form.spec.js` submits the login form from a fresh profile.
+- `examples/contract` runs the same admin-login contract on SQLite and, when `DATABASE_URL` is set, on one disposable PostgreSQL database. The PostgreSQL CI job names `postgres_fixture_parallel_create_isolate_and_cleanup` and `postgres_contract_login_matches_sqlite` exactly and fails unless each reports one pass. `tests/browser/login-form.spec.js` submits the myshop login form from a fresh profile. That database has no auth tables, so the response is the `403` error page and not the `401` login form. No session cookie is set.
 - No PostgreSQL server was listening on the workstation that added this suite, so those ignored tests were not executed locally. The suite does not generate a project, open TLS, bind a LAN address, or start Docker.
 
 ## Unreleased — parallel PostgreSQL fixtures
