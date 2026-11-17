@@ -3,12 +3,13 @@
 //! one-to-one load go through the public ORM. This file contains no SQL.
 
 use fexu_core::{
-    ColumnKind, ColumnSpec, DatabaseKind, FexuModel, ModelDescriptor, QueryScope, ScopeValue,
+    ChoiceValue, ColumnKind, ColumnSpec, DatabaseKind, FexuModel, ModelDescriptor, QueryScope,
+    ScopeValue,
 };
 use fexu_db::driver::{ConnectionTrait, DatabaseBackend, DatabaseConnection, Statement, Value};
 use fexu_db::{
-    col, insert_record, load_one_to_one, render_schema, Bound, Direction, GroupKey, Having,
-    HavingCompare, Measure, MeasureValue, ModelQuery, NamedFilter,
+    col, insert_record, load_one_to_one, render_schema, Aggregate, Bound, Direction, GroupKey,
+    Having, HavingCompare, Measure, MeasureValue, ModelQuery, NamedFilter,
 };
 use serde::Deserialize;
 use uuid::Uuid;
@@ -473,6 +474,453 @@ pub async fn exercise(db: &DatabaseConnection) -> Result<(), String> {
     }
     if fexu_core::canonical_json_text("").is_ok() || fexu_core::canonical_json_text("{").is_ok() {
         return Err("invalid json text was accepted".into());
+    }
+    if Note::query()
+        .aggregate()
+        .group_by(&["body"])
+        .measure(Measure::count("notes"))
+        .all(db)
+        .await
+        .is_ok()
+    {
+        return Err("json column was grouped".into());
+    }
+    exercise_monthly_revenue(db).await?;
+    exercise_integer_bounds_and_window(db).await?;
+    Ok(())
+}
+
+const INVOICE_STATUS: &[ChoiceValue] = &[
+    ChoiceValue {
+        value: "open",
+        label_de: "Offen",
+        label_en: "Open",
+    },
+    ChoiceValue {
+        value: "paid",
+        label_de: "Bezahlt",
+        label_en: "Paid",
+    },
+    ChoiceValue {
+        value: "void",
+        label_de: "Storniert",
+        label_en: "Void",
+    },
+];
+
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+struct Invoice {
+    id: Uuid,
+    sold_on: Option<String>,
+    status: String,
+    cents: i64,
+    owner_id: Uuid,
+}
+
+const INVOICE: ModelDescriptor = ModelDescriptor {
+    name: "Invoice",
+    table: "fexu_report_invoices",
+    api_path: "",
+    allow_anonymous: false,
+    permission: None,
+    requires_object_policy: false,
+};
+
+impl FexuModel for Invoice {
+    fn descriptor() -> &'static ModelDescriptor {
+        &INVOICE
+    }
+    fn columns() -> &'static [ColumnSpec] {
+        use std::sync::OnceLock;
+        static COLUMNS: OnceLock<Vec<ColumnSpec>> = OnceLock::new();
+        COLUMNS.get_or_init(|| {
+            let mut status = column("status", ColumnKind::Choice, false, false);
+            status.choices = INVOICE_STATUS;
+            vec![
+                column("id", ColumnKind::Uuid, false, true),
+                column("sold_on", ColumnKind::Date, true, false),
+                status,
+                column("cents", ColumnKind::BigInt, false, false),
+                column("owner_id", ColumnKind::Uuid, false, false),
+            ]
+        })
+    }
+    fn schema_sql(kind: DatabaseKind) -> String {
+        render_schema(kind, Self::descriptor().table, Self::columns())
+    }
+}
+
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+struct InvoiceLine {
+    id: Uuid,
+    invoice_id: Uuid,
+    owner_id: Uuid,
+}
+
+const INVOICE_LINE: ModelDescriptor = ModelDescriptor {
+    name: "InvoiceLine",
+    table: "fexu_report_invoice_lines",
+    api_path: "",
+    allow_anonymous: false,
+    permission: None,
+    requires_object_policy: false,
+};
+
+impl FexuModel for InvoiceLine {
+    fn descriptor() -> &'static ModelDescriptor {
+        &INVOICE_LINE
+    }
+    fn columns() -> &'static [ColumnSpec] {
+        use std::sync::OnceLock;
+        static COLUMNS: OnceLock<Vec<ColumnSpec>> = OnceLock::new();
+        COLUMNS.get_or_init(|| {
+            let mut invoice = column("invoice_id", ColumnKind::Uuid, false, false);
+            invoice.foreign_table = Some("fexu_report_invoices");
+            invoice.foreign_column = Some("id");
+            vec![
+                column("id", ColumnKind::Uuid, false, true),
+                invoice,
+                column("owner_id", ColumnKind::Uuid, false, false),
+            ]
+        })
+    }
+    fn schema_sql(kind: DatabaseKind) -> String {
+        render_schema(kind, Self::descriptor().table, Self::columns())
+    }
+}
+
+fn date_value(text: &str) -> Result<Value, String> {
+    let date = fexu_core::parse_date(text).map_err(|code| code.to_owned())?;
+    Ok(Value::ChronoDate(Some(Box::new(date))))
+}
+
+async fn insert_invoice(
+    db: &DatabaseConnection,
+    id: u128,
+    sold_on: Option<&str>,
+    status: &str,
+    cents: i64,
+    owner: Uuid,
+) -> Result<(), String> {
+    insert_record(
+        db,
+        Invoice::descriptor().table,
+        Invoice::columns(),
+        vec![
+            Value::Uuid(Some(Box::new(Uuid::from_u128(id)))),
+            match sold_on {
+                Some(text) => date_value(text)?,
+                None => Value::ChronoDate(None),
+            },
+            Value::String(Some(Box::new(status.to_owned()))),
+            Value::BigInt(Some(cents)),
+            Value::Uuid(Some(Box::new(owner))),
+        ],
+    )
+    .await
+    .map_err(|error| error.to_string())?;
+    Ok(())
+}
+
+async fn exercise_monthly_revenue(db: &DatabaseConnection) -> Result<(), String> {
+    create_model::<Invoice>(db).await?;
+    create_model::<InvoiceLine>(db).await?;
+    let owner = Uuid::from_u128(7);
+    let other = Uuid::from_u128(8);
+    let rows = [
+        (21_u128, Some("2026-01-15"), "paid", 1_000_i64, owner),
+        (22, Some("2026-01-20"), "paid", 500, owner),
+        (23, Some("2026-01-22"), "open", 100, owner),
+        (24, Some("2026-02-02"), "open", 200, owner),
+        (25, Some("2026-02-03"), "void", 9_000, owner),
+        (26, Some("2026-01-15"), "paid", 8_000, other),
+        (27, None, "paid", 50, owner),
+    ];
+    for (id, sold_on, status, cents, row_owner) in rows {
+        insert_invoice(db, id, sold_on, status, cents, row_owner).await?;
+    }
+    let active = NamedFilter::new("open", col("status").eq("open"))
+        .map_err(|error| error.to_string())?
+        .or(NamedFilter::new("paid", col("status").eq("paid"))
+            .map_err(|error| error.to_string())?)
+        .and(
+            NamedFilter::new("void", col("status").eq("void"))
+                .map_err(|error| error.to_string())?
+                .negated(),
+        );
+    let scope = QueryScope::Equals {
+        column: "owner_id",
+        value: ScopeValue::Uuid(owner),
+    };
+    let listed = Invoice::query()
+        .scope(scope.clone())
+        .filter_named(&active)
+        .all(db)
+        .await
+        .map_err(|error| error.to_string())?;
+    if listed.len() != 5 {
+        return Err(format!("shared filter kept the wrong invoices: {listed:?}"));
+    }
+    let report = Invoice::query()
+        .scope(scope.clone())
+        .filter_named(&active)
+        .aggregate()
+        .group_by_month("sold_on")
+        .group_by(&["status"])
+        .measure(Measure::count("invoices"))
+        .measure(Measure::sum("cents_total", "cents"))
+        .measure(Measure::min("cents_min", "cents"))
+        .measure(Measure::max("cents_max", "cents"))
+        .order_by_key("sold_on", Direction::Asc)
+        .all(db)
+        .await
+        .map_err(|error| error.to_string())?;
+    let counted: i64 = report
+        .iter()
+        .map(|row| match row.measures.get("invoices") {
+            Some(MeasureValue::Integer(value)) => *value,
+            _ => 0,
+        })
+        .sum();
+    if counted != listed.len() as i64 {
+        return Err(format!(
+            "list and report filters diverged: listed {} report {report:?}",
+            listed.len()
+        ));
+    }
+    let expect = [
+        (Some("2026-01"), "open", 1, 100, 100, 100),
+        (Some("2026-01"), "paid", 2, 1_500, 500, 1_000),
+        (Some("2026-02"), "open", 1, 200, 200, 200),
+        (None, "paid", 1, 50, 50, 50),
+    ];
+    if report.len() != expect.len() {
+        return Err(format!("monthly report rows: {report:?}"));
+    }
+    for (row, (month, status, count, total, low, high)) in report.iter().zip(expect) {
+        let key = match month {
+            Some(text) => GroupKey::Text(text.into()),
+            None => GroupKey::Null,
+        };
+        if row.keys.get("sold_on") != Some(&key)
+            || row.keys.get("status") != Some(&GroupKey::Text(status.into()))
+            || row.measures.get("invoices") != Some(&MeasureValue::Integer(count))
+            || row.measures.get("cents_total") != Some(&MeasureValue::Integer(total))
+            || row.measures.get("cents_min") != Some(&MeasureValue::Integer(low))
+            || row.measures.get("cents_max") != Some(&MeasureValue::Integer(high))
+        {
+            return Err(format!(
+                "monthly group did not match {month:?}/{status}: {row:?}"
+            ));
+        }
+    }
+    let hidden = Invoice::query()
+        .scope(QueryScope::None)
+        .filter_named(&active)
+        .aggregate()
+        .group_by_month("sold_on")
+        .measure(Measure::sum("cents_total", "cents"))
+        .all(db)
+        .await
+        .map_err(|error| error.to_string())?;
+    if !hidden.is_empty() {
+        return Err(format!("empty scope leaked grouped revenue: {hidden:?}"));
+    }
+    let empty = Invoice::query()
+        .scope(scope.clone())
+        .filter(col("sold_on").eq("1999-01-01"))
+        .aggregate()
+        .group_by_month("sold_on")
+        .group_by(&["status"])
+        .measure(Measure::count("invoices"))
+        .all(db)
+        .await
+        .map_err(|error| error.to_string())?;
+    if !empty.is_empty() {
+        return Err(format!("empty month filter returned rows: {empty:?}"));
+    }
+    let parent = Uuid::from_u128(21);
+    for (id, line_owner) in [(31_u128, owner), (32, owner), (33, other)] {
+        insert_record(
+            db,
+            InvoiceLine::descriptor().table,
+            InvoiceLine::columns(),
+            vec![
+                Value::Uuid(Some(Box::new(Uuid::from_u128(id)))),
+                Value::Uuid(Some(Box::new(parent))),
+                Value::Uuid(Some(Box::new(line_owner))),
+            ],
+        )
+        .await
+        .map_err(|error| error.to_string())?;
+    }
+    let counted_lines = Invoice::query()
+        .scope(scope.clone())
+        .filter(col("id").eq(parent))
+        .annotate(
+            db,
+            Aggregate::<InvoiceLine>::count("lines", "invoice_id").scope(scope.clone()),
+            None,
+        )
+        .await
+        .map_err(|error| error.to_string())?;
+    if counted_lines.len() != 1 || counted_lines[0].value != 2 {
+        return Err(format!(
+            "related count ignored the child scope: {counted_lines:?}"
+        ));
+    }
+    let denied_lines = Invoice::query()
+        .scope(scope)
+        .filter(col("id").eq(parent))
+        .annotate(
+            db,
+            Aggregate::<InvoiceLine>::count("lines", "invoice_id").scope(QueryScope::None),
+            None,
+        )
+        .await
+        .map_err(|error| error.to_string())?;
+    if denied_lines.len() != 1 || denied_lines[0].value != 0 {
+        return Err(format!(
+            "related count leaked rows outside the child scope: {denied_lines:?}"
+        ));
+    }
+    if Invoice::query()
+        .aggregate()
+        .group_by_month("status")
+        .measure(Measure::count("invoices"))
+        .all(db)
+        .await
+        .is_ok()
+    {
+        return Err("choice column was grouped by month".into());
+    }
+    if Invoice::query()
+        .aggregate()
+        .group_by_month("sold_on; drop")
+        .measure(Measure::count("invoices"))
+        .all(db)
+        .await
+        .is_ok()
+    {
+        return Err("unsafe month column was accepted".into());
+    }
+    if Invoice::query()
+        .filter(col("status").eq("not-a-status"))
+        .aggregate()
+        .group_by(&["status"])
+        .measure(Measure::count("invoices"))
+        .all(db)
+        .await
+        .is_ok()
+    {
+        return Err("unknown choice was aggregated".into());
+    }
+    if Ledger::query()
+        .aggregate()
+        .measure(Measure::min("low", "amount"))
+        .all(db)
+        .await
+        .is_ok()
+    {
+        return Err("decimal column was aggregated with min".into());
+    }
+    Ok(())
+}
+
+async fn insert_sale(
+    db: &DatabaseConnection,
+    id: u128,
+    region: &str,
+    units: i64,
+    owner: Uuid,
+    label: Option<&str>,
+) -> Result<(), String> {
+    insert_record(
+        db,
+        Sale::descriptor().table,
+        Sale::columns(),
+        vec![
+            Value::Uuid(Some(Box::new(Uuid::from_u128(id)))),
+            Value::String(Some(Box::new(region.to_owned()))),
+            Value::BigInt(Some(units)),
+            Value::Uuid(Some(Box::new(owner))),
+            match label {
+                Some(text) => Value::String(Some(Box::new(text.to_owned()))),
+                None => Value::String(None),
+            },
+        ],
+    )
+    .await
+    .map_err(|error| error.to_string())?;
+    Ok(())
+}
+
+async fn exercise_integer_bounds_and_window(db: &DatabaseConnection) -> Result<(), String> {
+    let owner = Uuid::from_u128(7);
+    insert_sale(db, 40, "edge", i64::MAX, owner, Some("edge")).await?;
+    match Sale::query()
+        .filter(col("region").eq("edge"))
+        .aggregate()
+        .group_by(&["region"])
+        .measure(Measure::average("units_avg", "units"))
+        .all(db)
+        .await
+    {
+        Err(error) if error.to_string().contains("portable range") => {}
+        Ok(rows) => return Err(format!("overflowing average was returned: {rows:?}")),
+        Err(error) => return Err(format!("overflowing average was not bounded: {error}")),
+    }
+    for number in 0_u128..101 {
+        let region = format!("r{number:03}");
+        insert_sale(db, 100 + number, &region, 1, owner, Some("zz")).await?;
+    }
+    let window = Sale::query()
+        .filter(col("region").starts_with("r"))
+        .aggregate()
+        .group_by(&["region"])
+        .measure(Measure::count("sales"))
+        .measure(Measure::sum("units_total", "units"))
+        .order_by_key("region", Direction::Asc)
+        .limit(100)
+        .all(db)
+        .await
+        .map_err(|error| error.to_string())?;
+    if window.len() != 100 {
+        return Err(format!("report window was not bounded: {}", window.len()));
+    }
+    if window.first().and_then(|row| row.keys.get("region")) != Some(&GroupKey::Text("r000".into()))
+        || window.last().and_then(|row| row.keys.get("region"))
+            != Some(&GroupKey::Text("r099".into()))
+    {
+        return Err(format!(
+            "report window order was not stable: {:?} .. {:?}",
+            window.first(),
+            window.last()
+        ));
+    }
+    if window
+        .iter()
+        .any(|row| row.keys.get("region") == Some(&GroupKey::Text("r100".into())))
+    {
+        return Err("report window included the group past the limit".into());
+    }
+    let tied = Sale::query()
+        .filter(col("region").starts_with("r"))
+        .filter(col("region").is_in(["r010", "r011"]))
+        .aggregate()
+        .group_by(&["region"])
+        .measure(Measure::sum("units_total", "units"))
+        .order_by_measure("units_total", Direction::Asc)
+        .all(db)
+        .await
+        .map_err(|error| error.to_string())?;
+    if tied.len() != 2
+        || tied[0].keys.get("region") != Some(&GroupKey::Text("r010".into()))
+        || tied[1].keys.get("region") != Some(&GroupKey::Text("r011".into()))
+    {
+        return Err(format!(
+            "equal measures were not ordered by the group key: {tied:?}"
+        ));
     }
     Ok(())
 }

@@ -36,7 +36,7 @@ It reads `fexu.toml`. `DATABASE_URL` may replace the database entry. `check` rej
 |---|---|
 |`rustc` or `cargo` is missing| Error |
 |`fexu.toml` or `src/lib.rs` is missing| Error |
-| `server.host` is `0.0.0.0` | Error |
+| `server.host` is `0.0.0.0` or `::` without `server.allow_wildcard_bind` | Error |
 |SQLite file is missing| Warning |
 | Docker is missing | Not an error; Docker is optional and is not probed. |
 |Checksum conflict| Error in `check` |

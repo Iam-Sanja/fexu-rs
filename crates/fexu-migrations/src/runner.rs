@@ -725,7 +725,10 @@ async fn apply_sqlite_on_one_connection(
     let restored = restore_sqlite_enforcement(&pinned).await;
     match (outcome, restored) {
         (Err(migration), _) => Err(migration),
-        (Ok(()), Err(restore)) => Err(restore),
+        (Ok(()), Err(restore)) => Err(MigrationError::new(format!(
+            "Migration {} was committed and its history row was saved. Foreign key enforcement could not be restored on this connection, so the connection is closed instead of being reused. The schema change was not rolled back. {}",
+            file.id, restore.0
+        ))),
         (Ok(()), Ok(())) => Ok(()),
     }
 }
@@ -803,6 +806,12 @@ async fn apply_open(
     let kind = kind_of(backend).map_err(|error| MigrationError::new(error.to_string()))?;
     let mut schema = file.from_snapshot.clone();
     for operation in &file.operations {
+        if let Err(error) = crate::simulate::validate_operation_identifiers(operation) {
+            return Err(MigrationError::new(format!(
+                "Migration {} was not executed. {}",
+                file.id, error.0
+            )));
+        }
         if let Some((table, column, backfill, foreign_key)) =
             crate::rebuild::backfill_parts(operation)
         {
