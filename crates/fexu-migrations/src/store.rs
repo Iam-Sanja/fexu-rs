@@ -443,6 +443,11 @@ pub fn write_explicit_migration(
         .unwrap_or_else(SchemaSnapshot::empty);
     let produced = crate::simulate::apply_operations(&from, std::slice::from_ref(&operation))?;
     if !produced.semantically_eq(current) {
+        if rename_name_change_is_ambiguous(&from, current, &operation) {
+            return Err(MigrationError::new(
+                "The rename is ambiguous because more than one name changed. Similar names are not paired automatically. No file was written.".to_owned(),
+            ));
+        }
         return Err(MigrationError::new(
             "The rename does not account for all differences between the last migration target and registered schema. No file was written.".to_owned(),
         ));
@@ -470,6 +475,81 @@ pub fn write_explicit_migration(
         id: file.id,
         risks: file.risks,
     })
+}
+
+fn rename_name_change_is_ambiguous(
+    before: &SchemaSnapshot,
+    after: &SchemaSnapshot,
+    operation: &MigrationOperation,
+) -> bool {
+    match operation {
+        MigrationOperation::RenameColumn { table, from, to } => {
+            let Some(previous) = before
+                .tables
+                .iter()
+                .find(|candidate| candidate.name == *table)
+            else {
+                return false;
+            };
+            let Some(next) = after
+                .tables
+                .iter()
+                .find(|candidate| candidate.name == *table)
+            else {
+                return false;
+            };
+            let removed = previous
+                .columns
+                .iter()
+                .filter(|column| {
+                    next.columns
+                        .iter()
+                        .all(|candidate| candidate.name != column.name)
+                })
+                .count();
+            let added = next
+                .columns
+                .iter()
+                .filter(|column| {
+                    previous
+                        .columns
+                        .iter()
+                        .all(|candidate| candidate.name != column.name)
+                })
+                .count();
+            removed != 1
+                || added != 1
+                || !previous.columns.iter().any(|column| column.name == *from)
+                || !next.columns.iter().any(|column| column.name == *to)
+        }
+        MigrationOperation::RenameTable { from, to } => {
+            let removed = before
+                .tables
+                .iter()
+                .filter(|table| {
+                    after
+                        .tables
+                        .iter()
+                        .all(|candidate| candidate.name != table.name)
+                })
+                .count();
+            let added = after
+                .tables
+                .iter()
+                .filter(|table| {
+                    before
+                        .tables
+                        .iter()
+                        .all(|candidate| candidate.name != table.name)
+                })
+                .count();
+            removed != 1
+                || added != 1
+                || !before.tables.iter().any(|table| table.name == *from)
+                || !after.tables.iter().any(|table| table.name == *to)
+        }
+        _ => false,
+    }
 }
 
 pub fn reseal_migration(path: &Path) -> Result<MigrationFile, MigrationError> {

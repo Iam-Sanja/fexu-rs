@@ -151,6 +151,7 @@ jobs:
           cargo test -p myshop --test framework_names -- --ignored fresh_postgres_initializes_auth_jobs_and_application
           cargo test -p myshop --test postgres_api -- --ignored postgres_http_roundtrip
           cargo test -p fexu-migrations --test engine -- --ignored postgres_migration_roundtrip
+          cargo test -p fexu-migrations --test schema_evolution -- --ignored postgres_schema_evolution_keeps_rows_on_a_disposable_database
           cargo test -p fexu-migrations --test cross_app -- --ignored postgres_enforces_cross_app_foreign_keys
           cargo test -p fexu-auth --lib -- --ignored postgres_anonymous_session_roundtrip
           cargo test -p fexu-auth --lib -- --ignored postgres_account_security_roundtrip

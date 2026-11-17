@@ -17,10 +17,116 @@ pub fn apply_operations(
     Ok(schema)
 }
 
+pub fn validate_operation_identifiers(
+    operation: &MigrationOperation,
+) -> Result<(), MigrationError> {
+    match operation {
+        MigrationOperation::CreateTable { table } => {
+            require_ident(&table.name)?;
+            for column in &table.columns {
+                require_ident(&column.name)?;
+            }
+            for unique in &table.unique_constraints {
+                require_ident(&unique.name)?;
+                for column in &unique.columns {
+                    require_ident(column)?;
+                }
+            }
+            for index in &table.indexes {
+                require_ident(&index.name)?;
+                for column in &index.columns {
+                    require_ident(column)?;
+                }
+            }
+            for foreign_key in &table.foreign_keys {
+                require_foreign_key(foreign_key)?;
+            }
+        }
+        MigrationOperation::DropTable { name } => require_ident(name)?,
+        MigrationOperation::AddColumn {
+            table,
+            column,
+            foreign_key,
+            ..
+        } => {
+            require_ident(table)?;
+            require_ident(&column.name)?;
+            if let Some(foreign_key) = foreign_key {
+                require_foreign_key(foreign_key)?;
+            }
+        }
+        MigrationOperation::DropColumn { table, name } => {
+            require_ident(table)?;
+            require_ident(name)?;
+        }
+        MigrationOperation::AlterColumn { table, from, to } => {
+            require_ident(table)?;
+            require_ident(&from.name)?;
+            require_ident(&to.name)?;
+        }
+        MigrationOperation::RenameColumn { table, from, to } => {
+            require_ident(table)?;
+            require_distinct(from, to)?;
+        }
+        MigrationOperation::RenameTable { from, to } => require_distinct(from, to)?,
+        MigrationOperation::AddUniqueConstraint { table, constraint } => {
+            require_ident(table)?;
+            require_ident(&constraint.name)?;
+            for column in &constraint.columns {
+                require_ident(column)?;
+            }
+        }
+        MigrationOperation::DropUniqueConstraint { table, name }
+        | MigrationOperation::DropIndex { table, name }
+        | MigrationOperation::DropForeignKey { table, name, .. } => {
+            require_ident(table)?;
+            require_ident(name)?;
+        }
+        MigrationOperation::AddIndex { table, index } => {
+            require_ident(table)?;
+            require_ident(&index.name)?;
+            for column in &index.columns {
+                require_ident(column)?;
+            }
+        }
+        MigrationOperation::AddForeignKey { table, foreign_key } => {
+            require_ident(table)?;
+            require_foreign_key(foreign_key)?;
+        }
+    }
+    Ok(())
+}
+
+fn require_distinct(from: &str, to: &str) -> Result<(), MigrationError> {
+    require_ident(from)?;
+    require_ident(to)?;
+    if from == to {
+        return Err(MigrationError::new(
+            "A rename must use two different names. No statement was executed.".to_owned(),
+        ));
+    }
+    Ok(())
+}
+
+fn require_foreign_key(
+    foreign_key: &crate::snapshot::ForeignKeySnapshot,
+) -> Result<(), MigrationError> {
+    require_ident(&foreign_key.name)?;
+    require_ident(&foreign_key.referenced_table)?;
+    for column in &foreign_key.columns {
+        require_ident(column)?;
+    }
+    for column in &foreign_key.referenced_columns {
+        require_ident(column)?;
+    }
+    Ok(())
+}
+
 fn apply_one(
     schema: &mut SchemaSnapshot,
     operation: &MigrationOperation,
 ) -> Result<(), MigrationError> {
+    validate_operation_identifiers(operation)?;
     match operation {
         MigrationOperation::CreateTable { table } => {
             if schema
@@ -99,9 +205,6 @@ fn apply_one(
             *column = to.clone();
         }
         MigrationOperation::RenameColumn { table, from, to } => {
-            require_ident(table)?;
-            require_ident(from)?;
-            require_ident(to)?;
             {
                 let target = table_mut(schema, table)?;
                 if target.columns.iter().any(|column| column.name == *to) {
@@ -143,8 +246,6 @@ fn apply_one(
             refresh_constraint_names(schema);
         }
         MigrationOperation::RenameTable { from, to } => {
-            require_ident(from)?;
-            require_ident(to)?;
             if schema.tables.iter().any(|table| table.name == *to) {
                 return Err(MigrationError::new(format!(
                     "Target table `{to}` already exists."
@@ -261,10 +362,17 @@ fn table_mut<'a>(
 
 fn require_ident(name: &str) -> Result<(), MigrationError> {
     if is_identifier(name) {
-        Ok(())
-    } else {
-        Err(MigrationError::new(format!(
-            "Invalid SQL identifier `{name}`."
-        )))
+        return Ok(());
     }
+    if name
+        .chars()
+        .all(|character| character.is_ascii_alphanumeric() || character == '_')
+    {
+        return Err(MigrationError::new(format!(
+            "Invalid SQL identifier `{name}`. No statement was executed."
+        )));
+    }
+    Err(MigrationError::new(
+        "Invalid SQL identifier. No statement was executed.".to_owned(),
+    ))
 }

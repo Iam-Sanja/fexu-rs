@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased — safe schema evolution
+
+- Explicit `rename_column` and `rename_table` remain the only rename path. A removed name plus a new name is not guessed, and a rename that leaves more than one name changed is rejected. Identifiers are checked again before SQL, and a rejected name that is not a plain identifier is not copied into the error.
+- Boolean default changes, default removal, secondary indexes, and unique indexes keep existing rows. A unique index over duplicate values rolls back and writes no history row. Unsupported type changes stay refused. Destructive drops still require `--allow-destructive`.
+
 ## 0.1.2 — synchronized workspace version
 
 - All 16 publishable crates and their internal path dependencies are `0.1.2`. Examples stay unpublished. `0.1.0` and `fexu-cli` `0.1.1` remain the versions already on crates.io.

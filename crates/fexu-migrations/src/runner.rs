@@ -803,6 +803,12 @@ async fn apply_open(
     let kind = kind_of(backend).map_err(|error| MigrationError::new(error.to_string()))?;
     let mut schema = file.from_snapshot.clone();
     for operation in &file.operations {
+        if let Err(error) = crate::simulate::validate_operation_identifiers(operation) {
+            return Err(MigrationError::new(format!(
+                "Migration {} was not executed. {}",
+                file.id, error.0
+            )));
+        }
         if let Some((table, column, backfill, foreign_key)) =
             crate::rebuild::backfill_parts(operation)
         {
