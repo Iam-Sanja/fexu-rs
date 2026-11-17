@@ -9,6 +9,7 @@ use crate::mfa::AccountPhase;
 use crate::service::{normalize_email, unix_now, AuthService, PublicUser};
 use crate::store;
 use async_trait::async_trait;
+use fexu_db::driver::TransactionTrait;
 
 /// Where the account credential comes from. Only the local password exists.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -82,6 +83,11 @@ impl LocalAccountLifecycle for AuthService {
         let user = store::find_user_by_email(self.database(), &email)
             .await?
             .ok_or_else(|| AuthError::Validation("user was not found".into()))?;
-        store::revoke_user_sessions(self.database(), user.id, unix_now()?).await
+        let now = unix_now()?;
+        let transaction = self.database().begin().await.map_err(AuthError::database)?;
+        store::revoke_user_sessions(&transaction, user.id, now).await?;
+        crate::account_store::delete_user_challenges(&transaction, user.id).await?;
+        transaction.commit().await.map_err(AuthError::database)?;
+        Ok(())
     }
 }
