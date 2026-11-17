@@ -2,7 +2,7 @@
 
 use fexu::admin::{
     ActionContext, ActionError, ActionHandler, AdminAction, AdminFilter, AdminRegistry, AdminView,
-    AdminWidget, ExtensionError, FilterOption, ViewHandler, ViewPage, ViewRequest,
+    AdminWidget, ExtensionError, FilterOption, ViewHandler, ViewOutcome, ViewPage, ViewRequest,
 };
 use fexu::db::ModelRepository;
 use myshop::models::order::Order;
@@ -18,7 +18,7 @@ struct OrderReport;
 
 #[fexu::async_trait::async_trait]
 impl ViewHandler for OrderReport {
-    async fn handle(&self, request: &ViewRequest<'_>) -> Result<ViewPage, ExtensionError> {
+    async fn handle(&self, request: &ViewRequest<'_>) -> Result<ViewOutcome, ExtensionError> {
         let listed = Order::list(request.db)
             .await
             .map_err(|_| ExtensionError::new("extension.view", "orders could not be read"))?;
@@ -68,7 +68,7 @@ impl ViewHandler for OrderReport {
                 "View refreshed.".to_owned()
             };
         }
-        Ok(page)
+        Ok(page.into())
     }
 }
 

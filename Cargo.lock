@@ -779,6 +779,7 @@ dependencies = [
  "fexu-db",
  "fexu-forms",
  "fexu-storage",
+ "http-body-util",
  "serde",
  "serde_json",
  "tera",
@@ -878,6 +879,16 @@ dependencies = [
  "serde_json",
  "tokio",
  "uuid",
+]
+
+[[package]]
+name = "fexu-contract"
+version = "0.1.2"
+dependencies = [
+ "axum",
+ "fexu",
+ "getrandom 0.2.17",
+ "tokio",
 ]
 
 [[package]]

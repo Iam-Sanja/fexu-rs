@@ -2,7 +2,7 @@
 
 use fexu::admin::{
     ActionContext, ActionError, ActionHandler, AdminAction, AdminFilter, AdminRegistry, AdminView,
-    AdminWidget, ExtensionError, FilterOption, ViewHandler, ViewPage, ViewRequest,
+    AdminWidget, ExtensionError, FilterOption, ViewHandler, ViewOutcome, ViewPage, ViewRequest,
 };
 use fexu::auth::{AuthConfig, AuthService, AuthUser, ObjectPolicy};
 use fexu::core::{QueryScope, ScopeValue};
@@ -77,7 +77,7 @@ struct Report;
 
 #[fexu::async_trait::async_trait]
 impl ViewHandler for Report {
-    async fn handle(&self, request: &ViewRequest<'_>) -> Result<ViewPage, ExtensionError> {
+    async fn handle(&self, request: &ViewRequest<'_>) -> Result<ViewOutcome, ExtensionError> {
         let mut data = serde_json::Map::new();
         data.insert(
             "body".to_owned(),
@@ -87,7 +87,7 @@ impl ViewHandler for Report {
         if request.form.contains_key("csrf_token") {
             page.notice = "gespeichert".to_owned();
         }
-        Ok(page)
+        Ok(page.into())
     }
 }
 

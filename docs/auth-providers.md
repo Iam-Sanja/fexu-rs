@@ -2,13 +2,19 @@
 
 [Overview](index.md) · Threat model: [auth-threat-model.md](auth-threat-model.md)
 
-**Implemented** for the local password provider, TOTP, recovery codes, session revoke, reauthentication and account close. OIDC, OAuth and passkeys are not implemented.
+**Implemented** for the local password provider, TOTP, recovery codes, session revoke, reauthentication and account close. OIDC, OAuth and passkeys are not implemented. The binding design for a future authorization-code login is [auth-oidc-contract.md](auth-oidc-contract.md). That design is not code and does not make `RemoteProtocol::is_implemented` true.
 
 ## Provider
 
 `IdentityProvider` verifies an email and a secret against the database and returns a `VerifiedIdentity`. It does not create a session. `PasswordProvider` is the only provider. It keeps the dummy-hash path for unknown emails. A provider is trusted in-process code. It is not loaded from a request or from a database row.
 
 `RemoteProtocol` lists `Oidc`, `OAuthAuthorizationCode` and `Passkey`. `is_implemented` is always `false`. There is no method that reports a remote login as success.
+
+## Local account lifecycle
+
+`LocalAccountLifecycle` is the first account boundary. `AuthService` implements it for `AccountOrigin::LocalPassword` only. `provision_local` creates the user and does not open a session. `suspend_local` deactivates the user, revokes sessions and deletes pending login challenges in one transaction. `restore_local` activates the user again and does not invent a session. `revoke_local_sessions` revokes open sessions and deletes pending login challenges in one transaction, and leaves the account active. None of these methods write a cookie or check CSRF. Existing `login` still creates the session.
+
+`AccountOrigin::accepts_remote_assertion` is false. This interface does not enroll TOTP, complete a challenge, or accept an OIDC, OAuth or passkey assertion. Those protocols stay unimplemented until their own threat model and tests exist.
 
 ## Second factor
 
@@ -22,7 +28,7 @@ Disabling TOTP requires the password and a current code or recovery code, then r
 
 `list_sessions` returns id and timestamps, not token hashes. `revoke_session_for` revokes the actor's own session. Another user's session is `Forbidden` unless the actor is a superuser. Staff is not enough. `revoke_other_sessions` keeps the current session.
 
-`reauthenticate` returns a proof `v1.{expires}.{mac}` bound to the user id and the session id, valid for at most 300 seconds. It is not consumed. A second session cannot reuse it. `require_reauth` checks that binding.
+`reauthenticate` returns a proof bound to the user id and the session id, valid for at most 300 seconds. `require_reauth` accepts that proof once in the current process. Another session cannot reuse it. A restart can accept it again until it expires.
 
 `close_account` checks the password, sets the user inactive, revokes sessions and deletes TOTP, recovery codes and login challenges. The user row remains, so the email stays reserved. It does not delete stored files. The application calls storage `purge_owner`.
 

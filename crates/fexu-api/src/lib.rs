@@ -8,7 +8,7 @@ use std::collections::BTreeSet;
 
 use axum::{
     extract::State,
-    http::{HeaderMap, Method, StatusCode},
+    http::{header, HeaderMap, Method, StatusCode},
     response::IntoResponse,
     routing::get,
     Json, Router,
@@ -555,15 +555,11 @@ async fn readyz(State(state): State<AppState>) -> axum::response::Response {
                 error = %fexu_core::diagnostic_chain(&error),
                 "readiness check failed"
             );
-            (
+            problem_http(
                 StatusCode::SERVICE_UNAVAILABLE,
-                Json(problem_json(
-                    StatusCode::SERVICE_UNAVAILABLE.as_u16(),
-                    "Not ready",
-                    "Database operation failed",
-                )),
+                "Not ready",
+                "Database operation failed",
             )
-                .into_response()
         }
     }
 }
@@ -836,6 +832,19 @@ impl IntoResponse for ApiError {
                 )
             }
         };
-        (status, Json(problem_json(status.as_u16(), title, detail))).into_response()
+        problem_http(status, title, detail)
     }
+}
+
+pub(crate) fn problem_http(
+    status: StatusCode,
+    title: &str,
+    detail: &str,
+) -> axum::response::Response {
+    (
+        status,
+        [(header::CONTENT_TYPE, "application/problem+json")],
+        Json(problem_json(status.as_u16(), title, detail)),
+    )
+        .into_response()
 }

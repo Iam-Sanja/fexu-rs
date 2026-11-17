@@ -15,7 +15,18 @@ On 2026-11-17 the crates.io API and the Runique README agreed that 4.0.0 is the 
 
 ## What was not done
 
-A four-framework application with the same models, files and admin was not built. Setup-step counts, lines of code and migration timings were not recorded. Fexu has a SQLite loopback baseline in [benchmarks](benchmarks.md). Runique, Cot, Loco and PostgreSQL stay "not measured".
+A four-framework application with the same models, files and admin was not built. Setup timings and failure rates were not measured. Fexu has a SQLite loopback baseline in [benchmarks](benchmarks.md). Runique, Cot, Loco and PostgreSQL stay "not measured".
+
+## Documented setup commands
+
+Checked again on 2026-11-17 from the pages named below. These commands were not executed here, and they are not a timing or failure-rate comparison.
+
+| Framework | Commands shown for a first run | Source |
+|---|---|---|
+| Fexu | `cargo install fexu-cli --version 0.1.2 --locked`, `fexu new project`, `fexu migrate up`, `fexu admin create-user`, `fexu dev`. `fexu doctor` is optional and does not migrate. | [quickstart.md](quickstart.md). `cargo install` against crates.io was not run in this tree. |
+| Cot | `cargo install cot-cli`, `cot new my_project`, `cargo run`. The README does not show a migrate or admin command in that sequence. | [Cot README](https://github.com/cot-rs/cot/blob/master/README.md) |
+| Loco | `cargo install loco`, optional `cargo install sea-orm-cli`, interactive `loco new`, then `cargo loco start`. The README's client-side example also shows `npm install && npm run build`. | [Loco README](https://github.com/loco-rs/loco/blob/master/README.md) |
+| Runique | `cargo install runique --features postgres --locked`, `runique new`, `cargo run`, plus `runique create-superuser` and `runique migration up`. The page shows a `.env` with a placeholder database URL. | [runique.io/installation](https://runique.io/installation), fetched 2026-11-17. The snippet pins `runique` `4.0.0` with the `postgres` feature. crates.io was not rechecked on that day. |
 
 ## Matrix
 

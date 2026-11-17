@@ -2,7 +2,7 @@
 
 [Overview](index.md) · Responses: [views.md](views.md) · Forms: [forms.md](forms.md) · Routes: [urls.md](urls.md)
 
-**Status:** implemented on this branch for issue #89. Not merged. The helpers are Rust functions, not class-based views.
+**Status:** the helpers are on `main` and are ordinary Rust functions, not class-based views. `crud_urls_for` mounts a chosen subset. Issue #89 stays open for the items under [Open requirements](#open-requirements).
 
 ## What already existed
 
@@ -28,7 +28,24 @@ Paths are local to the app. `Registration::routes` adds the app prefix, and the 
 registry.routes(fexu::views::crud_urls_with::<Note, NotePolicy, NoteStamp>(resource())?)?;
 ```
 
+`crud_urls` and `crud_urls_with` still mount all five parts. `crud_urls_for` mounts only the requested `CrudPart` values. An empty list or a repeated part is rejected. Omitted parts have no route. List, detail and delete pages leave the corresponding link empty, and the board templates render those links only when the URL is present. `crud_urls_with` is `crud_urls_for` with every part, so existing callers keep the same routes.
+
 The example is `examples/board`. The application code is the model, an `ObjectPolicy`, a `RecordStamp`, the `HtmlResource` and four templates. Queries go through `ModelRepository` and `query_admin_page`.
+
+### Measured application code
+
+`examples/board/src/lib.rs` is 176 lines. That file holds the `Note` model, `NotePolicy`, `NoteStamp`, the `HtmlResource`, the one `crud_urls_with` registration, and the robots and sitemap handlers. The four templates are 82 lines together. `examples/myshop/src/contact.rs` is 167 lines and implements one public form: it parses the body, checks CSRF, renders errors and redirects. It has no list, no object scope, no update and no delete. The board file is therefore about the same length as that single manual form while the five CRUD handlers, the scope checks and the flash redirect stay in `fexu-api`.
+
+### Open requirements
+
+These are not part of this API:
+
+- Choice columns are still text inputs. A `<select>` needs the existing form renderer when the option list is `'static`.
+- File uploads, inlines and admin screens are unchanged.
+- The generic routes do not register the JSON API.
+- `_fexu_flashes` is created only by `create_flash_table`.
+- The PostgreSQL board test stays ignored unless `DATABASE_URL` points at an approved server that can create a disposable database. It was not run for this change.
+- Sitemap, robots and conditional responses already exist and were not replaced.
 
 ### Security rules
 
@@ -62,6 +79,8 @@ HTML CRUD pages put the consumed messages in `flashes` as `{ level, text }`. Ren
 
 `render_flashes` remains for a caller that wants one escaped HTML fragment.
 
+`redirect_with_flash(db, session_id, level, text, target)` checks the same local-path rules as `redirect_to` before it stores anything. A rejected target, a control character, or a missing `_fexu_flashes` table produces an error and does not set `Location`. A stored message is still removed by the next `take_flashes` for that session only. This helper does not change session cookies or list pagination.
+
 ## Sitemap, robots, redirects and conditional responses
 
 | Helper | Behavior |
@@ -84,6 +103,6 @@ Other work on `fexu-api/Cargo.toml` needs to keep the `fexu-forms` dependency. D
 
 ## Tests
 
-`examples/board/tests/crud.rs` covers the mounted HTML flow on SQLite: anonymous 401, missing permission 403, a rejected `scope` query, missing and forged CSRF, validation, escaped titles, owner isolation, pagination under `/board`, canonical output, `robots.txt`, `sitemap.xml`, a 304 and delete. The same test is ignored for PostgreSQL unless `DATABASE_URL` points at an approved server that can create a disposable database.
+`examples/board/tests/crud.rs` covers the mounted HTML flow on SQLite: anonymous 401, missing permission 403, a rejected `scope` query, missing and forged CSRF on create, update and delete, validation, escaped titles, owner isolation, a foreign id on read, update and delete, a missing id, `page=0`, a POST to the list, pagination under `/board`, canonical output, `robots.txt`, `sitemap.xml`, a 304 and delete. A second test mounts only list and detail under `/reading` and checks that create, update and delete are absent. The same full test is ignored for PostgreSQL unless `DATABASE_URL` points at an approved server that can create a disposable database.
 
 Library tests cover redirect decoding, pagination links, flash escaping and the sitemap/robots/ETag helpers.

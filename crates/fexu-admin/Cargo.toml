@@ -30,3 +30,6 @@ tera.workspace = true
 tracing.workspace = true
 uuid.workspace = true
 chrono.workspace = true
+
+[dev-dependencies]
+http-body-util = "0.1"

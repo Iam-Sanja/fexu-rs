@@ -309,6 +309,69 @@ async fn login_rate_limit_and_proxy_header() {
     assert!(trusting.presented_origin_allowed(&headers).is_err());
 }
 
+#[tokio::test]
+async fn forwarded_headers_do_not_become_trusted_origins() {
+    let mut config = AuthConfig::development();
+    config.allowed_origins = vec!["https://app.example.test".to_owned()];
+    config.cookie_secure = true;
+    config.trust_proxy = true;
+    config.trusted_proxies = vec!["*".to_owned()];
+    let auth = service(config).await;
+    let mut headers = axum::http::HeaderMap::new();
+    headers.insert(
+        "forwarded",
+        "for=203.0.113.8;host=app.example.test;proto=https"
+            .parse()
+            .unwrap(),
+    );
+    headers.insert("x-forwarded-host", "app.example.test".parse().unwrap());
+    headers.insert("x-forwarded-proto", "https".parse().unwrap());
+    headers.insert("x-forwarded-for", "203.0.113.8".parse().unwrap());
+    headers.insert("host", "app.example.test".parse().unwrap());
+    assert_eq!(auth.client_key(&headers, "10.0.0.8"), "10.0.0.8");
+    assert!(matches!(
+        auth.origin_allowed(&headers, &axum::http::Method::POST),
+        Err(AuthError::OriginRejected)
+    ));
+
+    headers.insert("origin", "http://app.example.test".parse().unwrap());
+    assert!(matches!(
+        auth.origin_allowed(&headers, &axum::http::Method::POST),
+        Err(AuthError::OriginRejected)
+    ));
+    headers.insert("origin", "https://evil.example".parse().unwrap());
+    assert!(matches!(
+        auth.origin_allowed(&headers, &axum::http::Method::POST),
+        Err(AuthError::OriginRejected)
+    ));
+    headers.insert("origin", "https://app.example.test".parse().unwrap());
+    assert!(auth
+        .origin_allowed(&headers, &axum::http::Method::POST)
+        .is_ok());
+
+    let password = ephemeral_password();
+    auth.create_user("forwarded@example.com", &password, false, false)
+        .await
+        .expect("user");
+    let issued = auth
+        .login("forwarded@example.com", &password, "10.0.0.8")
+        .await
+        .expect("login");
+    headers.insert(
+        axum::http::header::COOKIE,
+        format!("fexu_session={}", issued.token).parse().unwrap(),
+    );
+    assert!(matches!(
+        auth.authenticate(&headers, &axum::http::Method::POST).await,
+        Err(AuthError::CsrfRejected)
+    ));
+    headers.insert("x-csrf-token", "not-the-issued-token".parse().unwrap());
+    assert!(matches!(
+        auth.authenticate(&headers, &axum::http::Method::POST).await,
+        Err(AuthError::CsrfRejected)
+    ));
+}
+
 async fn expiries_for(db: &fexu_db::driver::DatabaseConnection, user_id: &str) -> Vec<i64> {
     let rows = db
         .query_all(Statement::from_sql_and_values(

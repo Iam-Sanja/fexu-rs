@@ -1,9 +1,12 @@
 use axum::http::{header, StatusCode};
+use fexu::apps::{AppConfig, AppError, FexuApplication, Registration, TemplateMode};
 use fexu::auth::{AuthConfig, AuthService};
+use fexu::db::ModelRepository;
 use fexu::testing::{csrf_token_from_html, TestClient};
+use fexu::views::{crud_urls_for, CrudPart};
 use fexu::App;
 
-use board::{prepare_database, BoardApp};
+use board::{prepare_database, BoardApp, Note, NoteCreate};
 
 fn fixture_password() -> String {
     let mut bytes = [0u8; 16];
@@ -199,6 +202,177 @@ async fn exercise(db: fexu::db::driver::DatabaseConnection) {
     assert_eq!(other_list.status(), StatusCode::OK);
     assert!(!other_list.text().expect("list").contains("alert"));
 
+    owner
+        .get("/board/items/not-a-uuid")
+        .await
+        .expect("bad id")
+        .assert_status(StatusCode::NOT_FOUND)
+        .expect("not a uuid");
+    owner
+        .get("/board/items/00000000-0000-0000-0000-000000000099")
+        .await
+        .expect("missing id")
+        .assert_status(StatusCode::NOT_FOUND)
+        .expect("missing");
+
+    let edit = detail_body
+        .split("href=\"")
+        .find(|part| part.contains("/edit\""))
+        .expect("edit link")
+        .split('"')
+        .next()
+        .expect("edit href")
+        .replace("&amp;", "&");
+    other
+        .get(&edit)
+        .await
+        .expect("foreign edit")
+        .assert_status(StatusCode::NOT_FOUND)
+        .expect("hidden edit");
+    let edit_page = owner
+        .request(axum::http::Method::GET, &edit)
+        .header(header::ACCEPT.as_str(), "text/html")
+        .expect("header")
+        .header(header::ACCEPT_LANGUAGE.as_str(), "en")
+        .expect("language")
+        .send()
+        .await
+        .expect("edit");
+    assert_eq!(edit_page.status(), StatusCode::OK);
+    let edit_html = edit_page.text().expect("edit html").to_owned();
+    let other_form = other
+        .request(axum::http::Method::GET, "/board/items/new")
+        .header(header::ACCEPT.as_str(), "text/html")
+        .expect("header")
+        .send()
+        .await
+        .expect("other form")
+        .text()
+        .expect("other form html")
+        .to_owned();
+    other
+        .post_form_with_csrf(
+            &edit,
+            &other_form,
+            &[("title", "Stolen"), ("body", "hello")],
+        )
+        .await
+        .expect("foreign update")
+        .assert_status(StatusCode::NOT_FOUND)
+        .expect("hidden update");
+    let delete = format!("{location}/delete");
+    other
+        .get(&delete)
+        .await
+        .expect("foreign delete form")
+        .assert_status(StatusCode::NOT_FOUND)
+        .expect("hidden delete");
+    let confirm = owner
+        .request(axum::http::Method::GET, &delete)
+        .header(header::ACCEPT.as_str(), "text/html")
+        .expect("header")
+        .send()
+        .await
+        .expect("confirm");
+    assert_eq!(confirm.status(), StatusCode::OK);
+    let confirm_html = confirm.text().expect("confirm html").to_owned();
+    other
+        .post_form_with_csrf(&delete, &other_form, &[])
+        .await
+        .expect("foreign delete")
+        .assert_status(StatusCode::NOT_FOUND)
+        .expect("hidden delete post");
+    let still = owner
+        .request(axum::http::Method::GET, &location)
+        .header(header::ACCEPT.as_str(), "text/html")
+        .expect("header")
+        .send()
+        .await
+        .expect("still there");
+    assert_eq!(still.status(), StatusCode::OK);
+    let still_body = still.text().expect("still html");
+    assert!(still_body.contains("&lt;script&gt;"));
+    assert!(!still_body.contains("Stolen"));
+
+    owner
+        .post_form(&edit, &[("title", "Forged"), ("body", "hello")])
+        .await
+        .expect("update csrf")
+        .assert_status(StatusCode::FORBIDDEN)
+        .expect("update csrf");
+    owner
+        .post_form(&delete, &[])
+        .await
+        .expect("delete csrf")
+        .assert_status(StatusCode::FORBIDDEN)
+        .expect("delete csrf");
+    owner
+        .get(&location)
+        .await
+        .expect("after forged writes")
+        .assert_status(StatusCode::OK)
+        .expect("record remains");
+
+    let page_zero = owner
+        .request(axum::http::Method::GET, "/board/items?page=0")
+        .header(header::ACCEPT.as_str(), "text/html")
+        .expect("header")
+        .send()
+        .await
+        .expect("page zero");
+    assert_eq!(page_zero.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    let page_zero_body = page_zero.text().expect("page zero html");
+    assert!(
+        page_zero_body.contains("page starts at 1"),
+        "{page_zero_body}"
+    );
+    assert!(
+        !page_zero_body.to_ascii_lowercase().contains("select"),
+        "{page_zero_body}"
+    );
+    owner
+        .post_form("/board/items", &[("title", "No list write")])
+        .await
+        .expect("post list")
+        .assert_status(StatusCode::FORBIDDEN)
+        .expect("list write rejected");
+    anonymous
+        .post_form("/board/items/new", &[("title", "Anon")])
+        .await
+        .expect("anonymous post")
+        .assert_status(StatusCode::UNAUTHORIZED)
+        .expect("anonymous write");
+    anonymous
+        .get("/board/items/new")
+        .await
+        .expect("anonymous form")
+        .assert_status(StatusCode::UNAUTHORIZED)
+        .expect("anonymous form status");
+    guest
+        .get("/board/items/new")
+        .await
+        .expect("guest form")
+        .assert_status(StatusCode::FORBIDDEN)
+        .expect("guest form status");
+    guest
+        .post_form_with_csrf(
+            "/board/items/new",
+            &html,
+            &[("title", "Guest"), ("body", "")],
+        )
+        .await
+        .expect("guest post")
+        .assert_status(StatusCode::FORBIDDEN)
+        .expect("guest write");
+    let unchanged = owner
+        .get("/board/items")
+        .await
+        .expect("count")
+        .text()
+        .expect("count html")
+        .to_owned();
+    assert!(unchanged.contains("1 notes"), "{unchanged}");
+
     let mut list_html = String::new();
     for index in 1..=3 {
         let page = owner
@@ -269,25 +443,6 @@ async fn exercise(db: fexu::db::driver::DatabaseConnection) {
     assert!(sitemap_body.contains("http://127.0.0.1:3000/board/items"));
     assert!(!sitemap_body.contains("<script"));
 
-    let edit = detail_body
-        .split("href=\"")
-        .find(|part| part.contains("/edit\""))
-        .expect("edit link")
-        .split('"')
-        .next()
-        .expect("edit href")
-        .replace("&amp;", "&");
-    let edit_page = owner
-        .request(axum::http::Method::GET, &edit)
-        .header(header::ACCEPT.as_str(), "text/html")
-        .expect("header")
-        .header(header::ACCEPT_LANGUAGE.as_str(), "en")
-        .expect("language")
-        .send()
-        .await
-        .expect("edit");
-    assert_eq!(edit_page.status(), StatusCode::OK);
-    let edit_html = edit_page.text().expect("edit html").to_owned();
     let updated = owner
         .post_form_with_csrf(
             &edit,
@@ -298,17 +453,13 @@ async fn exercise(db: fexu::db::driver::DatabaseConnection) {
         .expect("update");
     assert_eq!(updated.status(), StatusCode::SEE_OTHER);
 
-    let delete = format!("{location}/delete");
-    let confirm = owner
-        .request(axum::http::Method::GET, &delete)
-        .header(header::ACCEPT.as_str(), "text/html")
-        .expect("header")
-        .send()
-        .await
-        .expect("confirm");
-    assert_eq!(confirm.status(), StatusCode::OK);
-    let confirm_html = confirm.text().expect("confirm html").to_owned();
     assert!(confirm_html.contains("Delete"));
+    owner
+        .get(&location)
+        .await
+        .expect("get delete does not remove")
+        .assert_status(StatusCode::OK)
+        .expect("still present");
     owner
         .post_form_with_csrf(&delete, &confirm_html, &[])
         .await
@@ -345,6 +496,146 @@ fn omit_must_name_a_real_column() {
         Ok(_) => panic!("unknown omit was accepted"),
     };
     assert_eq!(error.code, "crud.fields");
+}
+
+#[test]
+fn crud_parts_select_routes_and_reject_duplicates() {
+    let full = fexu::views::crud_urls::<Note, board::NotePolicy>(board::resource()).expect("full");
+    assert_eq!(full.names().iter().count(), 5);
+    let partial = crud_urls_for::<Note, board::NotePolicy, board::NoteStamp>(
+        board::resource(),
+        &[CrudPart::Detail, CrudPart::List],
+    )
+    .expect("partial");
+    let names: Vec<&str> = partial.names().iter().map(|(name, _)| name).collect();
+    assert_eq!(names, vec!["board.detail", "board.list"]);
+    let empty = crud_urls_for::<Note, board::NotePolicy, board::NoteStamp>(board::resource(), &[]);
+    assert!(matches!(empty, Err(error) if error.code == "crud.parts"));
+    let repeated = crud_urls_for::<Note, board::NotePolicy, board::NoteStamp>(
+        board::resource(),
+        &[CrudPart::List, CrudPart::List],
+    );
+    assert!(matches!(repeated, Err(error) if error.code == "crud.parts"));
+}
+
+struct Reading;
+
+impl FexuApplication for Reading {
+    fn config(&self) -> AppConfig {
+        AppConfig::new("board").label("Reading").prefix("/reading")
+    }
+
+    fn contribute(&self, registry: &mut Registration<'_>) -> Result<(), AppError> {
+        registry.routes(crud_urls_for::<Note, board::NotePolicy, board::NoteStamp>(
+            board::resource(),
+            &[CrudPart::List, CrudPart::Detail],
+        )?)?;
+        registry.templates(
+            std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("templates"),
+            TemplateMode::Isolated,
+        )?;
+        Ok(())
+    }
+}
+
+#[tokio::test]
+async fn read_only_parts_hide_writes_and_other_owners() {
+    let db = fexu::db::connect("sqlite::memory:").await.expect("sqlite");
+    prepare_database(&db).await.expect("schema");
+    let password = fixture_password();
+    let auth = AuthService::new(db.clone(), AuthConfig::development());
+    let owner = auth
+        .create_user("owner@example.com", &password, false, false)
+        .await
+        .expect("owner");
+    auth.create_user("other@example.com", &password, false, false)
+        .await
+        .expect("other");
+    for action in ["read", "create", "update", "delete"] {
+        auth.grant_permission("editor", &format!("notes.{action}"))
+            .await
+            .expect("permission");
+    }
+    auth.assign_role("owner@example.com", "editor")
+        .await
+        .expect("owner role");
+    auth.assign_role("other@example.com", "editor")
+        .await
+        .expect("other role");
+    let created = Note::create(
+        &db,
+        NoteCreate {
+            title: "Visible".to_owned(),
+            body: Some("mine".to_owned()),
+            owner_id: owner.id,
+        },
+    )
+    .await
+    .expect("note");
+    let app = App::new(db)
+        .with_auth(auth.clone())
+        .install(Reading)
+        .expect("install")
+        .seal()
+        .expect("seal");
+    let router = app.into_router();
+    let mut owner_client = TestClient::new(router.clone());
+    let mut other_client = TestClient::new(router);
+    sign_in(&mut owner_client, &auth, "owner@example.com", &password).await;
+    sign_in(&mut other_client, &auth, "other@example.com", &password).await;
+
+    let list = owner_client
+        .get("/reading/items")
+        .await
+        .expect("list")
+        .text()
+        .expect("list html")
+        .to_owned();
+    assert!(list.contains("Visible"), "{list}");
+    assert!(!list.contains(">New<"), "{list}");
+    let hidden = other_client
+        .get("/reading/items")
+        .await
+        .expect("other list")
+        .text()
+        .expect("other html")
+        .to_owned();
+    assert!(!hidden.contains("Visible"), "{hidden}");
+    let detail = format!("/reading/items/{}", created.id);
+    let page = owner_client
+        .get(&detail)
+        .await
+        .expect("detail")
+        .text()
+        .expect("detail html")
+        .to_owned();
+    assert!(page.contains("Visible"), "{page}");
+    assert!(!page.contains(">Edit<"), "{page}");
+    assert!(!page.contains(">Delete<"), "{page}");
+    other_client
+        .get(&detail)
+        .await
+        .expect("foreign detail")
+        .assert_status(StatusCode::NOT_FOUND)
+        .expect("hidden detail");
+    owner_client
+        .get("/reading/items/new")
+        .await
+        .expect("unmounted create")
+        .assert_status(StatusCode::NOT_FOUND)
+        .expect("no create route");
+    owner_client
+        .get(&format!("{detail}/edit"))
+        .await
+        .expect("unmounted update")
+        .assert_status(StatusCode::NOT_FOUND)
+        .expect("no update route");
+    owner_client
+        .get(&format!("{detail}/delete"))
+        .await
+        .expect("unmounted delete")
+        .assert_status(StatusCode::NOT_FOUND)
+        .expect("no delete route");
 }
 
 #[tokio::test]

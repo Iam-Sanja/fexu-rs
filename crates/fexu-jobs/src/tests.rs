@@ -326,6 +326,13 @@ async fn expired_lease_can_be_reclaimed_and_the_old_token_cannot_finish() {
         .expect("row");
     assert_eq!(reclaimed.attempts, 2);
     assert_ne!(token, new_token);
+    let redelivery = crate::JobContext {
+        id: reclaimed.id,
+        attempt: reclaimed.attempts,
+        now: clock.unix().expect("now"),
+        idempotency_key: reclaimed.idempotency_key.clone(),
+    };
+    assert!(redelivery.is_redelivery());
     let lost = queue
         .finish_success(id, &token, &record)
         .await
@@ -655,7 +662,12 @@ fn unsafe_error_codes_are_replaced() {
     assert!(!hidden.detail().contains("password"));
     assert_eq!(JobError::permanent("notes.busy").code(), "notes.busy");
     assert_eq!(delay_secs(1, 10, false), 1);
-    assert!(delay_secs(3, 10, true) >= 4);
+    assert_eq!(delay_secs(2, 10, false), 2);
+    assert_eq!(delay_secs(9, 10, false), 256);
+    assert_eq!(delay_secs(10, 10, false), 300);
+    assert_eq!(delay_secs(20, 10, false), 300);
+    let jitter = delay_secs(3, 10, true);
+    assert!((4..=8).contains(&jitter));
 }
 
 struct SplitJob {
@@ -995,6 +1007,99 @@ async fn crash_retry_and_two_workers_do_not_claim_the_same_job() {
             .await
             .expect("owner"),
         Finish::Stored
+    );
+    let _ = std::fs::remove_file(path);
+}
+
+#[tokio::test]
+async fn stop_during_poll_does_not_wait_out_the_interval() {
+    let (queue, _clock, path) = started().await;
+    let stop = crate::stop_flag();
+    let worker = Worker::new(
+        queue,
+        registry(
+            Arc::new(AtomicU32::new(0)),
+            Arc::new(AtomicU32::new(0)),
+            false,
+        ),
+        60,
+        60_000,
+        1,
+    );
+    let flag = stop.clone();
+    let running = tokio::spawn(async move { worker.run(flag.as_ref()).await });
+    tokio::time::sleep(std::time::Duration::from_millis(80)).await;
+    stop.store(true, std::sync::atomic::Ordering::SeqCst);
+    let finished = tokio::time::timeout(std::time::Duration::from_secs(2), running)
+        .await
+        .expect("poll wait ignored the stop flag");
+    finished.expect("join").expect("worker");
+    let _ = std::fs::remove_file(path);
+}
+
+#[tokio::test]
+async fn committed_enqueue_is_visible_and_a_rollback_is_not() {
+    let (url, path) = temp_url();
+    let db = fexu_db::connect(&url).await.expect("sqlite");
+    apply_migrations(&db).await.expect("migration");
+    let clock = Arc::new(ManualClock::new(1_700_000_000));
+    let writer = Queue::new(db, clock.clone(), JobPolicy::default());
+    let reader = Queue::new(
+        fexu_db::connect(&url).await.expect("reader"),
+        clock,
+        JobPolicy::default(),
+    );
+    let transaction = writer.database().begin().await.expect("begin");
+    let staged = writer
+        .enqueue_json_on(
+            &transaction,
+            CountJob::NAME,
+            1,
+            &Label {
+                label: "commit".into(),
+            },
+            When::now(),
+        )
+        .await
+        .expect("stage");
+    let EnqueueOutcome::Created(id) = staged else {
+        panic!("created");
+    };
+    assert_eq!(
+        reader.get(id).await.expect_err("hidden").code(),
+        "job.not_found"
+    );
+    transaction.commit().await.expect("commit");
+    assert_eq!(
+        reader.get(id).await.expect("visible").status,
+        JobStatus::Pending
+    );
+    let claimed = reader
+        .claim("reader", &[CountJob::NAME], 30)
+        .await
+        .expect("claim")
+        .expect("row");
+    assert_eq!(claimed.0.id, id);
+    let hidden = writer.database().begin().await.expect("begin");
+    let rolled = writer
+        .enqueue_json_on(
+            &hidden,
+            CountJob::NAME,
+            1,
+            &Label {
+                label: "hidden".into(),
+            },
+            When::now(),
+        )
+        .await
+        .expect("stage rollback");
+    let EnqueueOutcome::Created(rolled_id) = rolled else {
+        panic!("rolled");
+    };
+    hidden.rollback().await.expect("rollback");
+    assert_eq!(
+        reader.get(rolled_id).await.expect_err("rolled").code(),
+        "job.not_found"
     );
     let _ = std::fs::remove_file(path);
 }

@@ -19,6 +19,6 @@
   </ul>
   {% if prev_url %}<a href="{{ prev_url | safe }}">Previous</a>{% endif %}
   {% if next_url %}<a href="{{ next_url | safe }}">Next</a>{% endif %}
-  <a href="{{ create_url | safe }}">New</a>
+  {% if create_url %}<a href="{{ create_url | safe }}">New</a>{% endif %}
 </body>
 </html>

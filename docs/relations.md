@@ -1,6 +1,6 @@
 # Typed model relationships
 
-[Overview](index.md) · **Implemented** for Belongs-To, Has-Many, explicit batch loading, `load_many_to_many` and `load_one_to_one`. Automatic eager loading is not implemented. Call `Select::annotate`, `load_children` or `load_one_to_one` when the handler needs the related rows. Keyset pages use `Select::keyset` and stay within 100 rows.
+[Overview](index.md) · **Implemented** for Belongs-To, Has-Many, explicit batch loading, `load_many_to_many` and `load_one_to_one`. Automatic eager loading is not implemented. Call `Select::annotate`, `load_children` or `load_one_to_one` when the handler needs the related rows. Keyset pages use `Select::keyset` and stay within 100 rows. `Select::scan` repeats that page until the cursor is exhausted. `load_by_ids`, `load_children`, `load_one_to_one` and `load_many_to_many` send at most 100 identifiers in one `IN` list.
 
 A relationship does not only exist in Rust. The field carries a foreign key, and the database checks it. The methods load typed models. You do not return a `serde_json::Value`.
 

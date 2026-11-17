@@ -10,7 +10,8 @@ members = [
   "examples/notes",
   "examples/desk",
   "examples/board",
-  "examples/bench-baseline"
+  "examples/bench-baseline",
+  "examples/contract"
 ]
 
 [workspace.package]

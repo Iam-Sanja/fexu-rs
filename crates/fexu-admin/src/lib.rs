@@ -35,7 +35,10 @@ pub use relations::{
     bulk_targets, current_members, lookup_page, posted_members, replace_links, scoped_membership,
     shape_of, LookupPage, RelationShape,
 };
-pub use views::{AdminView, ExtensionError, UploadedFile, ViewHandler, ViewPage, ViewRequest};
+pub use views::{
+    AdminView, ExtensionError, UploadedFile, ViewHandler, ViewOutcome, ViewPage, ViewQuery,
+    ViewRequest,
+};
 pub use widgets::{AdminWidget, WidgetKind};
 
 pub fn mount(
