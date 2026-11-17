@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased — custom forms and model forms
+
+- `#[derive(FexuForm)]` accepts a standalone struct or `#[form(model = Type)]`. The struct fields are the allow-list. Two structs can bind different subsets of one model. `examples/board` publishes and revises `Note` that way and leaves `owner_id` to the caller.
+- Repeated keys stay `validation.duplicate` unless the name is passed to `parse_urlencoded_multi` or `parse_json_multi`. `Vec<String>` is the repeated field type. `FormContext` flags change `readonly_unless` and `required_when`. `push_form` records a form-level code.
+- Formset transactions, upload storage and wizards are unchanged. The form crate still does not authenticate `csrf_token`.
+
 ## Unreleased — safe schema evolution
 
 - Explicit `rename_column` and `rename_table` remain the only rename path. A removed name plus a new name is not guessed, and a rename that leaves more than one name changed is rejected. A rename whose old and new names are equal is rejected before any file or statement is written. Identifiers are checked again before SQL, and a rejected name that is not a plain identifier is not copied into the error.

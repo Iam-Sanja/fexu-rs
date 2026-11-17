@@ -23,7 +23,13 @@ The facade exports the module as `fexu::forms`.
 
 `FormValues::parse_urlencoded` and `FormValues::parse_json` both feed `bind_submission`. Duplicate keys are `validation.duplicate`. Names in the protected list are `validation.readonly` and are removed before binding, so a forged readonly or disabled field cannot overwrite the stored value. `apply_contracts` copies `min_length`, `max_length` and `format` from `FieldContract`. Lengths count Unicode scalar values. `render_relation_select` renders only the options the caller already limited with `QueryScope`. `inspect_upload` rejects traversal, size, a content type outside the policy, and image bytes that do not match PNG, JPEG, GIF or WebP. `plan_formset` counts creates, updates and deletes. The caller writes those rows in one database transaction and rolls the transaction back when validation fails.
 
-`#[derive(FexuForm)]` with `#[form(model = Type)]` builds a form from the model allow-list. `bind_formset` accepts at most 100 rows named `{prefix}_{index}_{field}`. `store_upload` rejects `..`, slashes and NUL, then stores the bytes through `LocalStorage`. Numeric `min` and `max` come from the model column metadata. The HTML `required` attribute does not replace the server check.
+`#[derive(FexuForm)]` with `#[form(model = Type)]` builds a form from the struct's columns. The struct is the allow-list: columns that are absent stay out, including the primary key. A second struct can list a different subset of the same model. `from_submit` uses an empty flag set. `from_submit_in` takes a `FormContext`. `#[form(readonly_unless = "staff")]` rejects a posted value unless that flag is present. `#[form(required_when = "staff")]` makes the field required only when the flag is present. `widgets()` returns labels, help and placeholders for rendering.
+
+A derive without `model` is a standalone form. Field types are `String`, `i64`, `bool`, `Vec<String>` and `Option` of `String`, `i64` or `bool`. Attributes set `label`, `help`, `placeholder`, `widget`, `min_length`, `max_length`, `choices`, `check`, `required`, `readonly` and the same flag rules. `#[form(cross = function)]` runs after the fields are valid and may call `FormErrors::push_form`. `Vec<String>` is the only repeated value. `parse_urlencoded` and `parse_json` still reject every duplicate key. `parse_urlencoded_multi` and `parse_json_multi` repeat only the names passed in, and still reject duplicates of every other name.
+
+`bind_create` and `bind_update` are the create and patch contracts around `bind_submission`. `bind_in_context` applies `FieldAccess` on an allow-list the caller already built with `model_fields`. `Presentation::unbound` shows initial values. `Presentation::bound` shows the posted values and does not fill gaps from the initial values. `posted_csrf` reads the control field. The form crate does not authenticate that token; the handler still uses `AuthService`.
+
+`bind_formset` accepts at most 100 rows named `{prefix}_{index}_{field}`. `store_upload` rejects `..`, slashes and NUL, then stores the bytes through `LocalStorage`. Numeric `min` and `max` come from the model column metadata. The HTML `required` attribute does not replace the server check.
 
 ## Data flow
 
@@ -39,7 +45,7 @@ HTML output is escaped. Unknown fields return `validation.unknown_field` instead
 
 ## Error cases
 
-Codes include `validation.required`, `validation.min_length`, `validation.max_length`, `validation.min_value`, `validation.max_value`, `validation.email`, `validation.url`, `validation.invalid_type`, `validation.uuid`, `validation.unknown_field`, `validation.choice`, `validation.postal`, `validation.mismatch` and `form.csrf`. `ContactForm` returns `validation.mismatch` when the name equals the local part of the email address. `topic` is optional and must be `order`, `product` or `other`. For unknown codes, `message` returns `missing message`. Setup codes are `form.unknown_column`, `form.duplicate_column` and `form.protected_column`.
+Codes include `validation.required`, `validation.min_length`, `validation.max_length`, `validation.min_value`, `validation.max_value`, `validation.email`, `validation.url`, `validation.invalid_type`, `validation.uuid`, `validation.unknown_field`, `validation.choice`, `validation.postal`, `validation.mismatch`, `validation.readonly`, `validation.duplicate` and `form.csrf`. Field codes use the field name. `push_form` stores a form code under the empty name, and `form_error` reads it back. `ContactForm` returns `validation.mismatch` when the name equals the local part of the email address. `topic` is optional and must be `order`, `product` or `other`. For unknown codes, `message` returns `missing message`. Setup codes are `form.unknown_column`, `form.duplicate_column` and `form.protected_column`.
 
 `required_column_choice`, `choice_options` and `render_choice_select` build a select from `ColumnSpec::choices`. `required_choice` still checks a caller-supplied option list. `required_decimal` rejects values that do not fit the declared precision and scale. Labels follow `de` or any other locale as English. Unknown choices use `validation.choice` and bad decimals use `validation.decimal`. See [models.md](models.md).
 
@@ -63,12 +69,16 @@ let _title = &bound[0].value;
 
 ## Tests
 
-`cargo test -p fexu-forms`. Covered are mandatory fields, length, email, URL, number, UUID, optional fields, cross validation, unknown fields, escaping, select choices, postal codes, prefilled values, password suppression and the model allow-list.
+`cargo test -p fexu-forms` and `cargo test -p fexu --test form_derive`. Covered are mandatory fields, length, email, URL, number, UUID, optional fields, cross validation, unknown fields, escaping, select choices, postal codes, prefilled values, password suppression, the model allow-list, repeated keys, context flags and the standalone derive. `cargo test -p board --test forms` writes one note through the publish form and revises it through the title form on SQLite. The PostgreSQL copy is ignored unless `DATABASE_URL` points at an approved disposable database.
 
 ## Limitations
 
-File inputs use `enctype="multipart/form-data"`. The stored path still comes from `store_upload`, which ignores the client file name. A formset plan does not open a transaction by itself. Remote storage is not included. `parse_json` accepts only a flat object of strings, numbers, booleans and null.
+File inputs use `enctype="multipart/form-data"`. The stored path still comes from `store_upload`, which ignores the client file name. A formset plan does not open a transaction by itself. Remote storage is not included. `parse_json` accepts only a flat object of strings, numbers, booleans and null. `parse_json_multi` additionally accepts an array of those scalars for declared repeated names.
 
-## Extension
+## Example app
 
-A future derive macro can call the same functions from `fexu-core`. File fields and formsets remain planned.
+`examples/board/src/forms.rs` declares `NotePublishForm` and `NoteReviseForm` for the same `Note` model. Publish accepts `title` and `body`. Revise accepts `title`. `owner_id` is on neither form. The repository write in `examples/board/tests/forms.rs` still passes `QueryScope::Equals` for `owner_id`. `NoteSearchForm` has no model.
+
+## Not in this contract
+
+Formset rows are still parsed by `bind_formset` and `plan_formset`. The caller opens the database transaction and rolls it back. Upload bytes still go through `inspect_upload` and `store_upload`; there is no new file-field lifecycle. Wizards are not implemented. The next wizard step would be a list of the existing form types plus the index of the current step, with each step calling `from_form_in` or `from_submit_in` and no step writing until the last one succeeds. Relation options still come from `render_relation_select` after the caller has applied `QueryScope`. A form does not widen that scope.

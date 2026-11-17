@@ -40,20 +40,67 @@ impl FormErrors {
             .find(|failure| failure.field == name)
             .map(|failure| failure.code)
     }
+
+    /// Form-level code. The empty field name stays readable through [`Self::for_field`].
+    pub fn push_form(&mut self, code: &'static str) {
+        self.push("", code);
+    }
+
+    pub fn form_error(&self) -> Option<&'static str> {
+        self.for_field("")
+    }
+
+    pub fn field_errors(&self) -> impl Iterator<Item = &FieldFailure> {
+        self.fields
+            .iter()
+            .filter(|failure| !failure.field.is_empty())
+    }
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct FormValues {
     values: BTreeMap<String, String>,
+    repeated: BTreeMap<String, Vec<String>>,
 }
 
 impl FormValues {
     pub fn insert(&mut self, name: impl Into<String>, value: impl Into<String>) {
-        self.values.insert(name.into(), value.into());
+        let name = name.into();
+        self.repeated.remove(&name);
+        self.values.insert(name, value.into());
     }
 
     pub fn get(&self, name: &str) -> Option<&str> {
         self.values.get(name).map(String::as_str)
+    }
+
+    /// Every posted value. A field without repeated values returns the single value.
+    pub fn get_all(&self, name: &str) -> Vec<&str> {
+        if let Some(values) = self.repeated.get(name) {
+            return values.iter().map(String::as_str).collect();
+        }
+        self.get(name).into_iter().collect()
+    }
+
+    pub fn set_all(
+        &mut self,
+        name: impl Into<String>,
+        values: impl IntoIterator<Item = impl Into<String>>,
+    ) {
+        let name = name.into();
+        self.repeated.remove(&name);
+        self.values.remove(&name);
+        let mut values = values.into_iter().map(Into::into).collect::<Vec<_>>();
+        if values.is_empty() {
+            return;
+        }
+        if values.len() == 1 {
+            self.values.insert(name, values.pop().unwrap_or_default());
+            return;
+        }
+        for value in values {
+            self.push_repeat(name.clone(), value);
+        }
     }
 
     pub fn names(&self) -> impl Iterator<Item = &str> {
@@ -91,7 +138,51 @@ impl FormValues {
     }
 
     pub fn remove(&mut self, name: &str) -> Option<String> {
+        self.repeated.remove(name);
         self.values.remove(name)
+    }
+
+    /// Like [`Self::parse_urlencoded`], except names in `multiple` may repeat.
+    ///
+    /// Every other repeated name is still `validation.duplicate`. Nothing is kept
+    /// from a rejected duplicate.
+    pub fn parse_urlencoded_multi(body: &str, multiple: &[&str]) -> Result<Self, FormErrors> {
+        if body.len() > 65_536 {
+            let mut errors = FormErrors::default();
+            errors.push("", "request.rejected");
+            return Err(errors);
+        }
+        let mut values = Self::default();
+        if body.is_empty() {
+            return Ok(values);
+        }
+        for pair in body.split('&') {
+            let (raw_name, raw_value) = pair.split_once('=').unwrap_or((pair, ""));
+            let name = decode(raw_name);
+            let value = decode(raw_value);
+            if !valid_field_name(&name) {
+                let mut errors = FormErrors::default();
+                errors.push(&name, "validation.invalid_type");
+                return Err(errors);
+            }
+            if multiple.contains(&name.as_str()) {
+                values.push_repeat(name, value);
+            } else if values.values.contains_key(&name) {
+                let mut errors = FormErrors::default();
+                errors.push(&name, "validation.duplicate");
+                return Err(errors);
+            } else {
+                values.insert(name, value);
+            }
+        }
+        Ok(values)
+    }
+
+    fn push_repeat(&mut self, name: String, value: String) {
+        if !self.values.contains_key(&name) {
+            self.values.insert(name.clone(), value.clone());
+        }
+        self.repeated.entry(name).or_default().push(value);
     }
 
     /// Flat JSON object. Nested values and duplicate keys are rejected.
@@ -139,6 +230,77 @@ impl FormValues {
             values.insert(name, text);
         }
         Ok(values)
+    }
+
+    /// Like [`Self::parse_json`], except a JSON array is accepted for `multiple`.
+    ///
+    /// Duplicate object keys remain `validation.duplicate`. An array on any other
+    /// name is `validation.invalid_type`.
+    pub fn parse_json_multi(body: &str, multiple: &[&str]) -> Result<Self, FormErrors> {
+        if body.len() > 65_536 {
+            let mut errors = FormErrors::default();
+            errors.push("", "request.rejected");
+            return Err(errors);
+        }
+        if let Some(name) = duplicate_json_key(body) {
+            let mut errors = FormErrors::default();
+            errors.push(name, "validation.duplicate");
+            return Err(errors);
+        }
+        let parsed = serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(body)
+            .map_err(|_| {
+                let mut errors = FormErrors::default();
+                errors.push("", "validation.invalid_type");
+                errors
+            })?;
+        let mut values = Self::default();
+        for (name, value) in parsed {
+            if !valid_field_name(&name) {
+                let mut errors = FormErrors::default();
+                errors.push(&name, "validation.invalid_type");
+                return Err(errors);
+            }
+            if let serde_json::Value::Array(items) = value {
+                if !multiple.contains(&name.as_str()) {
+                    let mut errors = FormErrors::default();
+                    errors.push(name, "validation.invalid_type");
+                    return Err(errors);
+                }
+                for item in items {
+                    let text = match json_scalar(&item) {
+                        Some(text) => text,
+                        None => {
+                            let mut errors = FormErrors::default();
+                            errors.push(name, "validation.invalid_type");
+                            return Err(errors);
+                        }
+                    };
+                    values.push_repeat(name.clone(), text);
+                }
+                continue;
+            }
+            let Some(text) = json_scalar(&value) else {
+                let mut errors = FormErrors::default();
+                errors.push(name, "validation.invalid_type");
+                return Err(errors);
+            };
+            values.insert(name, text);
+        }
+        Ok(values)
+    }
+}
+
+fn json_scalar(value: &serde_json::Value) -> Option<String> {
+    match value {
+        serde_json::Value::String(text) => Some(text.clone()),
+        serde_json::Value::Number(number) => Some(number.to_string()),
+        serde_json::Value::Bool(flag) => Some(if *flag {
+            "true".to_owned()
+        } else {
+            "false".to_owned()
+        }),
+        serde_json::Value::Null => Some(String::new()),
+        serde_json::Value::Array(_) | serde_json::Value::Object(_) => None,
     }
 }
 
@@ -604,6 +766,7 @@ pub enum Widget {
     Checkbox,
     Textarea,
     Select,
+    SelectMultiple,
     File,
     Relation,
 }
@@ -716,7 +879,6 @@ pub fn render_fields_with(
         ));
     }
     for field in fields {
-        let value = values.get(field.name).unwrap_or("");
         let name = escape(field.name);
         html.push_str(&format!(
             "<label for=\"{name}\">{label}",
@@ -726,7 +888,9 @@ pub fn render_fields_with(
             html.push_str("<span aria-hidden=\"true\">*</span>");
         }
         html.push_str("</label>");
-        html.push_str(&control(field, value, errors));
+        let shown = values.get_all(field.name);
+        let shown: Vec<String> = shown.into_iter().map(str::to_owned).collect();
+        html.push_str(&control(field, &shown, errors));
         if let Some(code) = errors.for_field(field.name) {
             html.push_str(&format!(
                 "<p id=\"{name}-error\" role=\"alert\">{text}</p>",
@@ -759,7 +923,8 @@ fn field_from_input(spec: &InputSpec) -> Field {
     Field::new(spec.name, spec.label, widget, spec.required)
 }
 
-fn control(field: &Field, value: &str, errors: &FormErrors) -> String {
+fn control(field: &Field, values: &[String], errors: &FormErrors) -> String {
+    let value = values.first().map(String::as_str).unwrap_or("");
     let name = escape(field.name);
     let described = described_by(field, errors);
     let invalid = if errors.for_field(field.name).is_some() {
@@ -778,7 +943,10 @@ fn control(field: &Field, value: &str, errors: &FormErrors) -> String {
             "<textarea id=\"{name}\" name=\"{name}\"{required}{placeholder}{described}{invalid}>{value}</textarea>",
             value = escape(value)
         ),
-        Widget::Select | Widget::Relation => select_control(&name, field, value, required, &described, invalid),
+        Widget::Select | Widget::Relation => {
+            select_control(&name, field, value, required, &described, invalid)
+        }
+        Widget::SelectMultiple => select_multiple(&name, field, values, required, &described, invalid),
         Widget::Checkbox => {
             let checked = if matches!(value, "true" | "1" | "on") {
                 " checked"
@@ -830,6 +998,32 @@ fn select_control(
     }
     for (option, label) in field.options {
         let selected = if *option == value { " selected" } else { "" };
+        html.push_str(&format!(
+            "<option value=\"{option}\"{selected}>{label}</option>",
+            option = escape(option),
+            label = escape(label)
+        ));
+    }
+    html.push_str("</select>");
+    html
+}
+
+fn select_multiple(
+    name: &str,
+    field: &Field,
+    values: &[String],
+    required: &str,
+    described: &str,
+    invalid: &str,
+) -> String {
+    let mut html =
+        format!("<select id=\"{name}\" name=\"{name}\" multiple{required}{described}{invalid}>");
+    for (option, label) in field.options {
+        let selected = if values.iter().any(|value| value == option) {
+            " selected"
+        } else {
+            ""
+        };
         html.push_str(&format!(
             "<option value=\"{option}\"{selected}>{label}</option>",
             option = escape(option),
@@ -1583,6 +1777,13 @@ fn decode(value: &str) -> String {
     }
     String::from_utf8_lossy(&output).into_owned()
 }
+
+mod contract;
+pub use contract::{
+    bind_create, bind_declared, bind_in_context, bind_update, posted_csrf, render_presentation,
+    CleanField, CleanValue, DeclaredField, FieldAccess, FieldCheck, FormContext, InputKind,
+    Presentation,
+};
 
 #[cfg(test)]
 mod tests {
