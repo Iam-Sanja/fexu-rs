@@ -156,7 +156,10 @@ enum Signal {
 
 fn migration_notice(project: &fexu_migrations::ProjectConfig) -> String {
     let locale = crate::text::locale();
-    let url = project.resolved_database_url();
+    let url = match project.resolved_database_url() {
+        Ok(url) => url,
+        Err(error) => return fexu_migrations::dev_notice(&locale, &Err(error)),
+    };
     let readonly = match fexu_migrations::readonly_database_url(&url) {
         Ok(url) => url,
         Err(error) => return fexu_migrations::dev_notice(&locale, &Err(error)),

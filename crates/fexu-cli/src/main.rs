@@ -200,6 +200,11 @@ enum JobsCommand {
         #[arg(long)]
         database_url: Option<String>,
     },
+    /// Lists permanently failed jobs. Payloads stay hidden.
+    Failed {
+        #[arg(long)]
+        database_url: Option<String>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -579,7 +584,8 @@ fn main() -> ExitCode {
                 JobsCommand::List { database_url }
                 | JobsCommand::Inspect { database_url, .. }
                 | JobsCommand::Retry { database_url, .. }
-                | JobsCommand::Cancel { database_url, .. } => database_url.clone(),
+                | JobsCommand::Cancel { database_url, .. }
+                | JobsCommand::Failed { database_url } => database_url.clone(),
             };
             let url = match jobs_database_url(database_url, project.as_ref()) {
                 Ok(url) => url,
@@ -595,6 +601,7 @@ fn main() -> ExitCode {
                 } => jobs::inspect(url, id, show_payload),
                 JobsCommand::Retry { id, yes, .. } => jobs::retry(url, id, yes),
                 JobsCommand::Cancel { id, yes, .. } => jobs::cancel(url, id, yes),
+                JobsCommand::Failed { .. } => jobs::failed(url),
             }
         }
         Command::Dumpdata {
@@ -856,6 +863,7 @@ fn run_migrate(action: MigrateCommand) -> Result<(), String> {
             migrations_dir,
             schema_file,
         } => {
+            let use_project = migrations_dir.is_none();
             let directory = resolve_directory(migrations_dir)?;
             let schema = load_optional_schema(schema_file)?;
             let url = resolve_database_url(database_url)?;
@@ -864,9 +872,36 @@ fn run_migrate(action: MigrateCommand) -> Result<(), String> {
                 let db = fexu_db::connect(&readonly)
                     .await
                     .map_err(|error| format!("migration.database.unavailable: {error}"))?;
-                plan_database(&db, &directory, schema.as_ref())
+                let mut report = plan_database(&db, &directory, schema.as_ref())
                     .await
-                    .map_err(|error| error.0)
+                    .map_err(|error| error.0)?;
+                if use_project {
+                    let packages = declared_packages()?;
+                    report
+                        .findings
+                        .extend(fexu_migrations::package_dependency_findings(&packages));
+                    let auth =
+                        fexu_auth::embedded_migrations().map_err(|error| error.to_string())?;
+                    let jobs = fexu_jobs::embedded_migrations()
+                        .map_err(|error| format!("{} {}", error.code(), error.detail()))?;
+                    let auth_plan = fexu_migrations::plan_embedded(
+                        &db,
+                        &auth,
+                        fexu_migrations::AUTH_HISTORY_TABLE,
+                        "Auth",
+                    )
+                    .await
+                    .map_err(|error| error.0)?;
+                    let jobs_plan =
+                        fexu_migrations::plan_embedded(&db, &jobs, fexu_jobs::JOB_HISTORY, "Job")
+                            .await
+                            .map_err(|error| error.0)?;
+                    report.pending.extend(auth_plan.pending);
+                    report.pending.extend(jobs_plan.pending);
+                    report.findings.extend(auth_plan.findings);
+                    report.findings.extend(jobs_plan.findings);
+                }
+                Ok::<_, String>(report)
             })?;
             println!("Migration plan is read-only.");
             println!("backend: {}", report.backend);
@@ -947,19 +982,12 @@ pub(crate) fn jobs_database_url(
     override_url: Option<String>,
     project: Option<&fexu_migrations::ProjectConfig>,
 ) -> Result<String, String> {
-    if let Some(url) = override_url {
-        return Ok(url);
-    }
-    if let Some(project) = project {
-        return Ok(project.resolved_database_url());
-    }
-    match std::env::var("DATABASE_URL") {
-        Ok(url) if !url.is_empty() => Ok(url),
-        _ => Err(
-            "job.database No database URL was provided. Set DATABASE_URL or use --database-url."
-                .to_owned(),
-        ),
-    }
+    let missing = if project.is_some() {
+        fexu_migrations::MissingDatabase::DocumentedSqlite
+    } else {
+        fexu_migrations::MissingDatabase::Required
+    };
+    selected_database(override_url.as_deref(), project, missing)
 }
 
 fn parse_backfill(text: &str) -> Result<ColumnBackfill, String> {
@@ -1370,15 +1398,27 @@ fn auth_message(error: fexu_auth::AuthError) -> String {
 }
 
 fn resolve_database_url(override_url: Option<String>) -> Result<String, String> {
-    if let Some(url) = override_url {
-        return Ok(url);
-    }
-    if let Ok(url) = std::env::var("DATABASE_URL") {
-        if !url.is_empty() {
-            return Ok(url);
-        }
-    }
-    Ok(fexu_db::DEFAULT_SQLITE_URL.to_owned())
+    let project = optional_project()?;
+    selected_database(
+        override_url.as_deref(),
+        project.as_ref(),
+        fexu_migrations::MissingDatabase::DocumentedSqlite,
+    )
+}
+
+fn selected_database(
+    override_url: Option<&str>,
+    project: Option<&fexu_migrations::ProjectConfig>,
+    missing: fexu_migrations::MissingDatabase,
+) -> Result<String, String> {
+    let target = fexu_migrations::resolve_database_target(override_url, project, missing)
+        .map_err(|error| error.0)?;
+    eprintln!(
+        "database: {} ({})",
+        fexu_migrations::redact_database_url(&target.url),
+        target.source
+    );
+    Ok(target.url)
 }
 
 #[cfg(test)]

@@ -19,6 +19,13 @@ pub struct JobContext {
     pub idempotency_key: Option<String>,
 }
 
+impl JobContext {
+    /// The lease expired or a previous attempt failed, so the effect may already have run.
+    pub fn is_redelivery(&self) -> bool {
+        self.attempt > 1
+    }
+}
+
 #[async_trait]
 pub trait JobHandler: Send + Sync + 'static {
     const NAME: &'static str;
