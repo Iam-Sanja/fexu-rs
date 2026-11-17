@@ -55,7 +55,8 @@ pub use plan::{
     PlanLevel, PlanReport,
 };
 pub use project::{
-    discover_project, load_schema_from_command, redact_database_url, ApiDocsSettings, DeclaredApp,
+    discover_project, load_schema_from_command, redact_database_url, resolve_database_target,
+    ApiDocsSettings, DatabaseTarget, DatabaseUrlSource, DeclaredApp, MissingDatabase,
     ProjectConfig, ResolvedApiDocs, Settings,
 };
 pub use runner::{

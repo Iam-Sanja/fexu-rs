@@ -39,7 +39,7 @@ Stable codes:
 
 SQLite diagnoses open an existing file with `mode=ro`. A missing file does not lead to a `connect`. PostgreSQL is connected to the same URL, the queries are `SELECT`. `ensure_history` is reserved for writing commands.
 
-The URL is `DATABASE_URL`, otherwise `database.url` from `fexu.toml`. The same resolution is used by the generated program. A URL that is calculated only in the application code does not see the CLI.
+The URL is `--database-url` on commands that accept it, otherwise `DATABASE_URL`, otherwise `database.url` from `fexu.toml`. `check` and `doctor` have no database override flag. The generated program uses the same environment and file resolution. A relative SQLite path from `fexu.toml` is resolved from the project root. A URL that is calculated only in the application code does not see the CLI. The selected target is printed redacted; `check` and `doctor` do not apply migrations.
 
 ## Read-only plan
 
