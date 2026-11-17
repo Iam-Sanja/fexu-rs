@@ -42,6 +42,8 @@ Standard life: 12 hours absolute, 30 minutes without use.
 
 The default session cookie is `fexu_session`. It uses `HttpOnly`, `Path=/`, `SameSite=Lax` and no `Domain` attribute. `Secure` follows `FEXU_COOKIE_SECURE`, or `FEXU_ENV=production` when the former is unset. `BIND_ADDRESS` does not affect this setting. Local HTTP works in development without `Secure`; production logs a warning if `Secure` is disabled.
 
+`AuthConfig::with_cookie_namespace` gives one application its own browser cookies. The label `fexu` keeps the historical names. Another label sets `{label}_session` and `{label}_anonymous`. Login, reset and exchange cookies are derived from the session cookie: `desk_session` uses `desk_login_csrf`, `desk_reset_csrf` and `desk_reset`. A custom `cookie_name` that is already configured continues to authenticate that application. It does not keep the historical CSRF cookie names, and Fexu does not read or clear another application's cookies. Browsers share cookies across ports on one host, so two apps on that host need two namespaces. The request `Host` header is not a namespace.
+
 Logout uses the same cookie attributes and `Max-Age=0`.
 
 Tokens are not in URLs. The database row does not contain the raw token.

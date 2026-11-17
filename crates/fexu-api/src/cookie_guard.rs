@@ -1,10 +1,12 @@
 //! Cookie-authenticated writes require CSRF validation before a handler runs.
 //!
 //! `App::require_browser_writes` wraps [`enforce`] with [`require_browser`]. Both call
-//! [`gate`]. Without `fexu_session` or `fexu_anonymous`, `enforce` passes the request to the handler,
-//! except for dedicated login/reset forms when [`require_browser`] is enabled.
-//! In that case, `fexu_login_csrf` or `fexu_reset_csrf` is sufficient proof even from a
-//! fresh cookie jar. Other write routes still require a session cookie.
+//! [`gate`]. Without the configured session or anonymous cookie, `enforce` passes the
+//! request to the handler, except for dedicated login/reset forms when
+//! [`require_browser`] is enabled. In that case the configured login or reset CSRF
+//! cookie is sufficient proof even from a fresh cookie jar. The historical names are
+//! `fexu_session`, `fexu_anonymous`, `fexu_login_csrf` and `fexu_reset_csrf`. Another
+//! application's cookies are not read. Other write routes still require a session cookie.
 //! `Authorization: Bearer` is not validated here. An expired or unknown session cookie
 //! neither replaces nor blocks the dedicated login proof.
 //! `Origin: null` is not generally accepted. The existing exception requires
@@ -44,7 +46,7 @@ async fn gate(state: AppState, request: Request, next: Next, browser_required: b
         return next.run(request).await;
     }
     let path = request.uri().path().to_owned();
-    let dedicated = dedicated_csrf_cookie(&path);
+    let dedicated = dedicated_csrf_cookie(state.auth.as_ref(), &path);
     let protected = match state.auth.as_ref() {
         Some(auth) => auth.request_has_session_cookie(request.headers()),
         None => default_session_cookie(request.headers()),
@@ -88,7 +90,8 @@ async fn gate(state: AppState, request: Request, next: Next, browser_required: b
             &auth,
             request.headers(),
             request.method(),
-            cookie_name,
+            &cookie_name,
+            path == "/admin/login",
             &header_token,
             &field,
         ) {
@@ -105,10 +108,19 @@ async fn gate(state: AppState, request: Request, next: Next, browser_required: b
     }
 }
 
-fn dedicated_csrf_cookie(path: &str) -> Option<&'static str> {
+fn dedicated_csrf_cookie(auth: Option<&fexu_auth::AuthService>, path: &str) -> Option<String> {
+    let config = auth.map(|auth| auth.config());
     match path {
-        "/admin/login" => Some("fexu_login_csrf"),
-        "/auth/password-reset" | "/auth/password-reset/choose" => Some("fexu_reset_csrf"),
+        "/admin/login" => Some(
+            config
+                .map(|config| config.login_csrf_cookie())
+                .unwrap_or_else(|| "fexu_login_csrf".to_owned()),
+        ),
+        "/auth/password-reset" | "/auth/password-reset/choose" => Some(
+            config
+                .map(|config| config.reset_csrf_cookie())
+                .unwrap_or_else(|| "fexu_reset_csrf".to_owned()),
+        ),
         _ => None,
     }
 }
@@ -118,6 +130,7 @@ fn dedicated_proof(
     headers: &HeaderMap,
     method: &Method,
     cookie_name: &str,
+    login_form: bool,
     header_token: &str,
     field: &str,
 ) -> bool {
@@ -127,7 +140,7 @@ fn dedicated_proof(
     let Some(expected) = cookie_value(headers, cookie_name) else {
         return false;
     };
-    if cookie_name == "fexu_login_csrf" && !valid_login_csrf(&expected) {
+    if login_form && !valid_login_csrf(&expected) {
         return false;
     }
     (!field.is_empty() && constant_eq(field, &expected))
