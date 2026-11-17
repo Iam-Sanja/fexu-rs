@@ -167,7 +167,7 @@ Table `_fexu_migrations`:
 
 The row is written in the same transaction as the schema change. If the migration fails, there is neither the schema change nor the history entry. There is no stored error status. An applied ID is not executed again. A missing file or a different checksum stops `migrate up`.
 
-A history entry does not guarantee that no one has changed the schema from the outside afterwards. `fexu migrate status` compares the history with the files and the model snapshot. `fexu migrate plan` additionally reads the live SQLite or PostgreSQL catalog and compares it with the last applied migration target. The plan opens a read-only URL when the CLI can make one, and the library function itself does not create or alter objects.
+A history entry does not guarantee that no one has changed the schema from the outside afterwards. `fexu migrate status` compares the history with the files and the model snapshot. `fexu migrate plan` additionally reads the live SQLite or PostgreSQL catalog and compares it with the last applied migration target. Without `--migrations-dir`, the same read-only command also reports declared app dependency conflicts and live drift for the embedded auth and job snapshots. Pending framework IDs are printed as `Auth:<id>` and `Job:<id>`. The plan opens a read-only URL when the CLI can make one, and the library function itself does not create or alter objects. The fulfilled and still open parts of that contract are listed in [migration-diagnostics.md](migration-diagnostics.md).
 
 ## 7. CLI
 

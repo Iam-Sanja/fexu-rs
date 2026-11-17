@@ -14,6 +14,11 @@
 
 - Disposable PostgreSQL fixtures clone `template0` and keep administrative sessions off `template0` and `template1`. Concurrent `STRATEGY FILE_COPY` is not used; those copies stalled on Windows PostgreSQL 18. `drop_database` still drops only `fexu_test_` plus 32 hexadecimal characters, and only when the current role owns that database (#117).
 
+## Unreleased — read-only migration plan
+
+- `migrate plan` reports missing-app, self-dependency, and cycle errors for declared apps without writing migration files. It also reports pending IDs and live drift for the embedded auth and job snapshots. A checksum or order conflict stays an error and skips that live comparison.
+- An embedded framework package with a duplicate ID or an ID outside the expected auth or jobs list fails by name. Existing migration IDs and checksums are unchanged. No data is migrated and no schema is reset.
+
 ## Unreleased — embedded framework migrations
 
 - Auth and job migrations stay embedded in the binary. A relocated `embedded-migrate` process no longer needs the crate `migrations/` directories. `scripts/cold-start-embedded.sh` hides those directories, and CI runs that check for SQLite and for `fexu_test_relocated`.

@@ -64,6 +64,94 @@ pub async fn plan_database(
     plan_database_in(db, directory, history::HISTORY_TABLE, current).await
 }
 
+/// Read-only status and live drift for an embedded framework package.
+///
+/// History tables and schema objects are not created or altered. A checksum or
+/// order conflict is an error and suppresses the live comparison.
+pub async fn plan_embedded(
+    db: &DatabaseConnection,
+    files: &[MigrationFile],
+    history_table: &str,
+    label: &str,
+) -> Result<PlanReport, MigrationError> {
+    let backend = kind_of(db.get_database_backend())
+        .map_err(|error| MigrationError::new(error.to_string()))?;
+    if files.is_empty() {
+        return Ok(PlanReport {
+            backend: history::backend_name(backend).to_owned(),
+            pending: Vec::new(),
+            findings: vec![finding(
+                PlanLevel::Error,
+                format!(
+                    "Required framework migration resources for `{label}` are missing. Nothing was applied."
+                ),
+            )],
+        });
+    }
+    let status = crate::status_of_files(db, files, history_table, None).await?;
+    let mut findings = status
+        .conflicts
+        .iter()
+        .map(|message| finding(PlanLevel::Error, message))
+        .collect::<Vec<_>>();
+    let pending = status
+        .lines
+        .iter()
+        .filter(|line| line.state == "ausstehend")
+        .map(|line| format!("{label}:{}", line.id))
+        .collect::<Vec<_>>();
+    let trusted = !findings.iter().any(|item| item.level == PlanLevel::Error);
+    if trusted {
+        if let Some(file) = latest_applied(files, &status) {
+            let live = crate::introspection::introspect_live(db).await?;
+            for difference in crate::introspection::compare_snapshot(&file.to_snapshot, &live) {
+                findings.push(finding(
+                    PlanLevel::Drift,
+                    format!("{label}: {}", drift_text(&difference)),
+                ));
+            }
+        } else {
+            findings.push(finding(
+                PlanLevel::Warning,
+                format!(
+                    "No {label} migration has been applied. The live schema was not compared with a pending target."
+                ),
+            ));
+        }
+    }
+    Ok(PlanReport {
+        backend: history::backend_name(backend).to_owned(),
+        pending,
+        findings,
+    })
+}
+
+/// App dependency errors for a read-only plan. This does not read or write a database.
+pub fn package_dependency_findings(
+    packages: &[crate::packages::PackageMigration],
+) -> Vec<PlanFinding> {
+    match crate::packages::package_order(packages) {
+        Ok(_) => Vec::new(),
+        Err(error) => vec![finding(PlanLevel::Error, error.0)],
+    }
+}
+
+fn latest_applied<'a>(
+    files: &'a [MigrationFile],
+    status: &crate::StatusReport,
+) -> Option<&'a MigrationFile> {
+    let applied = status
+        .lines
+        .iter()
+        .filter(|line| line.state == "angewendet")
+        .map(|line| line.id.as_str())
+        .collect::<Vec<_>>();
+    files
+        .iter()
+        .filter(|file| applied.iter().any(|id| *id == file.id))
+        .max_by_key(|file| crate::store::migration_number(&file.id).unwrap_or(0))
+}
+
 pub async fn plan_database_in(
     db: &DatabaseConnection,
     directory: &Path,
@@ -212,6 +300,25 @@ mod tests {
     fn products() -> SchemaSnapshot {
         SchemaSnapshot::from_tables(vec![TableSnapshot {
             name: "products".to_owned(),
+            columns: vec![ColumnSnapshot {
+                name: "id".to_owned(),
+                logical_type: LogicalType::I64,
+                primary_key: true,
+                nullable: false,
+                default: None,
+                precision: None,
+                scale: None,
+                choices: Vec::new(),
+            }],
+            unique_constraints: Vec::new(),
+            indexes: Vec::new(),
+            foreign_keys: Vec::new(),
+        }])
+    }
+
+    fn probe_table() -> SchemaSnapshot {
+        SchemaSnapshot::from_tables(vec![TableSnapshot {
+            name: "plan_probe".to_owned(),
             columns: vec![ColumnSnapshot {
                 name: "id".to_owned(),
                 logical_type: LogicalType::I64,
@@ -398,12 +505,215 @@ mod tests {
             {
                 return Err(format!("postgres drift was not reported: {drifted:?}"));
             }
+            let before = plan_embedded(&db, &[], "_fexu_plan_probe", "Auth")
+                .await
+                .map_err(|error| error.0)?;
+            if !before.has_error() {
+                return Err(format!("empty embedded package was accepted: {before:?}"));
+            }
+            let sealed = crate::seal(
+                "0001_probe".into(),
+                "probe".into(),
+                SchemaSnapshot::empty(),
+                probe_table(),
+                &crate::MigrationPlan {
+                    operations: Vec::new(),
+                    risks: Vec::new(),
+                    refusal: None,
+                },
+            )
+            .map_err(|error| error.0)?;
+            let pending = plan_embedded(
+                &db,
+                std::slice::from_ref(&sealed),
+                "_fexu_plan_probe",
+                "Auth",
+            )
+            .await
+            .map_err(|error| error.0)?;
+            if pending.has_error() || pending.has_drift() || pending.pending != ["Auth:0001_probe"]
+            {
+                return Err(format!(
+                    "pending embedded plan was not read-only: {pending:?}"
+                ));
+            }
+            crate::apply_files_with_history(
+                &db,
+                std::slice::from_ref(&sealed),
+                false,
+                "_fexu_plan_probe",
+            )
+            .await
+            .map_err(|error| error.0)?;
+            db.execute(Statement::from_string(
+                DatabaseBackend::Postgres,
+                "CREATE TABLE plan_probe (id bigint NOT NULL PRIMARY KEY)",
+            ))
+            .await
+            .map_err(|error| error.to_string())?;
+            let quiet = plan_embedded(
+                &db,
+                std::slice::from_ref(&sealed),
+                "_fexu_plan_probe",
+                "Auth",
+            )
+            .await
+            .map_err(|error| error.0)?;
+            if quiet.has_error() || quiet.has_drift() {
+                return Err(format!("applied embedded plan was not quiet: {quiet:?}"));
+            }
+            db.execute(Statement::from_string(
+                DatabaseBackend::Postgres,
+                "ALTER TABLE plan_probe ADD COLUMN embedded_extra integer",
+            ))
+            .await
+            .map_err(|error| error.to_string())?;
+            let embedded = plan_embedded(&db, &[sealed], "_fexu_plan_probe", "Auth")
+                .await
+                .map_err(|error| error.0)?;
+            if !embedded.has_drift()
+                || !embedded
+                    .findings
+                    .iter()
+                    .any(|item| item.message.contains("embedded_extra"))
+            {
+                return Err(format!(
+                    "embedded postgres drift was not reported: {embedded:?}"
+                ));
+            }
             Ok(())
         }
         .await;
         let dropped = isolated.drop_database().await;
         result.expect("postgres plan");
         dropped.expect("drop isolated database");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn embedded_plan_reports_drift_without_writing() {
+        let db = fexu_db::connect("sqlite::memory:").await.unwrap();
+        let empty = plan_embedded(&db, &[], "_fexu_plan_probe", "Auth")
+            .await
+            .unwrap();
+        assert!(empty.has_error());
+        assert!(empty
+            .findings
+            .iter()
+            .any(|item| item.message.contains("Auth") && item.message.contains("missing")));
+        assert!(
+            names(&db).await.is_empty()
+                || !names(&db)
+                    .await
+                    .iter()
+                    .any(|name| name == "_fexu_plan_probe")
+        );
+        let sealed = crate::seal(
+            "0001_products".into(),
+            "products".into(),
+            SchemaSnapshot::empty(),
+            products(),
+            &crate::MigrationPlan {
+                operations: Vec::new(),
+                risks: Vec::new(),
+                refusal: None,
+            },
+        )
+        .unwrap();
+        let pending = plan_embedded(
+            &db,
+            std::slice::from_ref(&sealed),
+            "_fexu_plan_probe",
+            "Auth",
+        )
+        .await
+        .unwrap();
+        assert!(!pending.has_error());
+        assert_eq!(pending.pending, vec!["Auth:0001_products".to_owned()]);
+        assert!(!history::table_exists(&db, "_fexu_plan_probe")
+            .await
+            .unwrap());
+        crate::apply_files_with_history(
+            &db,
+            std::slice::from_ref(&sealed),
+            false,
+            "_fexu_plan_probe",
+        )
+        .await
+        .unwrap();
+        db.execute(Statement::from_string(
+            DatabaseBackend::Sqlite,
+            "CREATE TABLE products (id integer NOT NULL PRIMARY KEY)",
+        ))
+        .await
+        .unwrap();
+        let quiet = plan_embedded(
+            &db,
+            std::slice::from_ref(&sealed),
+            "_fexu_plan_probe",
+            "Auth",
+        )
+        .await
+        .unwrap();
+        assert!(!quiet.has_error(), "{quiet:?}");
+        assert!(!quiet.has_drift(), "{quiet:?}");
+        db.execute(Statement::from_string(
+            DatabaseBackend::Sqlite,
+            "ALTER TABLE products ADD COLUMN extra integer",
+        ))
+        .await
+        .unwrap();
+        let drifted = plan_embedded(&db, &[sealed], "_fexu_plan_probe", "Auth")
+            .await
+            .unwrap();
+        assert!(drifted.has_drift());
+        assert!(drifted
+            .findings
+            .iter()
+            .any(|item| item.message.contains("extra")));
+        let columns = db
+            .query_all(Statement::from_string(
+                DatabaseBackend::Sqlite,
+                "PRAGMA table_info(products)",
+            ))
+            .await
+            .unwrap();
+        assert!(columns
+            .iter()
+            .any(|row| { row.try_get::<String>("", "name").unwrap_or_default() == "extra" }));
+    }
+
+    #[test]
+    fn dependency_conflicts_are_plan_errors_without_a_database() {
+        let root = scratch("deps");
+        let billing = crate::packages::PackageMigration {
+            name: "billing".into(),
+            directory: root.join("billing"),
+            depends_on: vec!["accounts".into()],
+        };
+        let missing = package_dependency_findings(std::slice::from_ref(&billing));
+        assert_eq!(missing.len(), 1);
+        assert_eq!(missing[0].level, PlanLevel::Error);
+        assert!(
+            missing[0].message.contains("accounts"),
+            "{}",
+            missing[0].message
+        );
+        assert!(
+            missing[0].message.contains("missing app"),
+            "{}",
+            missing[0].message
+        );
+        let cycle = package_dependency_findings(&[
+            crate::packages::PackageMigration {
+                name: "accounts".into(),
+                directory: root.join("accounts"),
+                depends_on: vec!["billing".into()],
+            },
+            billing,
+        ]);
+        assert!(cycle[0].message.contains("cycle"), "{}", cycle[0].message);
+        assert!(!root.join("billing").exists());
         let _ = std::fs::remove_dir_all(&root);
     }
 }
