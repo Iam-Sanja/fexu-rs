@@ -35,6 +35,220 @@ async fn sqlite_browser_security_matrix() {
 }
 
 #[tokio::test]
+async fn namespaced_browser_cookies_stay_on_their_app() {
+    let password = fixture_password();
+    let salon_config = development_config()
+        .with_cookie_namespace("salon")
+        .expect("salon namespace");
+    let shop_config = development_config()
+        .with_cookie_namespace("shop")
+        .expect("shop namespace");
+    let salon_db = fexu_db::connect("sqlite::memory:")
+        .await
+        .expect("salon sqlite");
+    let shop_db = fexu_db::connect("sqlite::memory:")
+        .await
+        .expect("shop sqlite");
+    apply_migrations(&salon_db).await.expect("salon migrations");
+    apply_migrations(&shop_db).await.expect("shop migrations");
+    AuthService::new(salon_db.clone(), salon_config.clone())
+        .create_user("ada@example.com", &password, true, false)
+        .await
+        .expect("salon user");
+    AuthService::new(shop_db.clone(), shop_config.clone())
+        .create_user("ada@example.com", &password, true, false)
+        .await
+        .expect("shop user");
+    let salon_address = listen(stack(salon_db, salon_config.clone())).await;
+    let shop_address = listen(stack(shop_db, shop_config.clone())).await;
+    let mut salon = Client::new(salon_address);
+    let mut shop = Client::new(shop_address);
+
+    let salon_page = salon.call("GET", "/admin/login", &[], None).await.unwrap();
+    let shop_page = shop.call("GET", "/admin/login", &[], None).await.unwrap();
+    expect_status(&salon_page, 200, "salon login form").unwrap();
+    expect_status(&shop_page, 200, "shop login form").unwrap();
+    expect_header(&salon_page, "referrer-policy", "same-origin").unwrap();
+    assert!(salon.jar.contains("salon_login_csrf"));
+    assert!(shop.jar.contains("shop_login_csrf"));
+    assert!(!salon.jar.contains("fexu_login_csrf"));
+    assert!(!shop.jar.contains("salon_login_csrf"));
+    share_jars(&mut salon, &mut shop);
+    let salon_token = salon.jar.get("salon_login_csrf").unwrap().to_owned();
+    let shop_token = salon.jar.get("shop_login_csrf").unwrap().to_owned();
+
+    let crossed = salon
+        .post_login(Some(LOCAL), None, &login_body(&shop_token, &password), &[])
+        .await
+        .unwrap();
+    expect_status(&crossed, 403, "shop login cookie on salon").unwrap();
+    assert!(!cookie_was_set(&crossed, "salon_session"));
+    let foreign = salon
+        .post_login(
+            Some(FOREIGN),
+            None,
+            &login_body(&salon_token, &password),
+            &[],
+        )
+        .await
+        .unwrap();
+    expect_status(&foreign, 403, "foreign origin").unwrap();
+    let null_origin = salon
+        .post_login(
+            Some("null"),
+            None,
+            &login_body(&salon_token, &password),
+            &[],
+        )
+        .await
+        .unwrap();
+    expect_status(&null_origin, 403, "unverified null origin").unwrap();
+    let logged_in = salon
+        .post_login(Some(LOCAL), None, &login_body(&salon_token, &password), &[])
+        .await
+        .unwrap();
+    expect_status(&logged_in, 303, "salon login").unwrap();
+    assert!(cookie_was_set(&logged_in, "salon_session"));
+    assert!(!cookie_was_set(&logged_in, "shop_session"));
+    assert!(!cookie_was_set(&logged_in, "shop_login_csrf"));
+    salon.store(&logged_in);
+    assert!(salon.jar.contains("shop_login_csrf"));
+    shop.jar = salon.jar.clone();
+    let shop_login = shop
+        .post_login(Some(LOCAL), None, &login_body(&shop_token, &password), &[])
+        .await
+        .unwrap();
+    expect_status(&shop_login, 303, "shop login").unwrap();
+    assert!(cookie_was_set(&shop_login, "shop_session"));
+    shop.store(&shop_login);
+    assert!(shop.jar.contains("salon_session"));
+    assert!(shop.jar.contains("shop_session"));
+    salon.jar = shop.jar.clone();
+    let csrf_page = salon
+        .call("GET", "/auth/csrf", &[("origin", LOCAL)], None)
+        .await
+        .unwrap();
+    expect_status(&csrf_page, 200, "salon csrf").unwrap();
+    let csrf = json_token(&csrf_page.body).unwrap();
+    let logged_out = salon
+        .call(
+            "POST",
+            "/auth/logout",
+            &[("origin", LOCAL), ("x-csrf-token", &csrf)],
+            None,
+        )
+        .await
+        .unwrap();
+    expect_status(&logged_out, 204, "salon logout").unwrap();
+    assert!(!salon.jar.contains("salon_session"));
+    assert!(salon.jar.contains("shop_session"));
+    let cleared = logged_out.head.to_ascii_lowercase();
+    assert!(!cleared.contains("shop_session"));
+    assert!(!cleared.contains("shop_login_csrf"));
+    assert!(!cleared.contains("fexu_session"));
+
+    salon.jar.clear();
+    shop.jar.clear();
+    salon.call("GET", "/shop", &[], None).await.unwrap();
+    shop.call("GET", "/shop", &[], None).await.unwrap();
+    assert!(salon.jar.contains("salon_anonymous"));
+    assert!(shop.jar.contains("shop_anonymous"));
+    assert!(!salon.jar.contains("shop_anonymous"));
+    share_jars(&mut salon, &mut shop);
+    salon.jar.0.remove("salon_anonymous");
+    let foreign_anonymous = salon
+        .call(
+            "POST",
+            "/probe",
+            &[
+                ("origin", LOCAL),
+                ("content-type", "application/x-www-form-urlencoded"),
+            ],
+            Some(""),
+        )
+        .await
+        .unwrap();
+    expect_status(&foreign_anonymous, 403, "other app anonymous cookie").unwrap();
+
+    salon.jar.clear();
+    shop.jar.clear();
+    let salon_reset = salon
+        .call("GET", "/auth/password-reset", &[], None)
+        .await
+        .unwrap();
+    let shop_reset = shop
+        .call("GET", "/auth/password-reset", &[], None)
+        .await
+        .unwrap();
+    expect_header(&salon_reset, "referrer-policy", "no-referrer").unwrap();
+    expect_header(&shop_reset, "referrer-policy", "no-referrer").unwrap();
+    assert!(set_cookie_line(&salon_reset.head, "salon_reset_csrf")
+        .unwrap()
+        .contains("Path=/auth/password-reset"));
+    assert!(salon.jar.contains("salon_reset_csrf"));
+    assert!(shop.jar.contains("shop_reset_csrf"));
+    share_jars(&mut salon, &mut shop);
+    let shop_reset_token = salon.jar.get("shop_reset_csrf").unwrap().to_owned();
+    let salon_reset_token = salon.jar.get("salon_reset_csrf").unwrap().to_owned();
+    let crossed_body = encode(&[
+        ("csrf_token", &shop_reset_token),
+        ("email", "ada@example.com"),
+    ]);
+    let crossed_reset = salon
+        .call(
+            "POST",
+            "/auth/password-reset",
+            &[
+                ("origin", LOCAL),
+                ("content-type", "application/x-www-form-urlencoded"),
+            ],
+            Some(&crossed_body),
+        )
+        .await
+        .unwrap();
+    expect_status(&crossed_reset, 403, "shop reset cookie on salon").unwrap();
+    let own_body = encode(&[
+        ("csrf_token", &salon_reset_token),
+        ("email", "ada@example.com"),
+    ]);
+    let own_reset = salon
+        .call(
+            "POST",
+            "/auth/password-reset",
+            &[
+                ("origin", LOCAL),
+                ("content-type", "application/x-www-form-urlencoded"),
+            ],
+            Some(&own_body),
+        )
+        .await
+        .unwrap();
+    expect_status(&own_reset, 200, "salon reset request").unwrap();
+    assert!(salon.jar.contains("shop_reset_csrf"));
+}
+
+fn share_jars(left: &mut Client, right: &mut Client) {
+    let mut shared = left.jar.clone();
+    for (name, value) in right.jar.0.clone() {
+        shared.insert(&name, value);
+    }
+    left.jar = shared.clone();
+    right.jar = shared;
+}
+
+fn cookie_was_set(response: &RawResponse, name: &str) -> bool {
+    let prefix = format!("{name}=");
+    response.head.lines().any(|line| {
+        let Some((key, value)) = line.split_once(':') else {
+            return false;
+        };
+        key.eq_ignore_ascii_case("set-cookie")
+            && value.trim().starts_with(&prefix)
+            && !value.to_ascii_lowercase().contains("max-age=0")
+    })
+}
+
+#[tokio::test]
 #[ignore = "requires DATABASE_URL pointing at an approved PostgreSQL admin database"]
 async fn postgres_browser_security_matrix() {
     let admin = std::env::var("DATABASE_URL").expect("DATABASE_URL");
@@ -1475,7 +1689,7 @@ impl Client {
     }
 }
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 struct Jar(BTreeMap<String, String>);
 
 impl Jar {

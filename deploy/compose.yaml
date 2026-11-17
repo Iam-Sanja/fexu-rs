@@ -5,8 +5,10 @@ services:
       POSTGRES_DB: fexu_test_deploy
       POSTGRES_USER: fexu
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-fexu_dev_only}
+      FEXU_APP_PASSWORD: ${FEXU_APP_PASSWORD:-fexu_app_dev_only}
     volumes:
       - fexu_deploy_pg:/var/lib/postgresql/data
+      - ./postgres/init-app-role.sh:/docker-entrypoint-initdb.d/10-app-role.sh:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U fexu -d fexu_test_deploy"]
       interval: 5s
@@ -20,8 +22,9 @@ services:
       context: ..
       dockerfile: deploy/Dockerfile
     environment:
-      DATABASE_URL: postgres://fexu:${POSTGRES_PASSWORD:-fexu_dev_only}@db:5432/fexu_test_deploy
+      DATABASE_URL: postgres://fexu_app:${FEXU_APP_PASSWORD:-fexu_app_dev_only}@db:5432/fexu_test_deploy
       BIND_ADDRESS: 0.0.0.0:8080
+      FEXU_ALLOW_WILDCARD_BIND: "true"
       FEXU_ENV: production
       FEXU_COOKIE_SECURE: "1"
       FEXU_CSRF_SECRET: ${FEXU_CSRF_SECRET:?set 64 hex characters}

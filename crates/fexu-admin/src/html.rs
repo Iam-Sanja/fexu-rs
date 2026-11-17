@@ -152,7 +152,7 @@ async fn login_form(
         registry.branding().default_locale.as_str(),
         registry.branding().fallback_locale.as_str(),
     );
-    let token = login_token(&headers);
+    let token = login_token(&headers, state.auth.as_ref().map(|auth| auth.config()));
     let mut response = page(
         &registry,
         "login.html",
@@ -224,7 +224,7 @@ async fn login_submit(
         safe_next(form.get("next").map(String::as_str).unwrap_or("/admin")).unwrap_or("/admin");
     let anonymous = cookie(&headers, &auth.config().anonymous_cookie_name);
     let Some(password) = form.get("password").map(String::as_str) else {
-        let token = login_token(&headers);
+        let token = login_token(&headers, Some(auth.config()));
         let mut response = page(
             &registry,
             "login.html",
@@ -262,7 +262,7 @@ async fn login_submit(
             }
             append_cookie(
                 &mut response,
-                &clear_cookie("fexu_login_csrf", auth.config()),
+                &clear_cookie(&auth.config().login_csrf_cookie(), auth.config()),
             );
             response
         }
@@ -280,7 +280,7 @@ async fn login_submit(
             .await
         }
         Err(AuthError::InvalidCredentials) => {
-            let token = login_token(&headers);
+            let token = login_token(&headers, Some(auth.config()));
             let mut response = page(
                 &registry,
                 "login.html",
@@ -12044,8 +12044,15 @@ pub(crate) async fn session_csrf(auth: &fexu_auth::AuthService, headers: &Header
     auth.csrf_from_request(headers).await.unwrap_or_default()
 }
 
-fn login_token(headers: &HeaderMap) -> String {
-    cookie(headers, "fexu_login_csrf")
+fn login_csrf_name(config: Option<&AuthConfig>) -> String {
+    config
+        .map(AuthConfig::login_csrf_cookie)
+        .unwrap_or_else(|| "fexu_login_csrf".to_owned())
+}
+
+fn login_token(headers: &HeaderMap, config: Option<&AuthConfig>) -> String {
+    let name = login_csrf_name(config);
+    cookie(headers, &name)
         .filter(|value| valid_login_csrf(value))
         .unwrap_or_else(random_token)
 }
@@ -12061,7 +12068,7 @@ fn login_gate(
     if supplied.is_empty() {
         return Err("form_token_missing");
     }
-    let Some(expected) = cookie(headers, "fexu_login_csrf") else {
+    let Some(expected) = cookie(headers, &auth.config().login_csrf_cookie()) else {
         return Err("login_csrf_missing");
     };
     if !valid_login_csrf(&expected) || !constant_eq(&expected, supplied) {
@@ -12158,13 +12165,14 @@ fn same_origin_document(response: &mut Response) {
 }
 
 fn login_cookie(config: Option<&AuthConfig>, token: &str) -> String {
+    let name = login_csrf_name(config);
     let secure = config.is_some_and(|config| config.cookie_secure);
     let same = match config.map(|config| config.same_site) {
         Some(CookieSameSite::Strict) => "Strict",
         _ => "Lax",
     };
     format!(
-        "fexu_login_csrf={token}; HttpOnly; Path=/; SameSite={same}; Max-Age=600{}",
+        "{name}={token}; HttpOnly; Path=/; SameSite={same}; Max-Age=600{}",
         if secure { "; Secure" } else { "" }
     )
 }

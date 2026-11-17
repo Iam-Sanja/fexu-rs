@@ -42,6 +42,8 @@ Standard life: 12 hours absolute, 30 minutes without use.
 
 The default session cookie is `fexu_session`. It uses `HttpOnly`, `Path=/`, `SameSite=Lax` and no `Domain` attribute. `Secure` follows `FEXU_COOKIE_SECURE`, or `FEXU_ENV=production` when the former is unset. `BIND_ADDRESS` does not affect this setting. Local HTTP works in development without `Secure`; production logs a warning if `Secure` is disabled.
 
+`AuthConfig::with_cookie_namespace` gives one application its own browser cookies. The label `fexu` keeps the historical names. Another label sets `{label}_session` and `{label}_anonymous`. Login, reset and exchange cookies are derived from the session cookie: `desk_session` uses `desk_login_csrf`, `desk_reset_csrf` and `desk_reset`. A custom `cookie_name` that is already configured continues to authenticate that application. It does not keep the historical CSRF cookie names, and Fexu does not read or clear another application's cookies. Browsers share cookies across ports on one host, so two apps on that host need two namespaces. The request `Host` header is not a namespace.
+
 Logout uses the same cookie attributes and `Max-Age=0`.
 
 Tokens are not in URLs. The database row does not contain the raw token.
@@ -72,7 +74,7 @@ Answer 204 and `Set-Cookie` with empty value.
 
 State is a JSON object of at most 32 scalar values, stored as text and bound as a parameter. It is not copied into the user session at login. Login revokes the anonymous row in the same transaction that inserts the new user session. That blocks session fixation of the anonymous id. `authenticate_token` does not accept an anonymous token.
 
-Absolute lifetime and idle timeout are `FEXU_SESSION_HOURS` and `FEXU_IDLE_MINUTES`, the same values as user sessions. The anonymous cookie name is not configurable. It must stay distinct from `fexu_session`.
+Absolute lifetime and idle timeout are `FEXU_SESSION_HOURS` and `FEXU_IDLE_MINUTES`, the same values as user sessions. The default anonymous cookie is `fexu_anonymous`. `with_cookie_namespace` renames it with the session cookie, and the two names stay distinct.
 
 ## Limitations
 
