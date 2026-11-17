@@ -23,7 +23,7 @@ This page records attacks the current code is built to resist, and the protocols
 
 OIDC, OAuth authorization-code and passkeys are not implemented. Trusting an email claim, an unverified `id_token`, or a client-supplied user id would be an account takeover. `RemoteProtocol::is_implemented` stays false so callers cannot treat a stub as success.
 
-A future OIDC integration would need an authorization-code flow with PKCE, a fixed issuer and audience, nonce and state, JWKS with key rotation, and a local account link that is not "any verified email". A future passkey integration would need a WebAuthn challenge bound to the session, origin and rpId, and stored public keys. Those designs are not code in this crate.
+The required authorization-code flow, the refusal to link on email equality, and the mock test matrix are specified in [auth-oidc-contract.md](auth-oidc-contract.md). That document adds no provider and no route. A future passkey integration would need a WebAuthn challenge bound to the session, origin and rpId, and stored public keys. That design is not code in this crate.
 
 ## Residual risk
 

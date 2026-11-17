@@ -2,7 +2,7 @@
 
 [Overview](index.md) · Threat model: [auth-threat-model.md](auth-threat-model.md)
 
-**Implemented** for the local password provider, TOTP, recovery codes, session revoke, reauthentication and account close. OIDC, OAuth and passkeys are not implemented.
+**Implemented** for the local password provider, TOTP, recovery codes, session revoke, reauthentication and account close. OIDC, OAuth and passkeys are not implemented. The binding design for a future authorization-code login is [auth-oidc-contract.md](auth-oidc-contract.md). That design is not code and does not make `RemoteProtocol::is_implemented` true.
 
 ## Provider
 
