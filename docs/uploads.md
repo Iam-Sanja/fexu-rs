@@ -41,7 +41,7 @@ let app = app.merge(fexu::storage::routes(std::sync::Arc::new(storage)));
 
 ## Tests
 
-The HTTP test creates two users in SQLite, loads a text file, denies anonymous access, delivers a second user 404, and deletes only with the owner’s CSRF token.
+The HTTP test creates two users in SQLite, loads a text file, denies anonymous access, delivers a second user 404, and deletes only with the owner’s CSRF token. The owner download sends `attachment`, `application/octet-stream`, `nosniff` and a sandbox CSP. A body labeled `image/png` is still rejected when the bytes are text.
 
 ## Limitations
 
