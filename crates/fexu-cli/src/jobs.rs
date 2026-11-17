@@ -78,13 +78,34 @@ pub fn list(url: String) -> ExitCode {
         }
         for row in rows {
             println!(
-                "{} {} {} {}/{} verfuegbar {} {}",
+                "{} {} {} {}/{} available {} {}",
                 row.id,
                 row.handler,
                 row.status.as_str(),
                 row.attempts,
                 row.max_attempts,
                 row.available_at,
+                row.error_code.unwrap_or_default()
+            );
+        }
+        Ok(())
+    })
+}
+
+pub fn failed(url: String) -> ExitCode {
+    read(url, |queue| async move {
+        let rows = queue.dead_letters(50).await.map_err(show)?;
+        if rows.is_empty() {
+            println!("Failed jobs: none");
+        }
+        for row in rows {
+            println!(
+                "{} {} failed {}/{} finished {} {}",
+                row.id,
+                row.handler,
+                row.attempts,
+                row.max_attempts,
+                row.finished_at.unwrap_or(0),
                 row.error_code.unwrap_or_default()
             );
         }

@@ -20,6 +20,7 @@ fexu generate model Customer --app shop
 fexu generate model Product --app shop --timestamps
 fexu worker
 fexu jobs list
+fexu jobs failed
 fexu generate worker
 fexu jobs inspect <id>
 fexu jobs inspect <id> --show-payload

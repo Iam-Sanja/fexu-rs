@@ -200,6 +200,11 @@ enum JobsCommand {
         #[arg(long)]
         database_url: Option<String>,
     },
+    /// Lists permanently failed jobs. Payloads stay hidden.
+    Failed {
+        #[arg(long)]
+        database_url: Option<String>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -579,7 +584,8 @@ fn main() -> ExitCode {
                 JobsCommand::List { database_url }
                 | JobsCommand::Inspect { database_url, .. }
                 | JobsCommand::Retry { database_url, .. }
-                | JobsCommand::Cancel { database_url, .. } => database_url.clone(),
+                | JobsCommand::Cancel { database_url, .. }
+                | JobsCommand::Failed { database_url } => database_url.clone(),
             };
             let url = match jobs_database_url(database_url, project.as_ref()) {
                 Ok(url) => url,
@@ -595,6 +601,7 @@ fn main() -> ExitCode {
                 } => jobs::inspect(url, id, show_payload),
                 JobsCommand::Retry { id, yes, .. } => jobs::retry(url, id, yes),
                 JobsCommand::Cancel { id, yes, .. } => jobs::cancel(url, id, yes),
+                JobsCommand::Failed { .. } => jobs::failed(url),
             }
         }
         Command::Dumpdata {
