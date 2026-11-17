@@ -1,5 +1,6 @@
 //! Security tests for MFA, sessions, and account closure.
 
+use crate::provider::IdentityProvider;
 use crate::{AuthConfig, AuthError, AuthService, RemoteProtocol};
 use argon2::password_hash::rand_core::{OsRng, RngCore};
 use axum::body::Body;
@@ -610,6 +611,40 @@ async fn legacy_totp_migrates_and_recovery_hashes_stay_until_used() {
             .len(),
         1
     );
+}
+
+#[tokio::test]
+async fn password_provider_does_not_mint_a_session_or_local_privilege() {
+    let auth = service().await;
+    let address = email("contract");
+    let created = auth
+        .create_user(&address, password(), false, false)
+        .await
+        .expect("user");
+    assert!(!created.is_staff);
+    assert!(!created.is_superuser);
+    let before = session_count(&auth, created.id).await;
+    let identity = crate::provider::PasswordProvider
+        .verify(auth.database(), &address, password())
+        .await
+        .expect("verify");
+    assert_eq!(identity.user_id, created.id);
+    assert_eq!(identity.email, address);
+    assert_eq!(identity.method, "password");
+    assert_eq!(session_count(&auth, created.id).await, before);
+    let unknown = email("absent");
+    assert!(matches!(
+        crate::provider::PasswordProvider
+            .verify(auth.database(), &unknown, password())
+            .await,
+        Err(AuthError::InvalidCredentials)
+    ));
+    let users = auth.list_users().await.expect("users");
+    assert_eq!(users.len(), 1);
+    assert!(!users[0].is_staff && !users[0].is_superuser);
+    assert!(!RemoteProtocol::Oidc.is_implemented());
+    assert!(!RemoteProtocol::OAuthAuthorizationCode.is_implemented());
+    assert!(!RemoteProtocol::Passkey.is_implemented());
 }
 
 #[tokio::test]
