@@ -42,7 +42,7 @@ The full Settings description is in [settings.md](settings.md). `fexu.toml` is n
 
 ## Acceptance criteria
 
-The localhost default remains `127.0.0.1:3000`. `0.0.0.0` is not a production-ready bind address. Compare [deployment.md](deployment.md) and [security.md](security.md).
+The localhost default remains `127.0.0.1:3000`. `0.0.0.0` and `::` stay rejected unless `server.allow_wildcard_bind = true` or `FEXU_ALLOW_WILDCARD_BIND=true`. That opt-in is for a container network behind a proxy. It does not add a public origin. Compare [deployment.md](deployment.md) and [security.md](security.md).
 
 ## Admin
 

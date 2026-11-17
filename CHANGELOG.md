@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased — Docker bind, proxy headers and database role
+
+- `fexu check --deploy` reads `BIND_ADDRESS`. `0.0.0.0` and `::` stay errors until `server.allow_wildcard_bind` or `FEXU_ALLOW_WILDCARD_BIND=true`. The explicit case is not an allowed origin. `FEXU_TRUST_PROXY=1` with only `*` remains an error.
+- `Host`, `Forwarded`, `X-Forwarded-Host` and `X-Forwarded-Proto` are still not origins. An `http` origin is rejected when the `Secure` cookie flag is on. A missing or wrong CSRF token stays rejected.
+- `deploy/compose.yaml` sets the wildcard opt-in, keeps PostgreSQL unpublished, and connects the app as `fexu_app`. The first database start creates that `NOSUPERUSER` role. Migrations stay on the owner role. `deploy/nginx-proxy-manager.example.conf` shows the proxy headers and does not start NPM.
+
 ## 0.1.2 — synchronized workspace version
 
 - All 16 publishable crates and their internal path dependencies are `0.1.2`. Examples stay unpublished. `0.1.0` and `fexu-cli` `0.1.1` remain the versions already on crates.io.
