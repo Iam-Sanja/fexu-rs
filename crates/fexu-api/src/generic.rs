@@ -84,65 +84,136 @@ where
     crud_urls_with::<M, P, KeepRecord>(resource)
 }
 
+/// One mountable part of an HTML resource. `crud_urls` mounts all five.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CrudPart {
+    List,
+    Detail,
+    Create,
+    Update,
+    Delete,
+}
+
 pub fn crud_urls_with<M, P, S>(resource: HtmlResource) -> Result<UrlSet, UrlError>
 where
     M: ModelRepository + 'static,
     P: ObjectPolicy<M> + 'static,
     S: RecordStamp<M> + 'static,
 {
+    crud_urls_for::<M, P, S>(
+        resource,
+        &[
+            CrudPart::List,
+            CrudPart::Detail,
+            CrudPart::Create,
+            CrudPart::Update,
+            CrudPart::Delete,
+        ],
+    )
+}
+
+/// Mounts only the selected parts. Paths are still checked, and an omitted part has no route.
+pub fn crud_urls_for<M, P, S>(
+    resource: HtmlResource,
+    parts: &[CrudPart],
+) -> Result<UrlSet, UrlError>
+where
+    M: ModelRepository + 'static,
+    P: ObjectPolicy<M> + 'static,
+    S: RecordStamp<M> + 'static,
+{
+    if parts.is_empty() || parts.len() > 5 {
+        return Err(parts_error("Choose one to five distinct CRUD parts."));
+    }
+    let mut seen = [false; 5];
+    for part in parts {
+        let index = match part {
+            CrudPart::List => 0,
+            CrudPart::Detail => 1,
+            CrudPart::Create => 2,
+            CrudPart::Update => 3,
+            CrudPart::Delete => 4,
+        };
+        if seen[index] {
+            return Err(parts_error("Each CRUD part can be registered once."));
+        }
+        seen[index] = true;
+    }
     checked(&resource)?;
-    prepare_fields::<M>(true, resource.omit)?;
-    prepare_fields::<M>(false, resource.omit)?;
-    let list = resource;
-    let create = resource;
-    let detail = resource;
-    let update = resource;
-    let delete = resource;
-    UrlSet::new()
-        .route(
+    if seen[2] {
+        prepare_fields::<M>(true, resource.omit)?;
+    }
+    if seen[3] {
+        prepare_fields::<M>(false, resource.omit)?;
+    }
+    let mut routes = UrlSet::new();
+    if seen[0] {
+        let list = resource;
+        routes = routes.route(
             resource.list_name,
             resource.list_path,
-            get(move |state, headers, query, catalog, routes| {
-                show_list::<M, P>(list, state, headers, query, catalog, routes)
+            get(move |state, headers, query, catalog, map| {
+                show_list::<M, P>(list, state, headers, query, catalog, map)
             }),
-        )?
-        .route(
+        )?;
+    }
+    if seen[2] {
+        let create = resource;
+        routes = routes.route(
             resource.create_name,
             resource.create_path,
-            get(move |state, headers, catalog, routes| {
-                show_create::<M>(create, state, headers, catalog, routes)
+            get(move |state, headers, catalog, map| {
+                show_create::<M>(create, state, headers, catalog, map)
             })
-            .post(move |state, headers, catalog, routes, body| {
-                post_create::<M, P, S>(create, state, headers, catalog, routes, body)
+            .post(move |state, headers, catalog, map, body| {
+                post_create::<M, P, S>(create, state, headers, catalog, map, body)
             }),
-        )?
-        .route(
+        )?;
+    }
+    if seen[1] {
+        let detail = resource;
+        routes = routes.route(
             resource.detail_name,
             resource.detail_path,
-            get(move |state, headers, path, catalog, routes| {
-                show_detail::<M, P>(detail, state, headers, path, catalog, routes)
+            get(move |state, headers, path, catalog, map| {
+                show_detail::<M, P>(detail, state, headers, path, catalog, map)
             }),
-        )?
-        .route(
+        )?;
+    }
+    if seen[3] {
+        let update = resource;
+        routes = routes.route(
             resource.update_name,
             resource.update_path,
-            get(move |state, headers, path, catalog, routes| {
-                show_update::<M, P>(update, state, headers, path, catalog, routes)
+            get(move |state, headers, path, catalog, map| {
+                show_update::<M, P>(update, state, headers, path, catalog, map)
             })
-            .post(move |state, headers, path, catalog, routes, body| {
-                post_update::<M, P, S>(update, state, headers, path, catalog, routes, body)
+            .post(move |state, headers, path, catalog, map, body| {
+                post_update::<M, P, S>(update, state, headers, path, catalog, map, body)
             }),
-        )?
-        .route(
+        )?;
+    }
+    if seen[4] {
+        let delete = resource;
+        routes = routes.route(
             resource.delete_name,
             resource.delete_path,
-            get(move |state, headers, path, catalog, routes| {
-                show_delete::<M, P>(delete, state, headers, path, catalog, routes)
+            get(move |state, headers, path, catalog, map| {
+                show_delete::<M, P>(delete, state, headers, path, catalog, map)
             })
-            .post(move |state, headers, path, catalog, routes, body| {
-                post_delete::<M, P>(delete, state, headers, path, catalog, routes, body)
+            .post(move |state, headers, path, catalog, map, body| {
+                post_delete::<M, P>(delete, state, headers, path, catalog, map, body)
             }),
-        )
+        )?;
+    }
+    Ok(routes)
+}
+
+fn parts_error(detail: &str) -> UrlError {
+    UrlError {
+        code: "crud.parts",
+        detail: detail.to_owned(),
+    }
 }
 
 async fn show_list<M, P>(
@@ -202,7 +273,7 @@ where
         Ok(rows) => rows,
         Err(error) => return error_page(&headers, error),
     };
-    let create_url = match named(&routes, resource.create_name, &[]) {
+    let create_url = match optional_path(&routes, resource.create_name, &[]) {
         Ok(path) => path,
         Err(error) => return error_page(&headers, error),
     };
@@ -273,11 +344,11 @@ where
         Ok(path) => path,
         Err(error) => return error_page(&headers, error),
     };
-    let edit_url = match named(&routes, resource.update_name, &[("id", &id)]) {
+    let edit_url = match optional_path(&routes, resource.update_name, &[("id", &id)]) {
         Ok(path) => path,
         Err(error) => return error_page(&headers, error),
     };
-    let delete_url = match named(&routes, resource.delete_name, &[("id", &id)]) {
+    let delete_url = match optional_path(&routes, resource.delete_name, &[("id", &id)]) {
         Ok(path) => path,
         Err(error) => return error_page(&headers, error),
     };
@@ -1360,6 +1431,22 @@ fn named(
         tracing::warn!(code = error.code, "named route could not be reversed");
         server_error()
     })
+}
+
+/// A missing optional action is an empty link. Any other reversal failure stays a server error.
+fn optional_path(
+    routes: &crate::urls::RouteMap,
+    name: &str,
+    params: &[(&str, &str)],
+) -> Result<String, ViewError> {
+    match routes.path(name, params) {
+        Ok(path) => Ok(path),
+        Err(error) if error.code == "url.unknown" => Ok(String::new()),
+        Err(error) => {
+            tracing::warn!(code = error.code, "named route could not be reversed");
+            Err(server_error())
+        }
+    }
 }
 
 async fn read_flashes(state: &AppState, session_id: Uuid) -> Result<Vec<FlashRow>, ViewError> {

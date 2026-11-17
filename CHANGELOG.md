@@ -25,6 +25,10 @@
 - Model, auth, documentation and view problem responses use `Content-Type: application/problem+json`. Admin and storage JSON errors stay `application/json`.
 - `ModelRepository::list` and offset `page` still report `truncated` at 100 rows. Changing that repository cap is left to the query work in #144.
 
+## Unreleased — selectable HTML CRUD parts
+
+- `crud_urls_for` mounts a chosen subset of list, detail, create, update and delete. `crud_urls` and `crud_urls_with` still mount all five. An omitted part has no route, and its template link stays empty (#89).
+
 ## Unreleased — development CSRF keys
 
 - `AuthConfig::development` draws a new 32-byte CSRF key on every call. `try_from_env` still loads `FEXU_CSRF_SECRET` or `.fexu/csrf.key`. Token and HMAC formats are unchanged. Debug output keeps both secrets redacted.
