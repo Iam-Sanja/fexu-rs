@@ -68,7 +68,9 @@ let (_meta, bytes) = storage.read(user_id, stored.id).await?;
 
 S3 has no network client. See [storage-remote.md](storage-remote.md). Malware scanning is missing. Content recognition does not replace a virus scanner. Header checks do not decode image pixels. JPEG image fields are not pixel-decoded. PNG decoding accepts 8-bit gray, RGB and RGBA without interlacing and rejects other PNG forms. A mismatched `sha256` or length makes `read` return `Failed` and leaves the file on disk. Metadata is Sidecar JSON, not a database table. `StoredFile` accepts older sidecars that omit `created_at`, `expires_at` and `sha256`.
 
-Account close and admin record deletion do not call `purge_owner` or `delete`. Auth does not depend on this crate. Admin image widgets still store bytes in `_fexu_record_files` inside the database transaction. App forms that use `prepare_media` have to abort or commit the staged files themselves. `fexu-forms::store_upload` remains the immediate single-file helper and can still store a PNG signature prefix. `media_field_errors` only copies the lifecycle error codes.
+Account close and admin record deletion do not call `purge_owner` or `delete`. Auth does not depend on this crate. `FieldSpec::image_limits` overrides the policy for one image field. `fexu_forms::finish_media` is the app helper for stage, database save, abort and commit, in that order. It does not make the database and the storage backend one transaction.
+
+Admin image widgets still store bytes in `_fexu_record_files` inside the record transaction. They validate through `prepare_media` first. PNG bytes are inflated. JPEG bytes stay a container check. GIF, WebP and ICO are not moved to `LocalStorage`. A failed record save rolls the blob back with the row. `fexu-forms::store_upload` remains the immediate single-file helper and can still store a PNG signature prefix. `media_field_errors` copies the lifecycle error codes.
 
 ## Extension
 

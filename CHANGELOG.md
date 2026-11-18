@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased — form media fields and admin image adapter
+
+- `MediaField`, `bind_media`, `read_media_parts`, `render_media_field` and `finish_media` let an application form require, replace, clear or keep a file without writing it before validation. `finish_media` stages, runs the database future, then aborts or commits storage. Those two steps are not one transaction.
+- Admin record images stay in `_fexu_record_files`. PNG and JPEG uploads use the same field checks before the record transaction. GIF, WebP and ICO stay signature checks. A clear checkbox removes the blob only inside that transaction. CSRF and the private image response are unchanged.
+
 ## Unreleased — relation fields and formsets
 
 - `bind_relation` accepts a foreign key, a one-to-one id, or many-to-many ids only from the caller's allowed set. Missing and out-of-scope ids stay distinct. Widgets render at most 100 options.

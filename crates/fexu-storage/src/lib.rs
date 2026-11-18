@@ -14,9 +14,9 @@ mod signed;
 
 pub use access::{OwnerAccess, StorageAccess, StorageAction};
 pub use fields::{
-    prepare_media, AbortReport, BoundMedia, CommitReport, FieldError, FieldSpec, IncomingFile,
-    MediaKind, MediaPolicy, MediaRef, PlannedField, StagedFile, StagedMedia, UploadPlan,
-    MAX_STAGING_TTL,
+    prepare_media, upload_name_code, AbortReport, BoundMedia, CommitReport, FieldError, FieldSpec,
+    IncomingFile, MediaKind, MediaPolicy, MediaRef, PlannedField, StagedFile, StagedMedia,
+    UploadPlan, MAX_STAGING_TTL,
 };
 pub use http::{
     multipart_text_field, read_multipart, read_multipart_repeated, routes, FormPart,

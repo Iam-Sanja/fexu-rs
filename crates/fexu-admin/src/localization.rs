@@ -157,6 +157,25 @@ pub fn validation_text(locale: &str, detail: &str) -> String {
     if detail.contains("validation.postal") {
         return fexu_core::message_text(locale, "validation.postal").to_owned();
     }
+    if detail.contains("validation.upload_name")
+        || detail.contains("validation.upload_size")
+        || detail.contains("validation.upload_type")
+        || detail.contains("validation.unknown_field")
+        || detail.contains("validation.upload")
+    {
+        let code = if detail.contains("validation.upload_name") {
+            "validation.upload_name"
+        } else if detail.contains("validation.upload_size") {
+            "validation.upload_size"
+        } else if detail.contains("validation.upload_type") {
+            "validation.upload_type"
+        } else if detail.contains("validation.unknown_field") {
+            "validation.unknown_field"
+        } else {
+            "validation.upload"
+        };
+        return fexu_core::message_text(locale, code).to_owned();
+    }
     if detail.contains("validation.required") {
         return if german {
             "Pflichtfeld.".into()
