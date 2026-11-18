@@ -51,7 +51,7 @@ pub async fn introspect_sqlite(
             "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
         ))
         .await
-        .map_err(|error| MigrationError::new(format!("Tabellenliste fehlgeschlagen: {error}")))?;
+        .map_err(|error| MigrationError::new(format!("Table listing failed: {error}")))?;
     let mut tables = Vec::new();
     for row in rows {
         let name: String = row
@@ -86,7 +86,7 @@ async fn table_info(
         ))
         .await
         .map_err(|error| {
-            MigrationError::new(format!("PRAGMA table_info fehlgeschlagen: {error}"))
+            MigrationError::new(format!("PRAGMA table_info failed: {error}"))
         })?;
     let mut columns = Vec::new();
     for row in rows {
@@ -118,7 +118,7 @@ async fn index_info(
         ))
         .await
         .map_err(|error| {
-            MigrationError::new(format!("PRAGMA index_list fehlgeschlagen: {error}"))
+            MigrationError::new(format!("PRAGMA index_list failed: {error}"))
         })?;
     let mut indexes = Vec::new();
     for row in rows {
@@ -139,7 +139,7 @@ async fn index_info(
             ))
             .await
             .map_err(|error| {
-                MigrationError::new(format!("PRAGMA index_info fehlgeschlagen: {error}"))
+                MigrationError::new(format!("PRAGMA index_info failed: {error}"))
             })?;
         let mut named = Vec::new();
         for column in columns {
@@ -171,7 +171,7 @@ async fn foreign_key_info(
         ))
         .await
         .map_err(|error| {
-            MigrationError::new(format!("PRAGMA foreign_key_list fehlgeschlagen: {error}"))
+            MigrationError::new(format!("PRAGMA foreign_key_list failed: {error}"))
         })?;
     let mut grouped: Vec<(i64, i64, LiveForeignKey)> = Vec::new();
     for row in rows {
