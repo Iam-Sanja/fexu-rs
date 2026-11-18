@@ -1,0 +1,16 @@
+[package]
+name = "admin-browser"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description.workspace = true
+repository.workspace = true
+homepage.workspace = true
+publish = false
+
+[dependencies]
+fexu = { path = "../../crates/fexu", features = ["admin-ui"] }
+axum.workspace = true
+serde.workspace = true
+tokio.workspace = true
+uuid.workspace = true

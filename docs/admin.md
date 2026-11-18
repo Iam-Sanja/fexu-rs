@@ -77,13 +77,13 @@ Admin model and directory requests require a valid session and `is_staff = true`
 
 ## Tests
 
-`examples/myshop/tests/admin_http.rs` covers the JSON API. `examples/myshop/tests/admin_html.rs` covers login, lists, search, filters, sorting, pagination, CRUD forms, user management, confirmation, relation labels, CSRF, HTML escaping, many-to-many selection, and keyboard-related form markup.
+`examples/myshop/tests/admin_http.rs` covers the JSON API. `examples/myshop/tests/admin_html.rs` covers login, lists, search, filters, sorting, pagination, CRUD forms, user management, confirmation, relation labels, CSRF, HTML escaping, many-to-many selection, and keyboard-related form markup. `crates/fexu-admin/src/relations.rs` covers 0, 1, 100 and 1000 lookup rows on SQLite and, when `DATABASE_URL` points at an approved test database, on PostgreSQL. `examples/admin-browser` reads `FEXU_BROWSER_ADMIN_PASSWORD` and serves the authenticated Playwright flows in `tests/browser/admin-relations.spec.js`: foreign key, one-to-one, many-to-many, picker pages, a scoped shelf, inline edits, and a confirmed bulk action.
 
 ## Limitations
 
 General plugin hooks, OIDC/OAuth sign-in and multi-tenancy are not implemented. TOTP MFA with recovery codes and login challenges is implemented for local accounts; see [auth providers](auth-providers.md). The admin supports German and English. It cannot grant superuser access or physically delete users. Directory management requires a staff superuser and uses dedicated create, edit and password routes rather than generic model CRUD. Deactivation is the supported alternative to deletion.
 
-The HTML admin aims at clearer labels, focus, and validation text. That is not a WCAG 2.2 AA conformance claim. A screen reader was not run; automated browser checks cover the login form labels, keyboard focus, a narrow viewport, and the anonymous picker redirect. Contrast was not measured. Table-row clicks remain a mouse enhancement; the record link is the keyboard path. Many-to-many pages use the existing offset lookup of 100 rows. Login rate limits use the error page.
+The HTML admin aims at clearer labels, focus, and validation text. That is not a WCAG 2.2 AA conformance claim. A manual screen reader was not run. Playwright checks labels, the alert role, keyboard focus, a 390-pixel viewport, the anonymous picker redirect, and the authenticated relation flows. Contrast was not measured. Table-row clicks remain a mouse enhancement; the record link is the keyboard path. Many-to-many pages use the existing offset lookup of 100 rows. Login rate limits use the error page.
 
 `examples/board` saves a project, its lead, and its tasks in one transaction and rejects a foreign child id. The native admin order form in `examples/myshop` remains the inline example and was not changed here.
 
