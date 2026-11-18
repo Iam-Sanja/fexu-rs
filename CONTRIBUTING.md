@@ -2,7 +2,7 @@
 
 Fexu is a pre-release Rust full-stack web framework. The current name is Fexu. Workspace crates keep names such as `fexu`, `fexu-api`, and `fexu-cli`. The Cargo version is `0.1.2`. Milestone labels such as v0.27.1 describe internal progress. They are not Cargo releases and they are not an installable crate named `fexu`.
 
-Product documentation in `docs/` is currently written in German. New repository policy, GitHub templates, and contributor instructions are written in English.
+Developer documentation in `docs/` is written in English. `docs/orm-capability-matrix.md` remains a German historical comparison. German is a catalog language and the explicit `de` locale, not the language of the developer docs. New repository policy, GitHub templates, and contributor instructions are written in English.
 
 ## Expected behavior
 
@@ -60,7 +60,7 @@ cargo build --workspace
 | `crates/fexu-mail` | Mail delivery |
 | `examples/myshop` | Worked example application |
 | `examples/notes` | Small application and worker example |
-| `docs/` | Product documentation, currently German |
+| `docs/` | Developer documentation in English. `docs/orm-capability-matrix.md` is a German historical comparison |
 
 `Cargo.lock` is source-controlled. Do not delete it.
 

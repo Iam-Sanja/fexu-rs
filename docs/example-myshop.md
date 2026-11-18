@@ -1,10 +1,12 @@
 # myshop – integration example
 
-[Overview](index.md) · **Implemented files:** `examples/myshop/src/lib.rs`, `examples/myshop/src/main.rs`, `examples/myshop/src/models/category.rs`, `examples/myshop/src/models/product.rs`.
+[Overview](index.md) · **Implemented files:** `examples/myshop/src/lib.rs`, `examples/myshop/src/main.rs`, `examples/myshop/src/contact.rs`, `examples/myshop/src/models/category.rs`, `examples/myshop/src/models/product.rs`.
 
 ## Purpose
 
 `myshop` demonstrates the public Fexu APIs through the same facade used by other applications. It enables `admin-ui`. Use `fexu new project` for an independent project; see [project-generator.md](project-generator.md). Products and categories have anonymous demo routes without object policies; create policies are covered separately in `auth.rs` and `admin_http.rs`. The example serves `/`, `/static/css/app.css` and a `/contact` form that validates without sending email. Uploads require a session. `fexu-middleware` supplies request IDs and security headers.
+
+The start page in `examples/myshop/src/main.rs` is fixed German HTML (`lang="de"`, link text `Kontakt`). It does not read `Accept-Language`. The contact and thank-you pages use English when `Accept-Language` starts with `en`, and German otherwise. `render_page_in` sets the document language. `render_page` remains the German default. The form does not send mail.
 
 ## Model (Implemented)
 

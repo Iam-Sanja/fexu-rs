@@ -1,7 +1,9 @@
 # Fexu internationalization architecture (RFC)
 
-> **Status: Proposed.** Tracking issue: [#148](https://github.com/Iam-Sanja/fexu-rs/issues/148).
-> This document specifies desired behavior; its proposed APIs, data model, UI and commands are **not implemented**.
+> **Status: Proposed RFC.** Tracking issue: [#148](https://github.com/Iam-Sanja/fexu-rs/issues/148).
+> Step 1 is partial: the admin and the CLI ship embedded `en` and `de` catalogs. The packaging, pluralization and translator-import rules below are not implemented.
+> Step 2 is partial: developer diagnostics and the CLI default are English-first. German remains for locale `de` and for `FEXU_LOCALE=de`. German comments and the internal migration states `angewendet` and `ausstehend` remain.
+> Steps 3–6 are open. `#[field(translatable)]`, Settings → Translations and record-translation storage are not a public API.
 
 ## Goals
 
