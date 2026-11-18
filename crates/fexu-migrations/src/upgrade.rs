@@ -373,7 +373,7 @@ pub fn contained_target(root: &Path, relative: &str) -> Result<PathBuf, Migratio
             .map_err(|error| MigrationError::new(format!("upgrade.unsafe_path: {error}")))?;
         if !canonical.starts_with(&root) {
             return Err(MigrationError::new(format!(
-                "upgrade.unsafe_path: `{relative}` zeigt aus dem Projekt heraus."
+                "upgrade.unsafe_path: `{relative}` points outside the project directory."
             )));
         }
         return Ok(canonical);
@@ -398,7 +398,7 @@ pub fn contained_target(root: &Path, relative: &str) -> Result<PathBuf, Migratio
         .map_err(|error| MigrationError::new(format!("upgrade.unsafe_path: {error}")))?;
     if !rebuilt.starts_with(&root) {
         return Err(MigrationError::new(format!(
-            "upgrade.unsafe_path: `{relative}` zeigt aus dem Projekt heraus."
+            "upgrade.unsafe_path: `{relative}` points outside the project directory."
         )));
     }
     for name in missing.iter().rev() {

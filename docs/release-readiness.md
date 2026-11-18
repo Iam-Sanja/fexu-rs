@@ -1,5 +1,8 @@
 # Release readiness
 
+> **Current status (2026-11-18):** `v0.1.2` is already published (all 16 workspace crates). The material below is a dated **0.1.0 / pre-0.1.2 readiness record**, not the readiness decision for `0.2.0`. The proposed next-release gates are in [roadmap.md](roadmap.md); a future release candidate needs its own current CI, upgrade, packaging, security and clean-room evidence. Do not reuse the historical `READY` decision as authorization to publish a new version.
+
+
 > **2026-11-15:** The sections below are a dated `0.1.0` snapshot. All 16 crate names now exist on crates.io at `0.1.0`, and `fexu-cli` also at `0.1.1`. This branch prepares `0.1.2` and does not publish it.
 
 > **Rollout snapshot (2026-11-14):** eight crates (`fexu-core`, `fexu-macros`, `fexu-cache`, `fexu-static`, `fexu-middleware`, `fexu-mail`, `fexu-db`, `fexu-migrations`) were reported as published; the first seven were independently confirmed by the user's `cargo info` outputs and `fexu-migrations` publication was reported by the maintainer in the crates.io index by Cargo. `fexu-db` passed the dry-run and was subsequently published and independently downloaded from crates.io. Its earlier HTTP 429 was temporary. **This is a dated snapshot, not a live counter; verify individual crates on crates.io before proceeding.** This documentation branch does not publish anything.

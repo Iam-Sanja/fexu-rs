@@ -703,7 +703,7 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {{
     let router = fexu::pages::mount_pages_with(app.try_into_router()?, &settings, &names)?;
     let router = fexu::web::prepare(router, &settings);
     let listener = tokio::net::TcpListener::bind(&address).await?;
-    println!("Fexu lauscht auf http://{{address}}");
+    println!("Fexu listening at http://{{address}}");
     axum::serve(listener, router.into_make_service_with_connect_info::<std::net::SocketAddr>()).await?;
     Ok(())
 }}

@@ -105,7 +105,7 @@ pub(crate) fn check_widget(
     if !valid_key(widget.model_key) || !valid_key(widget.field) {
         return Err(ExtensionError::new(
             "extension.widget",
-            "Widget oder Feldname ist ungültig.",
+            "Widget or field name is invalid.",
         ));
     }
     if let WidgetKind::Textarea { max_length, rows } = widget.kind {
@@ -128,13 +128,13 @@ pub(crate) fn check_widget(
         let Some(field) = meta.fields.iter().find(|field| field.name == widget.field) else {
             return Err(ExtensionError::new(
                 "extension.widget",
-                "Das Widget-Feld gehört nicht zum Modell.",
+                "The widget field does not belong to the model.",
             ));
         };
         if field.hidden || field.sensitive {
             return Err(ExtensionError::new(
                 "extension.widget",
-                "Ein Widget darf ein verborgenes Feld nicht öffnen.",
+                "A widget cannot expose a hidden field.",
             ));
         }
         let Some(column) = columns.iter().find(|column| column.name == widget.field) else {
@@ -146,7 +146,7 @@ pub(crate) fn check_widget(
         if column.foreign_table.is_some() || column.primary_key {
             return Err(ExtensionError::new(
                 "extension.widget",
-                "Fremdschlüssel und Primärschlüssel behalten das eingebaute Widget.",
+                "Foreign keys and primary keys retain the built-in widget.",
             ));
         }
         let text = matches!(

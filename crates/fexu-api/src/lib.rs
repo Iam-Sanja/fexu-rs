@@ -363,7 +363,7 @@ impl App {
         match self.try_into_router() {
             Ok(router) => router,
             Err(error) => panic!(
-                "Fexu-App-Registry ist ungültig ({}). {}",
+                "Fexu app registry is invalid ({}). {}",
                 error.code, error.detail
             ),
         }

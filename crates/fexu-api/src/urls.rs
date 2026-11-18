@@ -1,4 +1,4 @@
-//! Benannte Anwendungsrouten auf dem bestehenden Axum-Router.
+//! Named application routes on the existing Axum router.
 
 use crate::AppState;
 use axum::routing::MethodRouter;
@@ -28,7 +28,7 @@ impl RouteMap {
     pub fn path(&self, name: &str, params: &[(&str, &str)]) -> Result<String, UrlError> {
         let template = self.entries.get(name).ok_or_else(|| UrlError {
             code: "url.unknown",
-            detail: format!("Die Route `{name}` ist nicht registriert."),
+            detail: format!("Route `{name}` is not registered."),
         })?;
         let mut path = template.clone();
         for (key, value) in params {
@@ -36,19 +36,19 @@ impl RouteMap {
             if !path.contains(&token) {
                 return Err(UrlError {
                     code: "url.parameter",
-                    detail: format!("`{key}` gehört nicht zu `{name}`."),
+                    detail: format!("`{key}` does not belong to `{name}`."),
                 });
             }
             let encoded = encode_param(value).map_err(|_| UrlError {
                 code: "url.parameter",
-                detail: "Ein URL-Parameter enthält unzulässige Zeichen.".to_owned(),
+                detail: "A URL parameter contains invalid characters.".to_owned(),
             })?;
             path = path.replace(&token, &encoded);
         }
         if path.contains('{') {
             return Err(UrlError {
                 code: "url.parameter",
-                detail: format!("Für `{name}` fehlt ein Parameter."),
+                detail: format!("A parameter is missing for `{name}`."),
             });
         }
         Ok(path)
@@ -65,13 +65,13 @@ impl RouteMap {
             if self.entries.contains_key(name) {
                 return Err(UrlError {
                     code: "url.duplicate",
-                    detail: format!("Der Name `{name}` ist bereits vergeben."),
+                    detail: format!("Name `{name}` is already registered."),
                 });
             }
             if self.entries.values().any(|existing| existing == path) {
                 return Err(UrlError {
                     code: "url.duplicate",
-                    detail: format!("Der Pfad `{path}` ist bereits vergeben."),
+                    detail: format!("Path `{path}` is already registered."),
                 });
             }
         }
@@ -135,13 +135,13 @@ impl UrlSet {
         if self.names.entries.contains_key(name) {
             return Err(UrlError {
                 code: "url.duplicate",
-                detail: format!("Der Name `{name}` ist bereits vergeben."),
+                detail: format!("Name `{name}` is already registered."),
             });
         }
         if self.names.entries.values().any(|existing| existing == path) {
             return Err(UrlError {
                 code: "url.duplicate",
-                detail: format!("Der Pfad `{path}` ist bereits vergeben."),
+                detail: format!("Path `{path}` is already registered."),
             });
         }
         self.names.entries.insert(name.to_owned(), path.to_owned());

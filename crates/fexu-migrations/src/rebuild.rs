@@ -421,8 +421,8 @@ async fn reconstruct_sqlite(
             "PRAGMA integrity_check",
         ))
         .await
-        .map_err(|error| MigrationError::new(format!("integrity_check fehlgeschlagen: {error}")))?
-        .ok_or_else(|| MigrationError::new("integrity_check lieferte keine Zeile."))?;
+        .map_err(|error| MigrationError::new(format!("integrity_check failed: {error}")))?
+        .ok_or_else(|| MigrationError::new("integrity_check returned no row."))?;
     let status: String = integrity
         .try_get("", "integrity_check")
         .map_err(|error| MigrationError::new(format!("Could not read integrity_check: {error}")))?;
@@ -437,9 +437,7 @@ async fn reconstruct_sqlite(
             "PRAGMA foreign_key_check",
         ))
         .await
-        .map_err(|error| {
-            MigrationError::new(format!("foreign_key_check fehlgeschlagen: {error}"))
-        })?;
+        .map_err(|error| MigrationError::new(format!("foreign_key_check failed: {error}")))?;
     if !violations.is_empty() {
         return Err(MigrationError::new(
             "foreign_key_check reported violations. The transaction is rolled back and no rows were changed."
@@ -796,10 +794,7 @@ async fn validate_changed_column(
         ))
         .await
         .map_err(|error| {
-            MigrationError::new(format!(
-                "Lesen von `{table}.{}` fehlgeschlagen: {error}",
-                from.name
-            ))
+            MigrationError::new(format!("Reading `{table}.{}` failed: {error}", from.name))
         })?;
     let total = count_where(db, table, "1 = 1").await?;
     if rows.len() as i64 != total {
@@ -1027,7 +1022,7 @@ async fn execute(
 ) -> Result<(), MigrationError> {
     db.execute(Statement::from_string(backend, sql))
         .await
-        .map_err(|error| MigrationError::new(format!("SQL fehlgeschlagen: {error}")))?;
+        .map_err(|error| MigrationError::new(format!("SQL failed: {error}")))?;
     Ok(())
 }
 

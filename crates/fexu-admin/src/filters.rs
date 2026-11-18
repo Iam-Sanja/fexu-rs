@@ -120,13 +120,13 @@ pub(crate) fn check_filter(
     if !valid_key(filter.model_key) || !valid_key(filter.name) {
         return Err(ExtensionError::new(
             "extension.filter",
-            "Filtername oder Modellname ist ungültig.",
+            "Filter name or model name is invalid.",
         ));
     }
     if !valid_label(filter.label_de) || !valid_label(filter.label_en) {
         return Err(ExtensionError::new(
             "extension.filter",
-            "Die Filterbeschriftung ist leer oder enthält Steuerzeichen.",
+            "The filter label is empty or contains control characters.",
         ));
     }
     if !valid_key(filter.column()) {
@@ -153,7 +153,7 @@ pub(crate) fn check_filter(
             }) {
                 return Err(ExtensionError::new(
                     "extension.filter",
-                    "Ein Auswahlwert ist leer oder enthält Steuerzeichen.",
+                    "A choice value is empty or contains control characters.",
                 ));
             }
         }
@@ -169,13 +169,13 @@ pub(crate) fn check_filter(
         let Some(column) = columns.iter().find(|column| column.name == filter.column()) else {
             return Err(ExtensionError::new(
                 "extension.filter",
-                "Die Filterspalte gehört nicht zum Modell.",
+                "The filter column does not belong to the model.",
             ));
         };
         if column.primary_key {
             return Err(ExtensionError::new(
                 "extension.filter",
-                "Ein Filter darf nicht auf dem Primärschlüssel liegen.",
+                "A filter cannot target the primary key.",
             ));
         }
         let hidden = meta
@@ -185,7 +185,7 @@ pub(crate) fn check_filter(
         if hidden {
             return Err(ExtensionError::new(
                 "extension.filter",
-                "Ein Filter darf kein verborgenes Feld öffnen.",
+                "A filter cannot expose a hidden field.",
             ));
         }
     }

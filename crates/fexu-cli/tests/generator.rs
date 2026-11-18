@@ -219,7 +219,7 @@ fn generated_api_and_fullstack_projects_compile() {
             .arg("dev")
             .output()
             .unwrap();
-        assert!(success(dev).contains("lauscht"));
+        assert!(success(dev).contains("listening"));
         assert!(success(cli(&["build"])).contains("target"));
     }
     std::fs::remove_dir_all(root).unwrap();

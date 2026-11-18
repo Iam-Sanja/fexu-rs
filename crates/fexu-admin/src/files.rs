@@ -205,9 +205,7 @@ async fn ensure_table(db: &DatabaseConnection) -> Result<(), FexuError> {
         DatabaseBackend::Postgres => "BYTEA",
         DatabaseBackend::Sqlite => "BLOB",
         DatabaseBackend::MySql => {
-            return Err(FexuError::Validation(
-                "MySQL wird nicht unterstützt.".into(),
-            ))
+            return Err(FexuError::Validation("MySQL is not supported.".into()))
         }
     };
     db.execute(Statement::from_string(
@@ -258,9 +256,7 @@ fn build(
         DatabaseBackend::Postgres => query.build(PostgresQueryBuilder),
         DatabaseBackend::Sqlite => query.build(SqliteQueryBuilder),
         DatabaseBackend::MySql => {
-            return Err(FexuError::Validation(
-                "MySQL wird nicht unterstützt.".into(),
-            ))
+            return Err(FexuError::Validation("MySQL is not supported.".into()))
         }
     };
     Ok((sql, values.0))

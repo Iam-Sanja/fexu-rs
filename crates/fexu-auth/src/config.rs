@@ -292,7 +292,7 @@ fn env_range(name: &str, min: u32, max: u32) -> Result<Option<u32>, String> {
     match value.parse::<u32>() {
         Ok(number) if (min..=max).contains(&number) => Ok(Some(number)),
         _ => {
-            tracing::warn!("{name} liegt außerhalb von {min} bis {max} und wird ignoriert.");
+            tracing::warn!("{name} is outside the range {min} to {max} and will be ignored.");
             Ok(None)
         }
     }
@@ -303,7 +303,7 @@ fn load_csrf_secret() -> Result<[u8; 32], String> {
         if let Some(secret) = decode_hex_32(&value) {
             return Ok(secret);
         }
-        tracing::warn!("FEXU_CSRF_SECRET muss 64 Hex-Zeichen sein. Fexu verwendet die gespeicherte Schlüsseldatei.");
+        tracing::warn!("FEXU_CSRF_SECRET must be 64 hexadecimal characters. Fexu will use the stored key file.");
     }
     let path = std::path::PathBuf::from(".fexu/csrf.key");
     if let Ok(bytes) = std::fs::read(&path) {
@@ -319,7 +319,9 @@ fn load_csrf_secret() -> Result<[u8; 32], String> {
         let _ = std::fs::create_dir_all(parent);
     }
     if std::fs::write(&path, secret).is_err() {
-        tracing::warn!("CSRF-Schlüsseldatei konnte nicht geschrieben werden. Der Prozessschlüssel gilt nur bis zum Neustart.");
+        tracing::warn!(
+            "The CSRF key file could not be written. The process key is valid only until restart."
+        );
     }
     Ok(secret)
 }
@@ -370,7 +372,7 @@ fn load_or_create_mfa_file() -> Result<[u8; 32], String> {
     }
     if std::fs::write(&path, secret).is_err() {
         tracing::warn!(
-            "MFA-Schlüsseldatei konnte nicht geschrieben werden. Der Prozessschlüssel gilt nur bis zum Neustart."
+            "The MFA key file could not be written. The process key is valid only until restart."
         );
     }
     Ok(secret)

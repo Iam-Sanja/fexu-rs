@@ -15,9 +15,12 @@ impl Clock for SystemClock {
     fn unix(&self) -> Result<i64, JobError> {
         let duration = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .map_err(|_| JobError::message("job.clock", "Die Systemuhr liegt vor 1970."))?;
+            .map_err(|_| JobError::message("job.clock", "The system clock is before 1970."))?;
         i64::try_from(duration.as_secs()).map_err(|_| {
-            JobError::message("job.clock", "Die Systemuhr liegt außerhalb des Bereichs.")
+            JobError::message(
+                "job.clock",
+                "The system clock is outside the supported range.",
+            )
         })
     }
 }
