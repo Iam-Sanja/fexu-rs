@@ -12,7 +12,7 @@ A Django-inspired, experimental web framework built with **Axum**, **Tera**, **S
 ![MSRV: 1.89](https://img.shields.io/badge/MSRV-1.89-informational)
 ![Workspace: 16 crates](https://img.shields.io/badge/workspace-16%20crates-informational)
 
-[**Quick start**](#quick-start) · [**Features**](#why-fexu) · [**Docs**](docs/index.md) · [**Contribute**](#help-build-fexu) · [**Roadmap**](docs/roadmap.md)
+[**Quick start**](#quick-start) · [**Features**](#why-fexu) · [**Docs**](docs/index.md) · [**Contribute**](#help-build-fexu) · [**Roadmap: proposed v0.2/v0.3**](docs/roadmap.md)
 
 > [!IMPORTANT]
 > **Fexu 0.1.2 is published on crates.io but remains experimental and is not production-ready.** APIs, configuration and migrations may change. The version badges show the latest crates.io releases. The `main` branch may contain newer, unreleased changes; features added after the `v0.1.2` tag are not part of the published 0.1.2 packages. Do not expose a demo application directly to the public internet.
