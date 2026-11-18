@@ -2,7 +2,7 @@
 
 [Documentation](index.md) · [Capability matrix](django-capability-matrix.md) · [Release checklist](release-readiness.md) · [GitHub issues](https://github.com/Iam-Sanja/fexu-rs/issues)
 
-**Reviewed:** 2026-11-18 against `main` at `a591b85` (after PR #183). This is a proposed release plan, **not a promise of dates or that every listed feature is complete**. Update the verification baseline when implementation or release status changes.
+**Reviewed:** 2026-11-18 against `main` at `d4e2fb2` (after PR #192). This is a proposed release plan, **not a promise of dates or that every listed feature is complete**. Update the verification baseline when implementation or release status changes.
 
 ## Version meanings and current status
 
@@ -13,6 +13,16 @@
 - **Historical labels:** changelog entries and old engineering notes such as `v0.13` / `v0.28` are *internal feature milestones*, **not** Cargo versions or crates.io releases.
 
 The implementation inventory below refers to **source on the reviewed commit**, not the published `0.1.2` packages. See the [capability matrix](django-capability-matrix.md) for partial coverage and backend restrictions.
+
+## On main since `a591b85`, still unreleased
+
+These commits are on `main` after the previous review and after the published `0.1.2` crates. They do not cut `0.2.0`.
+
+- [#186](https://github.com/Iam-Sanja/fexu-rs/pull/186) form acceptance and [#188](https://github.com/Iam-Sanja/fexu-rs/pull/188) authenticated relation workflows, including PostgreSQL rollback coverage, are on `main`. They do not close [#84](https://github.com/Iam-Sanja/fexu-rs/issues/84) or [#80](https://github.com/Iam-Sanja/fexu-rs/issues/80).
+- [#189](https://github.com/Iam-Sanja/fexu-rs/pull/189) localizes Board and Desk example pages. Board HTML uses `locale_of` in `crates/fexu-api/src/generic.rs`: `Accept-Language` starting with `en` selects English, and every other value stays German. Desk's HTTP stock handler calls `stock_markup`, which stays German. [#190](https://github.com/Iam-Sanja/fexu-rs/pull/190) uses the same `en` prefix for the MyShop contact and thank-you pages. The MyShop start page stays fixed German HTML. None of this translates stored records, field labels or choices.
+- [#192](https://github.com/Iam-Sanja/fexu-rs/pull/192) makes developer diagnostics English by default. German remains when the locale is `de` or `FEXU_LOCALE=de`.
+
+[#148](https://github.com/Iam-Sanja/fexu-rs/issues/148) stays the proposed catalog and record-content work under v0.3. The example pages above are not that work.
 
 ## What is available in the development source
 

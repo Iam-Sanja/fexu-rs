@@ -19,7 +19,7 @@ The selected language is added to the Tera context as `locale`; it never becomes
 
 ## CLI
 
-`FEXU_LOCALE=en` or `de` overrides `default_locale` for the CLI. Project-generation, model-generation and development-server start/stop messages are localized. The generated `fexu dev` program emits the English startup line `Fexu listening at http://...`; it is a developer diagnostic rather than a locale-bound UI message. Migration status messages, including `Angewendet` and `Keine Schemaänderung`, remain unchanged.
+`FEXU_LOCALE=en` or `de` selects the CLI catalog. When `FEXU_LOCALE` is unset, `crates/fexu-cli/src/text.rs` uses English and does not inherit the application UI locale. Project-generation, model-generation and development-server start/stop messages come from that catalog. The generated `fexu dev` program emits the English startup line `Fexu listening at http://...`. `fexu migrate make` prints `No schema changes. No migration was written.` when the schema is unchanged. `fexu migrate status` prints English headings such as `Auth migrations` unless the locale is `de`, in which case the heading is `Auth-Migrationen`. The stored states stay `angewendet` and `ausstehend`. A locale other than `de` displays those states as `applied` and `pending`. The sentences `Angewendet` and `Keine Schemaänderung` are not in the source tree.
 
 ## Tests
 

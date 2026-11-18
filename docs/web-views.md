@@ -30,18 +30,20 @@ registry.routes(fexu::views::crud_urls_with::<Note, NotePolicy, NoteStamp>(resou
 
 `crud_urls` and `crud_urls_with` still mount all five parts. `crud_urls_for` mounts only the requested `CrudPart` values. An empty list or a repeated part is rejected. Omitted parts have no route. List, detail and delete pages leave the corresponding link empty, and the board templates render those links only when the URL is present. `crud_urls_with` is `crud_urls_for` with every part, so existing callers keep the same routes.
 
-The example is `examples/board`. The application code is the model, an `ObjectPolicy`, a `RecordStamp`, the `HtmlResource` and four templates. Queries go through `ModelRepository` and `query_admin_page`.
+The example is `examples/board`. `lib.rs` holds the `Note` model, an `ObjectPolicy`, a `RecordStamp`, the `HtmlResource` and the `crud_urls_with` registration. Queries go through `ModelRepository` and `query_admin_page`. `forms.rs` and `project.rs` sit beside those routes. They are not part of `crud_urls`.
+
+HTML CRUD pages set `locale` with `locale_of` in `crates/fexu-api/src/generic.rs`. `Accept-Language` that starts with `en` selects English. Every other value, including a missing header, selects German. That rule does not read `?lang=`, `q` weights or `project.default_locale`. `negotiate_locale` in `pages.rs` is a different function. `locale_from` in `views.rs` uses the same `en` prefix for HTML error pages.
 
 ### Measured application code
 
-`examples/board/src/lib.rs` is 176 lines. That file holds the `Note` model, `NotePolicy`, `NoteStamp`, the `HtmlResource`, the one `crud_urls_with` registration, and the robots and sitemap handlers. The four templates are 82 lines together. `examples/myshop/src/contact.rs` is 167 lines and implements one public form: it parses the body, checks CSRF, renders errors and redirects. It has no list, no object scope, no update and no delete. The board file is therefore about the same length as that single manual form while the five CRUD handlers, the scope checks and the flash redirect stay in `fexu-api`.
+`examples/board/src/lib.rs` is 187 lines. That file holds the `Note` model, `NotePolicy`, `NoteStamp`, the `HtmlResource`, the one `crud_urls_with` registration, and the robots and sitemap handlers. The four templates are 82 lines together. Each sets `lang` from `locale`. Fixed titles and links branch on `locale == "de"` (`New note` / `Neue Notiz`, and the same pattern on the list, form and delete pages). The detail title is the stored record title. `examples/board/src/forms.rs` is 135 lines and includes model forms plus a required media field. `examples/board/src/project.rs` is 265 lines and saves a project and its tasks in one transaction. `examples/myshop/src/contact.rs` is 182 lines and implements one public form: it parses the body, checks CSRF, renders errors and redirects. It has no list, no object scope, no update and no delete. The five CRUD handlers, the scope checks and the flash redirect stay in `fexu-api`.
 
 ### Open requirements
 
 These are not part of this API:
 
-- Choice columns are still text inputs. A `<select>` needs the existing form renderer when the option list is `'static`.
-- File uploads, inlines and admin screens are unchanged.
+- Choice columns on the generic CRUD forms are still text inputs. A `<select>` needs the existing form renderer when the option list is `'static`.
+- The generic routes do not upload files, render admin screens, or mount inlines. The board media field and the project/task formset are the separate modules above.
 - The generic routes do not register the JSON API.
 - `_fexu_flashes` is created only by `create_flash_table`.
 - The PostgreSQL board test stays ignored unless `DATABASE_URL` points at an approved server that can create a disposable database. It was not run for this change.
@@ -63,7 +65,7 @@ These are not part of this API:
 
 ### Limits
 
-Choice columns are validated and drawn as text inputs. A `<select>` still needs the existing form renderer when the option list is `'static`. File uploads, inlines and admin screens are unchanged. The generic routes do not register the JSON API; call `register` or `registry.model` only when that API should exist, and bind an object policy there too. `_fexu_flashes` is created only by `create_flash_table`.
+Choice columns on the generic CRUD forms are validated and drawn as text inputs. A `<select>` still needs the existing form renderer when the option list is `'static`. Those routes do not upload files or render admin screens. The generic routes do not register the JSON API; call `register` or `registry.model` only when that API should exist, and bind an object policy there too. `_fexu_flashes` is created only by `create_flash_table`.
 
 ## Flash messages
 

@@ -2,7 +2,7 @@
 
 [Overview](index.md) · **Implemented file:** `crates/fexu-cli/src/main.rs`.
 
-`fexu-cli` 0.1.0 and 0.1.1 are on crates.io. This checkout is 0.1.2 and writes `fexu = "=0.1.2"` unless `--fexu-path` is set. Install 0.1.2 from crates.io only after that version is listed. Until then, install the CLI from a framework checkout as shown in the [README](../README.md). Run project creation outside the framework workspace and subsequent commands inside the generated project.
+`fexu-cli` 0.1.0, 0.1.1 and 0.1.2 are published. This checkout is 0.1.2 and writes `fexu = "=0.1.2"` unless `--fexu-path` is set. Install that published CLI from crates.io, or install it from a framework checkout as shown in the [README](../README.md) when changing this repository. Run project creation outside the framework workspace and subsequent commands inside the generated project.
 
 ## Actual Functionality (Implemented)
 
@@ -68,23 +68,25 @@ fexu
 ├─ new <name>                  Create an empty project from crates.io
 ├─ new project <name>          Same command, with --template, --apps-dir and --fexu-path
 ├─ new app <name>              Create and register a business app
-├─ doctor                      Reale Umgebungsprüfung
-├─ dev                         Entwicklungsprozess starten
-├─ generate model <name>       Kompilierbare Modelldatei erstellen
-├─ check [--strict]            IST, Projekt und Migrationen, ohne Schreiben
-├─ upgrade --check|--dry-run|--yes   IST, nur ein fehlendes Legacy-Manifest
-├─ migrate make|up|down|plan|status IST, siehe migrations.md
-├─ dumpdata / loaddata         IST, siehe fixtures.md
-├─ manage <command>            IST, siehe management-commands.md
-├─ migrate rename-column       IST, explizite Spaltenumbenennung
-├─ migrate rename-table        IST, explizite Tabellenumbenennung
-├─ migrate reseal              IST, Checksum einer noch nicht angewendeten Datei
-├─ migrate baseline            IST nur für SQLite und nur mit --confirm
-├─ migrate down [--app name]   IST, reversibel nur mit gespeichertem Snapshot
-└─ build                       Definierter Release-Build
+├─ doctor                      Check tools, configuration, and project files
+├─ dev                         Start the development server; it does not migrate
+├─ generate model <name>       Write a compilable model file
+├─ check [--strict] [--deploy] Check the project and migrations without writing
+├─ upgrade --check|--dry-run|--yes   Write at most one missing legacy manifest
+├─ migrate make|up|down|plan|status  See migrations.md
+├─ dumpdata / loaddata         See fixtures.md
+├─ manage <command>            See management-commands.md
+├─ migrate rename-column       Explicit column rename
+├─ migrate rename-table        Explicit table rename
+├─ migrate reseal              Checksum of a file that is not applied yet
+├─ migrate baseline            SQLite only, and only with --confirm
+├─ migrate down [--app name]   Revert only when a snapshot is stored
+└─ build                       Release build
 ```
 
-### Implementation guidelines (planned)
+The diagram matches the English `clap` help in `crates/fexu-cli/src/main.rs`. Command output still follows `FEXU_LOCALE`, with English as the default.
+
+### Implementation notes
 
 - Parsing with `clap` subcommands; Exit code 0 only if successful.
 - `new`, `generate model`, `doctor`, `check`, `dev` and `build` are implemented. `new` does not overwrite an existing directory.
