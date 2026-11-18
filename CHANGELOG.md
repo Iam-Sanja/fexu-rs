@@ -1,6 +1,6 @@
 # Changelog
 
-> **Release separation (2026-11-18):** `v0.1.2` is published. All entries headed **Unreleased** describe source changes on `main` made after that release and are **not available in the crates.io `0.1.2` packages**. The proposed `0.2.0` and `0.3.0` targets are specified in [docs/roadmap.md](docs/roadmap.md); no release has yet been cut for these changes. Historical internal `v0.x` feature milestones are not Cargo releases.
+> **Release separation (2026-11-18):** `v0.1.2` is the published crates.io release. Published crates stay `0.1.2`. Headings above `## 0.1.2 — synchronized workspace version` describe source on `main` after that release and are not in the crates.io `0.1.2` packages. Notes inserted below that heading after the tag — framework benchmark baseline, API contract pagination, selectable HTML CRUD parts, admin view queries, the contract suite, the configured database target, the read-only migration plan, and per-application browser cookies — are also absent from the `v0.1.2` changelog and from that tag. `## Unreleased — fexu-cli 0.1.1` was already in the `v0.1.2` tree. Its `fexu = "=0.1.0"` pin was replaced by `fexu = "=0.1.2"` in the 0.1.2 section. Do not read `=0.1.0` as the current generator pin. Headings below `## 0.1.0 — initial crates.io rollout` are historical internal milestones, not Cargo releases. Proposed `0.2.0` and `0.3.0` are specified in [docs/roadmap.md](docs/roadmap.md). No `0.2.0` release has been cut.
 
 ## Unreleased — English-first diagnostics
 
@@ -159,13 +159,15 @@
 - `App::new` without `with_settings` follows the same omitted-section rule as `[api.docs]`. `FEXU_ENV=production` mounts no documentation routes unless the application calls `openapi`. `OpenApiOptions::default` does not read the environment. `openapi` and `without_openapi` still replace the file and the environment.
 - Session-protected documentation responses, including HTML, JSON, Swagger assets, the initializer, the license files and auth failures, use `Cache-Control: private, no-store`. Public static assets keep `public, max-age=86400`.
 
-## Unreleased — fexu-cli 0.1.1
+## Historical milestone — fexu-cli 0.1.1
 
-- `fexu new <name>` and `fexu new project <name>` write `fexu = "=0.1.0"` unless `--fexu-path` is set. The fullstack template keeps `features = ["admin-ui"]` on that registry dependency. The api template adds no features.
+This block records the 0.1.1 CLI. It is not the current generator. Current `main` and the published 0.1.2 CLI write `fexu = "=0.1.2"` unless `--fexu-path` is set.
+
+- At this milestone, `fexu new <name>` and `fexu new project <name>` wrote `fexu = "=0.1.0"` unless `--fexu-path` was set. The fullstack template keeps `features = ["admin-ui"]` on that registry dependency. The api template adds no features.
 - `--fexu-path` accepts the workspace root or the `fexu` crate directory and still writes a path dependency. Cargo reads the manifest offline with `cargo metadata --no-deps`. A manifest Cargo rejects, a different package name, a missing path, or a file creates no directory.
 - `fexu new <name>` is parsed by the same command as `fexu new project <name>`. Repeated or conflicting options are rejected before any files are written. `app`, `project`, and `help` remain subcommands. `fexu new help <command>` shows that command's help, and an unknown help target is rejected.
 - Command arguments are read as operating-system strings. A path that is not valid UTF-8 does not panic the CLI.
-- Only `fexu-cli` moves to 0.1.1. The other fifteen crates stay at 0.1.0. Generated projects pin the published `fexu` library, not the CLI version. This entry is not a crates.io publication.
+- At this milestone only `fexu-cli` moved to 0.1.1. The other fifteen crates stayed at 0.1.0. That is not the current workspace: all 16 publishable crates are `0.1.2`. Generated projects pin the published `fexu` library, not the CLI version. This entry is not a crates.io publication.
 
 ## 0.1.0 — initial crates.io rollout (2026-11-14)
 
@@ -173,7 +175,7 @@
 - SQLite now uses bundled rusqlite 0.42.0 / libsqlite3-sys 0.40.0; PostgreSQL uses sqlx-postgres/sqlx-core 0.8.6; SeaQuery builds SQL. The SQLx SQLite vendor patch and SeaORM runtime were removed (#115).
 - Rust 1.89.0 is the declared minimum supported version. See [release readiness](docs/release-readiness.md) (#116).
 - TestShop passed 24 SQLite tests, 24 serial PostgreSQL tests and an isolated PostgreSQL 17 Docker HTTP acceptance against `a39c952` (#118). Concurrent PostgreSQL fixtures remain tracked in #117.
-- The 'Unreleased' headings below are **historical development milestones**, not separate crates.io versions.
+- The 'Unreleased' headings below are **historical development milestones**, not separate crates.io versions. Statements in those milestones about the Cargo version, or about missing MFA, Many-to-Many, `migrate down` and OpenAPI, describe that milestone. They do not describe current `main`.
 
 ## Unreleased — Fexu, without Ferrioxid or Ferrum compatibility
 
