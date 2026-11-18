@@ -145,6 +145,9 @@ pub fn validation_text(locale: &str, detail: &str) -> String {
     if detail.contains("validation.min_value") || detail.contains("must be >=") {
         return fexu_core::message_text(locale, "validation.min_value").to_owned();
     }
+    if detail.contains("validation.url") {
+        return fexu_core::message_text(locale, "validation.url").to_owned();
+    }
     if detail.contains("validation.email") || detail.contains("must be an email") {
         return fexu_core::message_text(locale, "validation.email").to_owned();
     }

@@ -6,7 +6,9 @@ use crate::filters::{self, AdminFilter};
 use crate::views::{self, AdminView, ExtensionError};
 use crate::widgets::{self, AdminWidget};
 use fexu_auth::{AuthUser, ObjectPolicy};
-use fexu_core::{AdminModelMeta, ColumnSpec, FexuError, ModelDescriptor, QueryScope};
+use fexu_core::{
+    AdminModelMeta, ColumnSpec, FexuError, FieldContract, ModelDescriptor, NumericBound, QueryScope,
+};
 use fexu_db::driver::{DatabaseConnection, DatabaseTransaction, TransactionTrait};
 use fexu_db::{query_admin_page, AdminPageRequest, DeleteOutcome, ModelRepository};
 use serde_json::{Map, Value};
@@ -18,6 +20,12 @@ pub trait ManagedModel: Send + Sync {
     fn meta(&self) -> &'static AdminModelMeta;
     fn descriptor(&self) -> &'static ModelDescriptor;
     fn columns(&self) -> &'static [ColumnSpec];
+    fn field_contracts(&self) -> &'static [FieldContract] {
+        &[]
+    }
+    fn numeric_bounds(&self) -> &'static [NumericBound] {
+        &[]
+    }
     fn policy_bound(&self) -> bool;
     fn read_scope(&self, user: &AuthUser) -> QueryScope;
     fn write_scope(&self, user: &AuthUser) -> QueryScope;
@@ -881,6 +889,12 @@ where
     fn columns(&self) -> &'static [ColumnSpec] {
         M::columns()
     }
+    fn field_contracts(&self) -> &'static [FieldContract] {
+        M::field_contracts()
+    }
+    fn numeric_bounds(&self) -> &'static [NumericBound] {
+        M::numeric_bounds()
+    }
     fn policy_bound(&self) -> bool {
         false
     }
@@ -1023,6 +1037,12 @@ where
     }
     fn columns(&self) -> &'static [ColumnSpec] {
         M::columns()
+    }
+    fn field_contracts(&self) -> &'static [FieldContract] {
+        M::field_contracts()
+    }
+    fn numeric_bounds(&self) -> &'static [NumericBound] {
+        M::numeric_bounds()
     }
     fn policy_bound(&self) -> bool {
         true

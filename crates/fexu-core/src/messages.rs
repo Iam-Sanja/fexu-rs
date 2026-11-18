@@ -78,6 +78,7 @@ fn known_code(message: &str) -> Option<&'static str> {
         "validation.min_value" => "validation.min_value",
         "validation.max_value" => "validation.max_value",
         "validation.email" => "validation.email",
+        "validation.url" => "validation.url",
         "validation.slug" => "validation.slug",
         "validation.null" => "validation.null",
         "validation.choice" => "validation.choice",

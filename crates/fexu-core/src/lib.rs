@@ -226,7 +226,7 @@ pub struct FieldContract {
     pub create_required: bool,
     pub min_length: Option<u32>,
     pub max_length: Option<u32>,
-    /// `"slug"` or `"email"` when the field declares `format`.
+    /// `"slug"`, `"email"` or `"url"` when the field declares `format`.
     pub format: Option<&'static str>,
     /// `false` omits the field from generated read JSON. Create and update stay on `in_create` and `in_update`.
     pub api_read: bool,
@@ -452,6 +452,16 @@ pub fn check_slug(field: &str, value: &str) -> Result<(), FexuError> {
     } else {
         Err(FexuError::Validation(format!(
             "field:{field}: validation.slug"
+        )))
+    }
+}
+
+pub fn check_url(field: &str, value: &str) -> Result<(), FexuError> {
+    if crate::is_http_url(value) {
+        Ok(())
+    } else {
+        Err(FexuError::Validation(format!(
+            "field:{field}: validation.url"
         )))
     }
 }

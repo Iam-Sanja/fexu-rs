@@ -669,14 +669,14 @@ fn expand(input: DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
         }
         match format.as_deref() {
             None => {}
-            Some("slug") | Some("email") if type_name == "String" => {}
-            Some("slug") | Some("email") => {
+            Some("slug") | Some("email") | Some("url") if type_name == "String" => {}
+            Some("slug") | Some("email") | Some("url") => {
                 return Err(syn::Error::new_spanned(&ident, "format requires String"))
             }
             Some(_) => {
                 return Err(syn::Error::new_spanned(
                     &ident,
-                    "format must be \"slug\" or \"email\"",
+                    "format must be \"slug\", \"email\" or \"url\"",
                 ))
             }
         }
@@ -1989,6 +1989,7 @@ fn push_format_check(
 ) {
     let checker = match kind {
         "email" => quote! { ::fexu::core::check_email },
+        "url" => quote! { ::fexu::core::check_url },
         _ => quote! { ::fexu::core::check_slug },
     };
     if nullable {
@@ -2099,6 +2100,7 @@ fn update_binding(rules: PatchRules<'_>) -> proc_macro2::TokenStream {
         if let Some(kind) = format {
             let checker = match kind {
                 "email" => quote! { ::fexu::core::check_email },
+                "url" => quote! { ::fexu::core::check_url },
                 _ => quote! { ::fexu::core::check_slug },
             };
             value_checks.push(quote! { #checker(#field_name, value.as_str())?; });
