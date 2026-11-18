@@ -42,7 +42,7 @@ HTML CRUD pages set `locale` with `locale_of` in `crates/fexu-api/src/generic.rs
 
 These are not part of this API:
 
-- Choice columns on the generic CRUD forms are still text inputs. A `<select>` needs the existing form renderer when the option list is `'static`.
+- Choice columns with a non-empty static list render as a `<select>` from `model_widget`. The option label is `label_de` when the form locale is `de`, and `label_en` otherwise. A choice column with no options stays a text input.
 - The generic routes do not upload files, render admin screens, or mount inlines. The board media field and the project/task formset are the separate modules above.
 - The generic routes do not register the JSON API.
 - `_fexu_flashes` is created only by `create_flash_table`.
@@ -65,7 +65,7 @@ These are not part of this API:
 
 ### Limits
 
-Choice columns on the generic CRUD forms are validated and drawn as text inputs. A `<select>` still needs the existing form renderer when the option list is `'static`. Those routes do not upload files or render admin screens. The generic routes do not register the JSON API; call `register` or `registry.model` only when that API should exist, and bind an object policy there too. `_fexu_flashes` is created only by `create_flash_table`.
+Choice columns with a non-empty static list are validated and drawn as a `<select>`. The option label is `label_de` when the form locale is `de`, and `label_en` otherwise. A choice column with no options stays a text input. Those routes do not upload files or render admin screens. The generic routes do not register the JSON API; call `register` or `registry.model` only when that API should exist, and bind an object policy there too. `_fexu_flashes` is created only by `create_flash_table`.
 
 ## Flash messages
 

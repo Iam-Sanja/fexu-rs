@@ -120,7 +120,7 @@ pub fn render_form(spec: FormRender<'_>) -> String {
             return rejected(spec.locale);
         };
         let shown = displayed(spec.values, spec.prefix, field.name, &input_name);
-        let control = render_control(field, &input_name, &shown, spec.errors);
+        let control = render_control(field, &input_name, &shown, spec.errors, spec.locale);
         let id = escape(&input_name);
         let label = if field.widget == Widget::Hidden {
             String::new()
