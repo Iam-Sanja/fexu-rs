@@ -1297,7 +1297,7 @@ fn build(
         DatabaseBackend::Sqlite => query.build(SqliteQueryBuilder),
         DatabaseBackend::MySql => {
             return Err(FexuError::Validation(
-                "MySQL wird nicht unterstützt.".into(),
+                "MySQL is not supported.".into(),
             ))
         }
     };
