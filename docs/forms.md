@@ -1,6 +1,6 @@
 # Forms
 
-**Current package version:** `0.1.0` (experimental). Widget and model-binding additions are on `main`; historical `v0.19` is an internal milestone, not a registry version. `required_date`, `optional_date`, `required_time`, `optional_time`, `required_datetime_utc` and `required_datetime_local` check the canonical strings. The local DateTime field is considered UTC.
+**Current package version:** `0.1.0` (experimental). Widget and model-binding additions are on `main`; historical `v0.19` is an internal milestone, not a registry version. `required_date`, `optional_date`, `required_time`, `optional_time`, `required_datetime_utc` and `required_datetime_local` check the canonical strings. `required_datetime_local` still reads a zone-free value as UTC. `required_datetime_in_zone` and `render_datetime_local` take a `ProjectTimeZone`. `ProjectTimeZone::utc()` preserves that contract. `ProjectTimeZone::parse("Europe/Berlin")` converts civil time, rejects DST gaps, and requires `earlier` or `later` for an overlap. `bind_model` still expects the canonical UTC text from `canonical_utc` for a `DateTime` column. See [date-time-types.md](date-time-types.md).
 
 ## Responsibility
 

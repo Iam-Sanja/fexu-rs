@@ -97,6 +97,10 @@ fn known_code(message: &str) -> Option<&'static str> {
         "validation.json" => "validation.json",
         "validation.datetime" => "validation.datetime",
         "validation.datetime_offset" => "validation.datetime_offset",
+        "validation.datetime_gap" => "validation.datetime_gap",
+        "validation.datetime_ambiguous" => "validation.datetime_ambiguous",
+        "validation.datetime_fold" => "validation.datetime_fold",
+        "validation.timezone" => "validation.timezone",
         _ if message.contains("must not be blank") || message.contains("cannot be null") => {
             "validation.required"
         }
@@ -311,8 +315,8 @@ mod bundled_catalog_tests {
     #[test]
     fn core_messages_are_complete_and_preserve_legacy_text() {
         let (english, german) = validation_catalogs();
-        assert_eq!(english.len(), 31);
-        assert_eq!(german.len(), 31);
+        assert_eq!(english.len(), 35);
+        assert_eq!(german.len(), 35);
         german.check_keys(english).unwrap();
         assert_eq!(
             message_text("en", "validation.required"),

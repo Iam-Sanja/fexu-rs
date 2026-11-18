@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased — timezone-aware form datetimes
+
+- `FEXU_TIMEZONE` unset keeps zone-free `datetime-local` values as UTC. An exact IANA name such as `Europe/Berlin` converts civil time to a UTC instant. Spring gaps and autumn overlaps return `validation.datetime_gap` and `validation.datetime_ambiguous`; the overlap needs `{field}__fold=earlier` or `later`. `NaiveDate` and job schedules are unchanged (#142).
+
 ## Unreleased — safe schema evolution
 
 - Explicit `rename_column` and `rename_table` remain the only rename path. A removed name plus a new name is not guessed, and a rename that leaves more than one name changed is rejected. A rename whose old and new names are equal is rejected before any file or statement is written. Identifiers are checked again before SQL, and a rejected name that is not a plain identifier is not copied into the error.

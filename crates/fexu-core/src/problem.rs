@@ -38,6 +38,10 @@ fn classify(detail: &str) -> (&'static str, Option<String>, String) {
         "validation.date" => "validation.date",
         "validation.time" => "validation.time",
         "validation.datetime_offset" => "validation.datetime_offset",
+        "validation.datetime_gap" => "validation.datetime_gap",
+        "validation.datetime_ambiguous" => "validation.datetime_ambiguous",
+        "validation.datetime_fold" => "validation.datetime_fold",
+        "validation.timezone" => "validation.timezone",
         "validation.json" => "validation.json",
         "validation.datetime" => "validation.datetime",
         _ => legacy_code(message, field.is_some()),
@@ -51,6 +55,10 @@ fn legacy_code(message: &str, has_field: bool) -> &'static str {
             "validation.required"
         }
         _ if message.contains("validation.datetime_offset") => "validation.datetime_offset",
+        _ if message.contains("validation.datetime_gap") => "validation.datetime_gap",
+        _ if message.contains("validation.datetime_ambiguous") => "validation.datetime_ambiguous",
+        _ if message.contains("validation.datetime_fold") => "validation.datetime_fold",
+        _ if message.contains("validation.timezone") => "validation.timezone",
         _ if message.contains("validation.datetime") => "validation.datetime",
         _ if message.contains("validation.date") => "validation.date",
         _ if message.contains("validation.time") => "validation.time",

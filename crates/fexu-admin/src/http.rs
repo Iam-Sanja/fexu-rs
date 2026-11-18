@@ -994,6 +994,14 @@ pub(crate) fn filters_from(
     Ok(filters)
 }
 
+fn filter_datetime(column: &ColumnSpec, value: &str) -> Result<DbValue, String> {
+    let zone = fexu_core::project_zone_from_env()
+        .map_err(|_| format!("filter {} validation.timezone", column.name))?;
+    fexu_core::parse_filter_datetime(value, zone)
+        .map(DbValue::from)
+        .map_err(|code| format!("filter {} {code}", column.name))
+}
+
 fn filter_value(column: &ColumnSpec, value: &str) -> Result<DbValue, String> {
     match column.kind {
         ColumnKind::Text => Ok(DbValue::from(value.to_owned())),
@@ -1016,9 +1024,7 @@ fn filter_value(column: &ColumnSpec, value: &str) -> Result<DbValue, String> {
         ColumnKind::Time => fexu_core::parse_time(value)
             .map(DbValue::from)
             .map_err(|_| format!("filter {} must be a time", column.name)),
-        ColumnKind::DateTime => fexu_core::parse_datetime_utc(value)
-            .map(DbValue::from)
-            .map_err(|_| format!("filter {} must be a utc datetime", column.name)),
+        ColumnKind::DateTime => filter_datetime(column, value),
         ColumnKind::Decimal => {
             let parsed = fexu_core::parse_decimal(value, column.precision, column.scale)
                 .map_err(|_| format!("filter {} must be a decimal", column.name))?;

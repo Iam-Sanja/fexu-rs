@@ -5159,6 +5159,110 @@ mod tests {
             .expect("drop isolated database");
     }
 
+    #[tokio::test]
+    async fn berlin_civil_time_roundtrips_as_one_sqlite_utc_instant() {
+        let zone = fexu_core::ProjectTimeZone::parse("Europe/Berlin").unwrap();
+        let winter = fexu_core::parse_civil_datetime("2027-02-08T09:00", zone, None).unwrap();
+        let summer = fexu_core::parse_civil_datetime("2026-07-08T09:00", zone, None).unwrap();
+        let column = column("created_at", ColumnKind::DateTime, false, false);
+        let winter_sqlite =
+            bind_temporal(&column, &Bound::DateTime(winter), DatabaseBackend::Sqlite).unwrap();
+        let winter_postgres =
+            bind_temporal(&column, &Bound::DateTime(winter), DatabaseBackend::Postgres).unwrap();
+        assert_eq!(
+            winter_sqlite,
+            Value::String(Some(Box::new("2027-02-08T08:00:00+00:00".to_owned())))
+        );
+        match winter_postgres {
+            Value::ChronoDateTimeUtc(Some(value)) => assert_eq!(*value, winter),
+            other => panic!("postgres bind {other:?}"),
+        }
+        let summer_sqlite =
+            bind_temporal(&column, &Bound::DateTime(summer), DatabaseBackend::Sqlite).unwrap();
+        assert_eq!(
+            summer_sqlite,
+            Value::String(Some(Box::new("2026-07-08T07:00:00+00:00".to_owned())))
+        );
+
+        let db = connect("sqlite::memory:").await.unwrap();
+        db.execute(Statement::from_string(
+            DatabaseBackend::Sqlite,
+            "CREATE TABLE fexu_civil (created_at text NOT NULL)".to_owned(),
+        ))
+        .await
+        .unwrap();
+        db.execute(Statement::from_sql_and_values(
+            DatabaseBackend::Sqlite,
+            "INSERT INTO fexu_civil (created_at) VALUES (?)",
+            [winter_sqlite],
+        ))
+        .await
+        .unwrap();
+        let row = db
+            .query_one(Statement::from_string(
+                DatabaseBackend::Sqlite,
+                "SELECT created_at FROM fexu_civil".to_owned(),
+            ))
+            .await
+            .unwrap()
+            .unwrap();
+        let stored: String = row.try_get("", "created_at").unwrap();
+        assert_eq!(stored, "2027-02-08T08:00:00+00:00");
+        let parsed = fexu_core::parse_datetime_utc("2027-02-08T08:00:00Z").unwrap();
+        assert_eq!(parsed, winter);
+    }
+
+    #[tokio::test]
+    #[ignore = "requires DATABASE_URL and a running PostgreSQL database"]
+    async fn berlin_civil_time_roundtrips_as_one_postgres_timestamptz() {
+        let url = std::env::var("DATABASE_URL").expect("DATABASE_URL");
+        assert!(
+            url.starts_with("postgres"),
+            "the ignored PostgreSQL civil-time test refuses a non-postgres DATABASE_URL"
+        );
+        let zone = fexu_core::ProjectTimeZone::parse("Europe/Berlin").unwrap();
+        let winter = fexu_core::parse_civil_datetime("2027-02-08T09:00", zone, None).unwrap();
+        let column = column("created_at", ColumnKind::DateTime, false, false);
+        let bound =
+            bind_temporal(&column, &Bound::DateTime(winter), DatabaseBackend::Postgres).unwrap();
+        let db = connect(&url).await.expect("postgres");
+        db.execute(Statement::from_string(
+            DatabaseBackend::Postgres,
+            "DROP TABLE IF EXISTS fexu_civil".to_owned(),
+        ))
+        .await
+        .unwrap();
+        db.execute(Statement::from_string(
+            DatabaseBackend::Postgres,
+            "CREATE TABLE fexu_civil (created_at timestamptz NOT NULL)".to_owned(),
+        ))
+        .await
+        .unwrap();
+        db.execute(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            "INSERT INTO fexu_civil (created_at) VALUES ($1)",
+            [bound],
+        ))
+        .await
+        .unwrap();
+        let row = db
+            .query_one(Statement::from_string(
+                DatabaseBackend::Postgres,
+                "SELECT created_at FROM fexu_civil".to_owned(),
+            ))
+            .await
+            .unwrap()
+            .unwrap();
+        let stored: chrono::DateTime<chrono::Utc> = row.try_get("", "created_at").unwrap();
+        assert_eq!(stored, winter);
+        db.execute(Statement::from_string(
+            DatabaseBackend::Postgres,
+            "DROP TABLE IF EXISTS fexu_civil".to_owned(),
+        ))
+        .await
+        .unwrap();
+    }
+
     fn uuid_value(id: u128) -> Value {
         Value::Uuid(Some(Box::new(Uuid::from_u128(id))))
     }
