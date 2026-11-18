@@ -378,7 +378,7 @@ pub(crate) fn check_custom(action: &AdminAction) -> Result<(), ExtensionError> {
     if !valid_key(action.model_key) || !valid_name(action.name) {
         return Err(ExtensionError::new(
             "extension.action",
-            "Aktionsname oder Modellname ist ungültig.",
+            "Action name or model name is invalid.",
         ));
     }
     if matches!(action.name, "delete" | "activate" | "deactivate") {
@@ -390,13 +390,13 @@ pub(crate) fn check_custom(action: &AdminAction) -> Result<(), ExtensionError> {
     if !action.confirm || action.max_ids == 0 || action.max_ids > 100 {
         return Err(ExtensionError::new(
             "extension.action",
-            "Eine eigene Aktion bestätigt höchstens 100 Datensätze.",
+            "A custom action can confirm at most 100 records.",
         ));
     }
     if !valid_label(action.label_de) || !valid_label(action.label_en) {
         return Err(ExtensionError::new(
             "extension.action",
-            "Die Aktionsbeschriftung ist leer oder enthält Steuerzeichen.",
+            "The action label is empty or contains control characters.",
         ));
     }
     let ActionOperation::Custom(custom) = &action.operation else {
