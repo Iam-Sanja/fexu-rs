@@ -36,6 +36,9 @@ automatically without a separate environment approval**.
 This branch sets every publishable crate and every internal path dependency
 to `0.1.2`. `0.1.0` and `fexu-cli` `0.1.1` stay on crates.io and are not
 overwritten. `0.1.2` is the common next version, not a version Cargo derives.
+`publishable_crates_share_one_version_and_examples_stay_private` locks those
+sixteen crates to the workspace version and keeps the example packages
+`publish = false`. It does not upload anything.
 
 Inspect the publishing graph before making a release:
 
