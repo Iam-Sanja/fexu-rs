@@ -14,6 +14,20 @@ enum ItemStatus {
 }
 
 #[derive(Debug, fexu::FexuModel, fexu::serde::Serialize, fexu::serde::Deserialize)]
+#[fexu(table = "derived_form_events")]
+struct TimedEvent {
+    #[field(primary_key, auto)]
+    id: Uuid,
+    starts: fexu::chrono::DateTime<fexu::chrono::Utc>,
+}
+
+#[derive(Debug, FexuForm)]
+#[form(model = TimedEvent)]
+struct TimedEventForm {
+    starts: String,
+}
+
+#[derive(Debug, fexu::FexuModel, fexu::serde::Serialize, fexu::serde::Deserialize)]
 #[fexu(table = "derived_form_items")]
 struct DerivedItem {
     #[field(primary_key, auto)]
@@ -92,4 +106,157 @@ fn derive_uses_model_bounds_choices_and_patch() {
     })
     .unwrap();
     assert_eq!(parsed[0].status, "draft");
+}
+
+fn reject_admin(value: &str) -> Result<(), &'static str> {
+    if value.eq_ignore_ascii_case("admin") {
+        Err("validation.choice")
+    } else {
+        Ok(())
+    }
+}
+
+fn signup_names_differ(form: &SignupForm) -> Result<(), fexu::forms::FormErrors> {
+    if form
+        .email
+        .split('@')
+        .next()
+        .is_some_and(|local| local.eq_ignore_ascii_case(&form.name))
+    {
+        let mut errors = fexu::forms::FormErrors::default();
+        errors.push_form("validation.mismatch");
+        return Err(errors);
+    }
+    Ok(())
+}
+
+#[derive(Debug, FexuForm)]
+#[form(cross = signup_names_differ)]
+struct SignupForm {
+    #[form(
+        label = "Name",
+        min_length = 3,
+        max_length = 40,
+        check = reject_admin,
+        placeholder = "Ada"
+    )]
+    name: String,
+    #[form(widget = "email", label = "Email")]
+    email: String,
+    #[form(widget = "select_multiple", choices = "red,blue")]
+    tags: Vec<String>,
+}
+
+#[derive(Debug, FexuForm)]
+#[form(model = DerivedItem)]
+struct StaffPriceForm {
+    name: String,
+    #[form(readonly_unless = "staff")]
+    price: Option<String>,
+    #[form(required_when = "staff")]
+    status: Option<String>,
+}
+
+#[test]
+fn standalone_form_and_context_rules_compile_and_reject_forged_fields() {
+    let widgets = SignupForm::widgets();
+    assert_eq!(widgets[0].label, "Name");
+    assert_eq!(widgets[0].placeholder, "Ada");
+    assert_eq!(widgets[1].widget, fexu::forms::Widget::Email);
+    assert_eq!(widgets[2].widget, fexu::forms::Widget::SelectMultiple);
+    let posted = FormValues::parse_urlencoded_multi(
+        "name=Ada&email=ada@example.com&tags=red&tags=blue&role=admin",
+        &["tags"],
+    )
+    .unwrap();
+    assert_eq!(
+        SignupForm::from_form(&posted)
+            .unwrap_err()
+            .for_field("role"),
+        Some("validation.unknown_field")
+    );
+    let posted =
+        FormValues::parse_urlencoded_multi("name=Ann&email=ada@example.com&tags=red", &["tags"])
+            .unwrap();
+    let form = SignupForm::from_form(&posted).unwrap();
+    assert_eq!(form.tags, ["red"]);
+    let posted = FormValues::parse_urlencoded("name=Ada&email=Ada@example.com").unwrap();
+    assert_eq!(
+        SignupForm::from_form(&posted).unwrap_err().form_error(),
+        Some("validation.mismatch")
+    );
+    let mut price = FormValues::default();
+    price.insert("name", "Bolt");
+    price.insert("price", "1.50");
+    let denied = StaffPriceForm::from_submit_in(
+        SubmitMode::Patch,
+        &price,
+        &fexu::forms::FormContext {
+            mode: SubmitMode::Patch,
+            flags: &[],
+        },
+    )
+    .unwrap_err();
+    assert_eq!(denied.for_field("price"), Some("validation.readonly"));
+    price.insert("stock", "1");
+    assert_eq!(
+        StaffPriceForm::from_submit(SubmitMode::Create, &price)
+            .unwrap_err()
+            .for_field("stock"),
+        Some("validation.unknown_field")
+    );
+    let mut staff = FormValues::default();
+    staff.insert("name", "Bolt");
+    staff.insert("price", "1.50");
+    let missing_status = StaffPriceForm::from_submit_in(
+        SubmitMode::Create,
+        &staff,
+        &fexu::forms::FormContext {
+            mode: SubmitMode::Create,
+            flags: &["staff"],
+        },
+    )
+    .unwrap_err();
+    assert_eq!(
+        missing_status.for_field("status"),
+        Some("validation.required")
+    );
+    staff.insert("status", "active");
+    let allowed = StaffPriceForm::from_submit_in(
+        SubmitMode::Create,
+        &staff,
+        &fexu::forms::FormContext {
+            mode: SubmitMode::Create,
+            flags: &["staff"],
+        },
+    )
+    .unwrap();
+    assert_eq!(allowed.name, "Bolt");
+    assert_eq!(allowed.price.as_deref(), Some("1.50"));
+    let mut civil = FormValues::default();
+    civil.insert("starts", "2027-02-08T09:00");
+    assert_eq!(
+        TimedEventForm::from_submit(SubmitMode::Create, &civil)
+            .unwrap_err()
+            .for_field("starts"),
+        Some("validation.datetime")
+    );
+    let berlin = fexu::forms::Zone::parse("Europe/Berlin").unwrap();
+    let zoned = TimedEventForm::from_submit_in_zone(
+        SubmitMode::Create,
+        &civil,
+        &fexu::forms::FormContext::create(),
+        Some(berlin),
+    )
+    .unwrap();
+    assert_eq!(zoned.starts, "2027-02-08T08:00:00Z");
+    let utc = TimedEventForm::from_submit_in_zone(
+        SubmitMode::Create,
+        &civil,
+        &fexu::forms::FormContext::create(),
+        Some(fexu::forms::Zone::utc()),
+    )
+    .unwrap();
+    assert_eq!(utc.starts, "2027-02-08T09:00:00Z");
+    assert_eq!(allowed.status.as_deref(), Some("active"));
 }

@@ -5,10 +5,13 @@
 //! string for a `DateTime` column: convert first, then store `format_datetime`.
 
 use chrono::{DateTime, Utc};
-use fexu_core::civil::{format_civil_datetime, parse_civil_datetime, CivilFold, ProjectTimeZone};
+use fexu_core::civil::{
+    format_civil_datetime, parse_civil_datetime, parse_form_datetime, CivilFold, ProjectTimeZone,
+};
 use fexu_core::temporal::format_datetime;
+use fexu_core::ColumnKind;
 
-use crate::{escape, FieldFailure, FormValues};
+use crate::{escape, FieldFailure, FormErrors, FormValues, ModelField};
 
 pub use fexu_core::civil::{CivilFold as Fold, LocalDateTimeInput, ProjectTimeZone as Zone};
 
@@ -71,6 +74,51 @@ pub fn render_datetime_local(name: &str, instant: DateTime<Utc>, zone: ProjectTi
 /// Canonical UTC text for `bind_model` after a zoned parse.
 pub fn canonical_utc(instant: DateTime<Utc>) -> String {
     format_datetime(instant)
+}
+
+/// Rewrites allow-listed `DateTime` values to canonical UTC.
+///
+/// `bind_model` is unchanged and still rejects a zone-free string. This function
+/// runs only when the caller supplies `zone`. `ProjectTimeZone::utc()` keeps the
+/// civil clock as UTC. An IANA zone converts that clock. The `{field}__fold`
+/// control is removed after a successful parse so it is not an unknown column.
+pub fn prepare_model_datetimes(
+    fields: &[ModelField],
+    values: &FormValues,
+    zone: ProjectTimeZone,
+) -> Result<FormValues, FormErrors> {
+    let mut prepared = values.clone();
+    let mut errors = FormErrors::default();
+    for field in fields {
+        if field.kind != ColumnKind::DateTime {
+            continue;
+        }
+        let Some(raw) = values.get(field.name) else {
+            continue;
+        };
+        if raw.trim().is_empty() {
+            continue;
+        }
+        let fold = match read_fold(values, field.name) {
+            Ok(fold) => fold,
+            Err(failure) => {
+                errors.fields.push(failure);
+                continue;
+            }
+        };
+        match parse_form_datetime(raw, zone, fold) {
+            Ok(instant) => {
+                prepared.insert(field.name, canonical_utc(instant));
+                prepared.remove(&datetime_fold_name(field.name));
+            }
+            Err(code) => errors.push(field.name, code),
+        }
+    }
+    if errors.is_empty() {
+        Ok(prepared)
+    } else {
+        Err(errors)
+    }
 }
 
 fn read_fold(values: &FormValues, name: &str) -> Result<Option<CivilFold>, FieldFailure> {
@@ -169,6 +217,49 @@ mod tests {
                 .unwrap_err()
                 .code,
             "validation.datetime_gap"
+        );
+    }
+
+    #[test]
+    fn model_datetime_stays_utc_until_the_caller_supplies_a_zone() {
+        let field = ModelField {
+            name: "starts",
+            kind: ColumnKind::DateTime,
+            required: true,
+            precision: 0,
+            scale: 0,
+            choices: &[],
+            min: None,
+            max: None,
+            min_length: None,
+            max_length: None,
+            format: None,
+        };
+        let mut values = FormValues::default();
+        values.insert("starts", "2027-02-08T09:00");
+        assert_eq!(
+            crate::bind_model(crate::SubmitMode::Create, &[field], &values, &[])
+                .unwrap_err()
+                .for_field("starts"),
+            Some("validation.datetime")
+        );
+        let utc = prepare_model_datetimes(&[field], &values, ProjectTimeZone::utc()).unwrap();
+        assert_eq!(utc.get("starts"), Some("2027-02-08T09:00:00Z"));
+        let converted = prepare_model_datetimes(&[field], &values, berlin()).unwrap();
+        assert_eq!(converted.get("starts"), Some("2027-02-08T08:00:00Z"));
+        values.insert("starts", "2026-10-25T02:30");
+        values.insert("starts__fold", "later");
+        let later = prepare_model_datetimes(&[field], &values, berlin()).unwrap();
+        assert!(later.get("starts__fold").is_none());
+        let expected = required_datetime_in_zone(&values, "starts", berlin()).unwrap();
+        assert_eq!(later.get("starts"), Some(canonical_utc(expected).as_str()));
+        values.insert("starts", "2026-03-29T02:30");
+        values.remove("starts__fold");
+        assert_eq!(
+            prepare_model_datetimes(&[field], &values, berlin())
+                .unwrap_err()
+                .for_field("starts"),
+            Some("validation.datetime_gap")
         );
     }
 

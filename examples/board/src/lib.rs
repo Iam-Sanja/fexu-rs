@@ -21,6 +21,9 @@ use fexu::views::{
     RecordStamp,
 };
 
+mod forms;
+pub use forms::{NotePublishForm, NoteReviseForm, NoteSearchForm};
+
 const ORIGIN: &str = "http://127.0.0.1:3000";
 
 #[derive(Debug, Clone, PartialEq, Eq, FexuModel, Serialize, Deserialize)]
