@@ -11,7 +11,8 @@ members = [
   "examples/desk",
   "examples/board",
   "examples/bench-baseline",
-  "examples/contract"
+  "examples/contract",
+  "examples/admin-browser"
 ]
 
 [workspace.package]
