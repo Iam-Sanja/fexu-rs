@@ -37,6 +37,8 @@ pub(crate) struct StoredLink<'a> {
 pub(crate) struct SaveTail<'a> {
     pub links: &'a [StoredLink<'a>],
     pub files: &'a [StoredFile<'a>],
+    /// Field names whose blob is removed in this transaction. A new file for the same field is saved afterwards.
+    pub removals: &'a [&'a str],
     pub draft: Option<(Uuid, Uuid, Uuid)>,
 }
 
@@ -144,6 +146,7 @@ pub async fn save(
         SaveTail {
             links: &[],
             files: &[],
+            removals: &[],
             draft: None,
         },
     )
@@ -220,6 +223,11 @@ pub(crate) async fn write_tail(
         crate::relations::replace_links_in(tx, link.link, record, link.children)
             .await
             .map_err(|_| FexuError::Validation(format!("admin.relation:{}", link.name)))?;
+    }
+    for field in tail.removals {
+        crate::files::delete_on(tx, model_key, record, field)
+            .await
+            .map_err(|_| FexuError::Validation("admin.store".into()))?;
     }
     for file in tail.files {
         crate::files::save_on(tx, model_key, record, file.field, file.kind, file.bytes)

@@ -42,6 +42,7 @@
 {% if field.preview %}<img class="record-image" src="{{ field.preview }}" alt="">{% endif %}
 <input type="hidden" name="{{ field.name }}" value="{{ field.value }}">
 <input id="{{ field.name }}-file" name="file.{{ field.name }}" type="file" accept="image/png,image/jpeg,image/gif,image/webp,.ico" {% if field.required %}required{% endif %} {% if field.invalid %}aria-invalid="true"{% endif %} {% if field.hint and field.error %}aria-describedby="{{ field.name }}-hint {{ field.name }}-error"{% elif field.error %}aria-describedby="{{ field.name }}-error"{% elif field.hint %}aria-describedby="{{ field.name }}-hint"{% endif %}>
+{% if field.preview %}<label class="check"><input type="checkbox" name="clear.{{ field.name }}" value="true"> {{ i18n.icon_clear }}</label>{% endif %}
 {% else %}
 <label for="{{ field.name }}">{{ field.label }} {% if field.required %}<span aria-hidden="true">*</span> <span class="hint">{{ i18n.required }}</span>{% else %}<span class="hint">{{ i18n.optional }}</span>{% endif %}</label>
 {% if field.hint %}<p class="hint" id="{{ field.name }}-hint">{{ field.hint }}</p>{% endif %}

@@ -11,8 +11,13 @@ use fexu_core::{
 use fexu_storage::Storage;
 use std::collections::BTreeMap;
 
+mod media;
 mod timezone;
 mod uploads;
+pub use media::{
+    bind_media, finish_media, read_media_parts, render_media_field, MediaField, MediaFinishError,
+    MediaPart, MediaParts, MediaView,
+};
 pub use timezone::{
     canonical_utc, datetime_fold_name, optional_datetime_in_zone, prepare_model_datetimes,
     render_datetime_local, required_datetime_in_zone, Fold, LocalDateTimeInput, Zone,

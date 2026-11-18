@@ -6839,7 +6839,9 @@ async fn form_page(
 
 struct ModelUpload {
     filename: String,
+    declared_type: Option<String>,
     bytes: Vec<u8>,
+    kind: String,
 }
 
 struct PostedModel {
@@ -6888,7 +6890,9 @@ fn read_model_body(headers: &HeaderMap, body: &Bytes) -> Result<PostedModel, ()>
                         field.to_owned(),
                         ModelUpload {
                             filename,
+                            declared_type: part.declared_type,
                             bytes: part.bytes,
+                            kind: String::new(),
                         },
                     ));
                 }
@@ -6936,25 +6940,31 @@ fn store_text(
 fn apply_image_uploads(
     registry: &AdminRegistry,
     model_key: &str,
+    actor: Uuid,
     object: &mut Map<String, Value>,
     raw: &mut Map<String, Value>,
-    uploads: &[(String, ModelUpload)],
+    uploads: &mut [(String, ModelUpload)],
 ) -> Result<(), String> {
-    for (field, upload) in uploads {
+    for (field, upload) in uploads.iter_mut() {
         let allowed = registry.widgets().iter().any(|widget| {
             widget.model_key == model_key
                 && widget.field == field
                 && matches!(widget.kind, crate::widgets::WidgetKind::Image)
         });
-        if !allowed || crate::files::image_type(&upload.bytes).is_none() {
-            return Err(format!("field:{field}: value is not an image"));
+        if !allowed {
+            return Err(format!("field:{field}: validation.unknown_field"));
         }
-        let name = fexu_storage::sanitize_name(&upload.filename);
-        if name.is_empty() || name.chars().count() > 200 {
-            return Err(format!("field:{field}: value is not an image"));
-        }
-        object.insert(field.clone(), json!(name));
-        raw.insert(field.clone(), json!(name));
+        let reviewed = crate::media::review_record_upload(
+            actor,
+            actor,
+            &upload.filename,
+            upload.declared_type.as_deref(),
+            &upload.bytes,
+        )
+        .map_err(|code| format!("field:{field}: {code}"))?;
+        upload.kind = reviewed.kind.to_owned();
+        object.insert(field.clone(), json!(reviewed.label));
+        raw.insert(field.clone(), json!(reviewed.label));
     }
     Ok(())
 }
@@ -7159,7 +7169,7 @@ async fn save_form(
     let PostedModel {
         fields: form,
         repeated,
-        uploads,
+        mut uploads,
     } = match read_model_body(headers, body) {
         Ok(parsed) => parsed,
         Err(()) => {
@@ -7177,9 +7187,14 @@ async fn save_form(
         }
     };
     let (mut object, mut raw) = payload(model.meta(), model.columns(), &form);
-    if let Err(message) =
-        apply_image_uploads(registry, model.meta().key, &mut object, &mut raw, &uploads)
-    {
+    if let Err(message) = apply_image_uploads(
+        registry,
+        model.meta().key,
+        user.id,
+        &mut object,
+        &mut raw,
+        &mut uploads,
+    ) {
         let text = validation_text(&locale, &message);
         raw.insert("__error".into(), json!({ "field": validation_field(registry.field_slice(model.meta()), &message), "text": text }));
         return form_page(
@@ -7326,19 +7341,100 @@ async fn save_form(
             children: &item.next,
         })
         .collect();
-    let mut files = Vec::new();
-    for (field, upload) in &uploads {
-        let Some(kind) = crate::files::image_type(&upload.bytes) else {
+    let mut removal_names = Vec::new();
+    for key in form.keys() {
+        let Some(field) = key.strip_prefix("clear.") else {
             continue;
         };
+        let allowed = registry.widgets().iter().any(|widget| {
+            widget.model_key == model.meta().key
+                && widget.field == field
+                && matches!(widget.kind, crate::widgets::WidgetKind::Image)
+        });
+        let requested = form
+            .get(key)
+            .is_some_and(|value| value == "true" || value == "1");
+        if !requested {
+            if !allowed {
+                let message = format!("field:{field}: validation.unknown_field");
+                let text = validation_text(&locale, &message);
+                raw.insert(
+                    "__error".into(),
+                    json!({ "field": validation_field(registry.field_slice(model.meta()), &message), "text": text }),
+                );
+                return form_page(
+                    state,
+                    headers,
+                    registry,
+                    model_key,
+                    id,
+                    raw,
+                    FormFeedback {
+                        notice: "",
+                        alert: &text,
+                    },
+                )
+                .await;
+            }
+            continue;
+        }
+        let replacing = uploads.iter().any(|(name, _)| name == field);
+        let column = model.columns().iter().find(|column| column.name == field);
+        let required =
+            column.is_some_and(|column| !column.nullable && column.default_bool.is_none());
+        let has_bytes = match id {
+            Some(record) => crate::files::exists(&state.db, model.meta().key, record, field).await,
+            None => false,
+        };
+        match crate::media::review_record_clear(allowed, required, has_bytes, replacing) {
+            Ok(true) => {
+                let cleared = if column.is_some_and(|column| column.nullable) {
+                    Value::Null
+                } else {
+                    json!("")
+                };
+                object.insert(field.to_owned(), cleared);
+                removal_names.push(field.to_owned());
+            }
+            Ok(false) => {}
+            Err(code) => {
+                let message = format!("field:{field}: {code}");
+                let text = validation_text(&locale, &message);
+                raw.insert(
+                    "__error".into(),
+                    json!({ "field": validation_field(registry.field_slice(model.meta()), &message), "text": text }),
+                );
+                return form_page(
+                    state,
+                    headers,
+                    registry,
+                    model_key,
+                    id,
+                    raw,
+                    FormFeedback {
+                        notice: "",
+                        alert: &text,
+                    },
+                )
+                .await;
+            }
+        }
+    }
+    let removal_refs: Vec<&str> = removal_names.iter().map(String::as_str).collect();
+    let mut files = Vec::new();
+    for (field, upload) in &uploads {
+        if upload.kind.is_empty() {
+            continue;
+        }
         files.push(crate::compose::StoredFile {
             field,
-            kind,
+            kind: upload.kind.as_str(),
             bytes: upload.bytes.as_slice(),
         });
     }
     if files.len() != uploads.len()
-        || (!files.is_empty() && crate::files::ensure(&state.db).await.is_err())
+        || ((!files.is_empty() || !removal_refs.is_empty())
+            && crate::files::ensure(&state.db).await.is_err())
     {
         return error_page(
             state,
@@ -7359,6 +7455,7 @@ async fn save_form(
     let tail = crate::compose::SaveTail {
         links: &links,
         files: &files,
+        removals: &removal_refs,
         draft,
     };
     if formed {
@@ -8101,7 +8198,7 @@ fn payload(
         {
             continue;
         }
-        if key == "m2m_present" || key.starts_with("m2m.") {
+        if key == "m2m_present" || key.starts_with("m2m.") || key.starts_with("clear.") {
             continue;
         }
         if key.ends_with("__fold") {
@@ -13842,6 +13939,7 @@ mod store_rollback_tests {
         let tail = SaveTail {
             links: std::slice::from_ref(&link),
             files: std::slice::from_ref(&file),
+            removals: &[],
             draft: None,
         };
         fail_next_save();
@@ -13880,6 +13978,7 @@ mod store_rollback_tests {
             SaveTail {
                 links: &[],
                 files: std::slice::from_ref(&file),
+                removals: &[],
                 draft: None,
             },
         )

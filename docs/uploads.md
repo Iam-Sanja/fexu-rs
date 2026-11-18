@@ -49,7 +49,9 @@ There is no virus scanner, no image processing and no public upload URL. `read_m
 
 ## Form integration
 
-Another forms change can call `fexu_storage::prepare_media` and pass the errors through `fexu_forms::media_field_errors`. The handler validates the other fields first. It stages the upload only when those fields are valid, then writes the `MediaRef` inside its own database transaction. A rollback calls `abort`. A commit calls `StagedMedia::commit` afterwards. The storage call is not part of the database transaction. `store_upload` and `inspect_upload` stay available for a single immediate file and do not implement replace, clear or readonly. Admin record images remain database blobs. Their private response sends `nosniff` and `Content-Security-Policy: default-src 'none'`.
+An application `forms.rs` uses `MediaField`, `read_media_parts`, `bind_media` and `finish_media`. `read_media_parts` parses `multipart/form-data` and writes nothing. `bind_media` checks required, optional, existing, replace, clear and readonly fields, including per-field image limits, and returns `FormErrors`. `finish_media` stages only after that check, polls the database future, and then calls `abort` or `commit`. Those storage calls are not inside the database transaction. A failed delete or retain stays on `CommitReport`. `store_upload` and `inspect_upload` stay the immediate single-file helpers.
+
+Admin record images stay in `_fexu_record_files`. The form handler calls the same filename, MIME and PNG/JPEG checks before the record transaction. GIF, WebP and ICO stay signature checks. A clear checkbox deletes that blob only inside the same transaction as the record. A database rollback removes the new blob and keeps the previous one. That is not a `LocalStorage` commit, and it is not one transaction with app media files. The private image response still sends `nosniff` and `Content-Security-Policy: default-src 'none'`. CSRF stays on the admin POST.
 
 ## Extension
 

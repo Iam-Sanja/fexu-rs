@@ -53,6 +53,7 @@ mod tests {
                     readonly: false,
                     existing: None,
                     clear: false,
+                    image_limits: None,
                     incoming: Some(IncomingFile {
                         original_name: "../notes.txt",
                         declared_type: None,
@@ -66,6 +67,7 @@ mod tests {
                     readonly: false,
                     existing: None,
                     clear: false,
+                    image_limits: None,
                     incoming: Some(IncomingFile {
                         original_name: "photo.png",
                         declared_type: Some("image/png"),
