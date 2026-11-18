@@ -1307,10 +1307,7 @@ fn database(error: impl ToString) -> JobError {
             "Die Datenbank ist gerade gesperrt. Der Vorgang wurde nicht als Erfolg gewertet.",
         )
     } else {
-        JobError::message(
-            "job.database",
-            "The job table could not be updated.",
-        )
+        JobError::message("job.database", "The job table could not be updated.")
     }
 }
 
@@ -1375,10 +1372,7 @@ fn statement(
         DatabaseBackend::Postgres => query.build(PostgresQueryBuilder),
         DatabaseBackend::Sqlite => query.build(SqliteQueryBuilder),
         DatabaseBackend::MySql => {
-            return Err(JobError::message(
-                "job.database",
-                "MySQL is not supported.",
-            ))
+            return Err(JobError::message("job.database", "MySQL is not supported."))
         }
     };
     Ok(Statement::from_sql_and_values(backend, sql, values))
