@@ -443,7 +443,13 @@ async fn postgres_same_operations() {
 #[test]
 fn stock_demo_renders_both_languages_without_escaping_regressions() {
     assert!(stock_markup("Demo", 3).unwrap().contains("Bestand: 3"));
-    assert!(stock_markup_in("Demo", 3, "en").unwrap().contains("Stock: 3"));
-    assert!(stock_markup_in("Demo", 3, "fr").unwrap().contains("Stock: 3"));
-    assert!(stock_markup_in("<script>", 3, "de").unwrap().contains("&lt;script&gt;"));
+    assert!(stock_markup_in("Demo", 3, "en")
+        .unwrap()
+        .contains("Stock: 3"));
+    assert!(stock_markup_in("Demo", 3, "fr")
+        .unwrap()
+        .contains("Stock: 3"));
+    assert!(stock_markup_in("<script>", 3, "de")
+        .unwrap()
+        .contains("&lt;script&gt;"));
 }
