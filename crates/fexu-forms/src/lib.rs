@@ -1089,8 +1089,14 @@ fn described_by(id: &str, field: &Field, errors: &FormErrors) -> String {
 }
 
 pub fn render_page(title: &str, body: &str) -> String {
+    render_page_in("de", title, body)
+}
+
+/// Render a standalone form page with a supported HTML language.
+pub fn render_page_in(locale: &str, title: &str, body: &str) -> String {
+    let lang = if locale == "de" { "de" } else { "en" };
     format!(
-        "<!DOCTYPE html><html lang=\"de\"><head><meta charset=\"utf-8\"><title>{}</title><link rel=\"stylesheet\" href=\"/static/css/app.css\"></head><body><main>{}</main></body></html>",
+        "<!DOCTYPE html><html lang=\"{lang}\"><head><meta charset=\"utf-8\"><title>{}</title><link rel=\"stylesheet\" href=\"/static/css/app.css\"></head><body><main>{}</main></body></html>",
         escape(title),
         body
     )

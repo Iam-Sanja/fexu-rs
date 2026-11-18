@@ -207,3 +207,43 @@ async fn contact_post_without_auth_service_is_rejected() {
     .unwrap();
     assert!(!html.contains("unchecked-session-token"));
 }
+
+#[tokio::test]
+async fn contact_get_and_thanks_follow_english_and_german_browser_language() {
+    let db = fexu::db::connect("sqlite::memory:").await.unwrap();
+    fexu::auth::apply_migrations(&db).await.unwrap();
+    let auth = AuthService::new(db, AuthConfig::development());
+    let app = state(auth);
+
+    for (locale, title) in [("en-US,en;q=0.9", "Contact"), ("de-DE,de;q=0.9", "Kontakt")] {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            axum::http::header::ACCEPT_LANGUAGE,
+            HeaderValue::from_str(locale).unwrap(),
+        );
+        let response = myshop::contact::show(State(app.clone()), headers.clone()).await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let html = String::from_utf8(
+            response
+                .into_body()
+                .collect()
+                .await
+                .unwrap()
+                .to_bytes()
+                .to_vec(),
+        )
+        .unwrap();
+        assert!(html.contains(&format!("<title>{title}</title>")), "{html}");
+        let lang = if title == "Kontakt" { "de" } else { "en" };
+        assert!(html.contains(&format!(r#"<html lang="{lang}">"#)), "{html}");
+
+        let thanks = myshop::contact::thanks(headers).await;
+        assert!(
+            thanks.0.contains(&format!("<title>{title}</title>")),
+            "{}",
+            thanks.0
+        );
+        assert!(thanks.0.contains(&format!(r#"<html lang="{lang}">"#)));
+        assert!(thanks.0.contains("role=\"status\""));
+    }
+}
