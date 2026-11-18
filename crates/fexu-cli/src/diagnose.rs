@@ -352,12 +352,23 @@ fn public_detail(text: &str) -> String {
         .collect()
 }
 
-/// Binds the port only for validation and immediately releases it.
+/// Loopback is the only host a diagnostic may probe with a socket.
+/// Every other host is reported as available and is not bound.
+fn binds_local_port(host: &str) -> bool {
+    matches!(host, "127.0.0.1" | "localhost" | "::1")
+}
+
+/// Binds a loopback port only for validation. The listener is a temporary and
+/// is dropped before this function returns. Non-loopback hosts are not bound.
 pub fn port_available(host: &str, port: u16) -> bool {
-    if !matches!(host, "127.0.0.1" | "localhost" | "::1") {
+    port_probe(host, || std::net::TcpListener::bind((host, port)).is_ok())
+}
+
+fn port_probe(host: &str, bind: impl FnOnce() -> bool) -> bool {
+    if !binds_local_port(host) {
         return true;
     }
-    std::net::TcpListener::bind((host, port)).is_ok()
+    bind()
 }
 
 fn wildcard_interface(value: &str) -> bool {
@@ -932,8 +943,8 @@ fn project_lines(project: &ProjectConfig) -> ProjectCounts {
 #[cfg(test)]
 mod tests {
     use super::{
-        configured_proxy_peers, csrf_secret_shape_ok, origins_are_https, port_available,
-        public_detail,
+        binds_local_port, configured_proxy_peers, csrf_secret_shape_ok, origins_are_https,
+        port_available, port_probe, public_detail,
     };
 
     #[test]
@@ -941,9 +952,41 @@ mod tests {
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let port = listener.local_addr().unwrap().port();
         assert!(!port_available("127.0.0.1", port));
-        drop(listener);
-        assert!(port_available("127.0.0.1", port));
+        // The listener stays open. A non-local host must not bind this port:
+        // 0.0.0.0 would conflict with the held socket, and 10.0.0.8 is not local.
         assert!(port_available("10.0.0.8", port));
+        assert!(port_available("0.0.0.0", port));
+        drop(listener);
+    }
+
+    #[test]
+    fn only_loopback_hosts_open_a_trial_socket() {
+        assert!(binds_local_port("127.0.0.1"));
+        assert!(binds_local_port("localhost"));
+        assert!(binds_local_port("::1"));
+        assert!(!binds_local_port("10.0.0.8"));
+        assert!(!binds_local_port("0.0.0.0"));
+        let mut called = false;
+        assert!(port_probe("10.0.0.8", || {
+            called = true;
+            false
+        }));
+        assert!(port_probe("0.0.0.0", || {
+            called = true;
+            false
+        }));
+        assert!(!called);
+        assert!(!port_probe("localhost", || {
+            called = true;
+            false
+        }));
+        assert!(!port_probe("::1", || false));
+        assert!(called);
+        // A fresh ephemeral port is requested once and dropped inside the probe.
+        // The test does not bind that same port again.
+        assert!(port_probe("127.0.0.1", || {
+            std::net::TcpListener::bind("127.0.0.1:0").is_ok()
+        }));
     }
 
     #[test]
