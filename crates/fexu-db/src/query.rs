@@ -4949,6 +4949,25 @@ mod tests {
                 .unwrap(),
             5
         );
+        let too_many: Vec<i64> = (0..101).collect();
+        let rejected_in = Item::query()
+            .filter(col("stock").is_in(too_many.clone()))
+            .count(db)
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(rejected_in, FexuError::Validation(ref message) if message.contains("at most 100")),
+            "{rejected_in}"
+        );
+        let rejected_not = Item::query()
+            .filter(col("stock").is_not_in(too_many))
+            .count(db)
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(rejected_not, FexuError::Validation(ref message) if message.contains("at most 100")),
+            "{rejected_not}"
+        );
     }
 
     async fn exercise_bounded_scan(db: &impl ConnectionTrait) {
