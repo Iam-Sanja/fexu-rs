@@ -229,10 +229,17 @@ async fn contact_get_and_thanks_follow_english_and_german_browser_language() {
         .unwrap();
         assert!(html.contains(&format!("<title>{title}</title>")), "{html}");
         let lang = if title == "Kontakt" { "de" } else { "en" };
-        assert!(html.contains(&format!(r#"<html lang="{lang}">"#)), "{html}");
+        assert!(
+            html.contains(&format!(r#"<html lang="{lang}">"#)),
+            "{html}"
+        );
 
         let thanks = myshop::contact::thanks(headers).await;
-        assert!(thanks.0.contains(&format!("<title>{title}</title>")), "{}", thanks.0);
+        assert!(
+            thanks.0.contains(&format!("<title>{title}</title>")),
+            "{}",
+            thanks.0
+        );
         assert!(thanks.0.contains(&format!(r#"<html lang="{lang}">"#)));
         assert!(thanks.0.contains("role=\"status\""));
     }
