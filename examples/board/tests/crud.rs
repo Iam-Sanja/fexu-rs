@@ -371,7 +371,7 @@ async fn exercise(db: fexu::db::driver::DatabaseConnection) {
         .text()
         .expect("count html")
         .to_owned();
-    assert!(unchanged.contains("1 notes"), "{unchanged}");
+    assert!(unchanged.contains("1 Notizen"), "{unchanged}");
 
     let mut list_html = String::new();
     for index in 1..=3 {
@@ -453,7 +453,7 @@ async fn exercise(db: fexu::db::driver::DatabaseConnection) {
         .expect("update");
     assert_eq!(updated.status(), StatusCode::SEE_OTHER);
 
-    assert!(confirm_html.contains("Delete"));
+    assert!(confirm_html.contains("Löschen"));
     owner
         .get(&location)
         .await
@@ -592,7 +592,7 @@ async fn read_only_parts_hide_writes_and_other_owners() {
         .expect("list html")
         .to_owned();
     assert!(list.contains("Visible"), "{list}");
-    assert!(!list.contains(">New<"), "{list}");
+    assert!(!list.contains(">New<") && !list.contains(">Neu<"), "{list}");
     let hidden = other_client
         .get("/reading/items")
         .await
@@ -610,8 +610,14 @@ async fn read_only_parts_hide_writes_and_other_owners() {
         .expect("detail html")
         .to_owned();
     assert!(page.contains("Visible"), "{page}");
-    assert!(!page.contains(">Edit<"), "{page}");
-    assert!(!page.contains(">Delete<"), "{page}");
+    assert!(
+        !page.contains(">Edit<") && !page.contains(">Bearbeiten<"),
+        "{page}"
+    );
+    assert!(
+        !page.contains(">Delete<") && !page.contains(">Löschen<"),
+        "{page}"
+    );
     other_client
         .get(&detail)
         .await

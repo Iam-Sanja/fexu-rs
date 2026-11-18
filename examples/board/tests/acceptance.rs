@@ -52,6 +52,8 @@ async fn exercise(db: DatabaseConnection) {
     assert_eq!(form.status(), StatusCode::OK);
     let html = form.text().expect("form html").to_owned();
     assert!(html.contains("<form method=\"post\""));
+    assert!(html.contains("<html lang=\"en\">"));
+    assert!(html.contains("<title>New note</title>"));
     assert!(html.contains("name=\"title\""));
     assert!(html.contains("name=\"csrf_token\""));
     assert!(!html.contains("<script"));
@@ -102,6 +104,8 @@ async fn exercise(db: DatabaseConnection) {
         "{german_body}"
     );
     assert!(german_body.contains(&long), "{german_body}");
+    assert!(german_body.contains("<html lang=\"de\">"));
+    assert!(german_body.contains("<title>Neue Notiz</title>"));
     assert_eq!(stored(&db).await, 0);
 
     let token = csrf_token_from_html(&html).expect("csrf");
