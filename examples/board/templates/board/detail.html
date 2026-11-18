@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="{{ locale }}">
 <head>
   <meta charset="utf-8">
   <title>{{ record.title }}</title>
@@ -13,8 +13,8 @@
   </ul>
   <h1>{{ record.title }}</h1>
   <p>{{ record.body }}</p>
-  {% if edit_url %}<a href="{{ edit_url | safe }}">Edit</a>{% endif %}
-  {% if delete_url %}<a href="{{ delete_url | safe }}">Delete</a>{% endif %}
-  <a href="{{ list_url | safe }}">Back</a>
+  {% if edit_url %}<a href="{{ edit_url | safe }}">{% if locale == "de" %}Bearbeiten{% else %}Edit{% endif %}</a>{% endif %}
+  {% if delete_url %}<a href="{{ delete_url | safe }}">{% if locale == "de" %}Löschen{% else %}Delete{% endif %}</a>{% endif %}
+  <a href="{{ list_url | safe }}">{% if locale == "de" %}Zurück{% else %}Back{% endif %}</a>
 </body>
 </html>
