@@ -20,6 +20,18 @@ fexu dev
 
 `fexu new project` writes `fexu = { version = "=0.1.2", features = ["admin-ui"] }` for the fullstack template. That dependency comes from crates.io. The automated test `clean_room_project_has_no_local_fexu_path` checks the generated files and `fexu doctor` without a local framework checkout. It does not download the published crate or start the server.
 
+The same published install on Linux and macOS uses a POSIX shell. This tree did not run these commands against crates.io either.
+
+```bash
+cargo install fexu-cli --version 0.1.2 --locked
+fexu new project demo
+cd demo
+fexu doctor
+fexu migrate up
+fexu admin create-user --email admin@example.com --staff --superuser
+fexu dev
+```
+
 ## Local checkout
 
 Use this while changing Fexu itself. The generator tests in this repository do run this path, including compile, `migrate up`, app and model generation, and a short `fexu dev`.
