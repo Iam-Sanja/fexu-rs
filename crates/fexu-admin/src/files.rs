@@ -58,6 +58,23 @@ pub(crate) async fn save_on(
     execute(db, backend, &insert).await
 }
 
+/// Deletes one field inside the caller's transaction. A failed record save rolls this back.
+pub(crate) async fn delete_on(
+    db: &impl ConnectionTrait,
+    model_key: &str,
+    record: Uuid,
+    field: &str,
+) -> Result<(), FexuError> {
+    let backend = db.get_database_backend();
+    let mut delete = Query::delete();
+    delete
+        .from_table(Alias::new(FILES))
+        .and_where(Expr::col(Alias::new("model_key")).eq(model_key))
+        .and_where(Expr::col(Alias::new("record_id")).eq(record.to_string()))
+        .and_where(Expr::col(Alias::new("field")).eq(field));
+    execute(db, backend, &delete).await
+}
+
 pub(crate) async fn load(
     db: &DatabaseConnection,
     model_key: &str,

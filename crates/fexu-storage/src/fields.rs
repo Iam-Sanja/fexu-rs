@@ -50,6 +50,8 @@ pub struct FieldSpec<'a> {
     pub readonly: bool,
     pub existing: Option<MediaRef>,
     pub clear: bool,
+    /// Overrides [`MediaPolicy::image_limits`] for this image field.
+    pub image_limits: Option<ImageLimits>,
     pub incoming: Option<IncomingFile<'a>>,
 }
 
@@ -470,24 +472,27 @@ pub fn prepare_media(
                 }
                 false
             }
-            MediaKind::Image => match validate_image(incoming.bytes, policy.image_limits) {
-                Ok(ImageValidation::PngDecoded(_)) => true,
-                Ok(ImageValidation::JpegContainer(_)) => false,
-                Err(StorageError::TooLarge) => {
-                    errors.push(FieldError {
-                        field: field.name.to_owned(),
-                        code: "validation.upload_size",
-                    });
-                    continue;
+            MediaKind::Image => {
+                let limits = field.image_limits.unwrap_or(policy.image_limits);
+                match validate_image(incoming.bytes, limits) {
+                    Ok(ImageValidation::PngDecoded(_)) => true,
+                    Ok(ImageValidation::JpegContainer(_)) => false,
+                    Err(StorageError::TooLarge) => {
+                        errors.push(FieldError {
+                            field: field.name.to_owned(),
+                            code: "validation.upload_size",
+                        });
+                        continue;
+                    }
+                    Err(_) => {
+                        errors.push(FieldError {
+                            field: field.name.to_owned(),
+                            code: "validation.upload_type",
+                        });
+                        continue;
+                    }
                 }
-                Err(_) => {
-                    errors.push(FieldError {
-                        field: field.name.to_owned(),
-                        code: "validation.upload_type",
-                    });
-                    continue;
-                }
-            },
+            }
         };
         if field.existing.is_some() {
             deletes = true;
@@ -521,6 +526,11 @@ fn field_name(name: &str) -> bool {
         && name
             .chars()
             .all(|char| char.is_ascii_lowercase() || char.is_ascii_digit() || char == '_')
+}
+
+/// Stable form code when `name` cannot be stored as a download label.
+pub fn upload_name_code(name: &str) -> Option<&'static str> {
+    name_code(name)
 }
 
 fn name_code(name: &str) -> Option<&'static str> {
@@ -581,6 +591,62 @@ mod tests {
         }
     }
 
+    #[test]
+    fn a_field_image_limit_overrides_the_policy() {
+        let owner = Uuid::new_v4();
+        let png = crate::png::sample_png(16, 1);
+        let rejected = prepare_media(
+            owner,
+            owner,
+            &OwnerAccess,
+            &policy(),
+            &[FieldSpec {
+                name: "photo",
+                kind: MediaKind::Image,
+                required: true,
+                readonly: false,
+                existing: None,
+                clear: false,
+                image_limits: None,
+                incoming: Some(IncomingFile {
+                    original_name: "photo.png",
+                    declared_type: Some("image/png"),
+                    bytes: &png,
+                }),
+            }],
+        );
+        assert_eq!(
+            rejected.expect_err("policy")[0].code,
+            "validation.upload_type"
+        );
+        let accepted = prepare_media(
+            owner,
+            owner,
+            &OwnerAccess,
+            &policy(),
+            &[FieldSpec {
+                name: "photo",
+                kind: MediaKind::Image,
+                required: true,
+                readonly: false,
+                existing: None,
+                clear: false,
+                image_limits: Some(ImageLimits {
+                    max_bytes: 64_000,
+                    max_width: 32,
+                    max_height: 32,
+                    max_pixels: 1_024,
+                }),
+                incoming: Some(IncomingFile {
+                    original_name: "photo.png",
+                    declared_type: Some("image/png"),
+                    bytes: &png,
+                }),
+            }],
+        );
+        assert!(accepted.is_ok());
+    }
+
     fn root() -> std::path::PathBuf {
         std::env::temp_dir().join(format!("fexu-media-{}", Uuid::new_v4()))
     }
@@ -602,6 +668,7 @@ mod tests {
                 readonly: false,
                 existing: None,
                 clear: false,
+                image_limits: None,
                 incoming: Some(IncomingFile {
                     original_name: "photo.png",
                     declared_type: None,
@@ -632,6 +699,7 @@ mod tests {
                     readonly: false,
                     existing: None,
                     clear: false,
+                    image_limits: None,
                     incoming: Some(IncomingFile {
                         original_name: name,
                         declared_type: None,
@@ -654,6 +722,7 @@ mod tests {
                 readonly: false,
                 existing: None,
                 clear: false,
+                image_limits: None,
                 incoming: Some(IncomingFile {
                     original_name: "notes.txt",
                     declared_type: Some("text/plain"),
@@ -675,6 +744,7 @@ mod tests {
                 readonly: false,
                 existing: None,
                 clear: false,
+                image_limits: None,
                 incoming: Some(IncomingFile {
                     original_name: "notes.txt",
                     declared_type: Some("image/png"),
@@ -697,6 +767,7 @@ mod tests {
                 readonly: false,
                 existing: None,
                 clear: false,
+                image_limits: None,
                 incoming: Some(IncomingFile {
                     original_name: "photo.png",
                     declared_type: Some("image/png"),
@@ -733,6 +804,7 @@ mod tests {
                 readonly: true,
                 existing: Some(existing),
                 clear: true,
+                image_limits: None,
                 incoming: Some(IncomingFile {
                     original_name: "other.txt",
                     declared_type: None,
@@ -771,6 +843,7 @@ mod tests {
                     id: previous.id,
                 }),
                 clear: false,
+                image_limits: None,
                 incoming: Some(IncomingFile {
                     original_name: "photo.png",
                     declared_type: Some("image/png"),
@@ -828,6 +901,7 @@ mod tests {
                     id: previous.id,
                 }),
                 clear: false,
+                image_limits: None,
                 incoming: Some(IncomingFile {
                     original_name: "notes.txt",
                     declared_type: None,
@@ -891,6 +965,7 @@ mod tests {
                     id: previous.id,
                 }),
                 clear: false,
+                image_limits: None,
                 incoming: Some(IncomingFile {
                     original_name: "notes.txt",
                     declared_type: Some("text/plain"),
@@ -952,6 +1027,7 @@ mod tests {
                 readonly: false,
                 existing: None,
                 clear: false,
+                image_limits: None,
                 incoming: Some(IncomingFile {
                     original_name: "notes.txt",
                     declared_type: None,
@@ -992,6 +1068,7 @@ mod tests {
                     readonly: false,
                     existing: None,
                     clear: false,
+                    image_limits: None,
                     incoming: Some(IncomingFile {
                         original_name: "one.txt",
                         declared_type: None,
@@ -1005,6 +1082,7 @@ mod tests {
                     readonly: false,
                     existing: None,
                     clear: false,
+                    image_limits: None,
                     incoming: Some(IncomingFile {
                         original_name: "two.txt",
                         declared_type: None,
@@ -1044,6 +1122,7 @@ mod tests {
                     readonly: false,
                     existing: None,
                     clear: false,
+                    image_limits: None,
                     incoming: Some(IncomingFile {
                         original_name: "left.txt",
                         declared_type: None,
@@ -1067,6 +1146,7 @@ mod tests {
                     readonly: false,
                     existing: None,
                     clear: false,
+                    image_limits: None,
                     incoming: Some(IncomingFile {
                         original_name: "right.txt",
                         declared_type: None,
@@ -1147,6 +1227,7 @@ mod tests {
                 readonly: false,
                 existing: None,
                 clear: false,
+                image_limits: None,
                 incoming: Some(IncomingFile {
                     original_name: "notes.txt",
                     declared_type: None,

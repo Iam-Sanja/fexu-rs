@@ -936,6 +936,7 @@ version = "0.1.2"
 dependencies = [
  "chrono",
  "fexu-core",
+ "fexu-db",
  "fexu-storage",
  "serde_json",
  "tokio",

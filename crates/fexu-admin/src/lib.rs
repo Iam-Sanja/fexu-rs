@@ -16,6 +16,7 @@ mod form_bridge;
 mod html;
 mod http;
 mod localization;
+mod media;
 mod nav;
 mod pages;
 mod project;
