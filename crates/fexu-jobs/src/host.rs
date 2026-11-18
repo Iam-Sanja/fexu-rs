@@ -103,7 +103,7 @@ impl WorkerHost {
         let db = fexu_db::connect(&self.config.database_url)
             .await
             .map_err(|_| {
-                JobError::message("job.database", "Die Datenbank ist nicht erreichbar.")
+                JobError::message("job.database", "The database is unavailable.")
             })?;
         let lease_secs = self.config.policy.lease_secs;
         let queue = Queue::new(db, Arc::new(SystemClock), self.config.policy);
