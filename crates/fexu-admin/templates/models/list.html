@@ -41,7 +41,7 @@
 {% if query %}<input type="hidden" name="q" value="{{ query }}">{% endif %}
 {% if sort %}<input type="hidden" name="sort" value="{{ sort }}">{% endif %}
 {% if dir %}<input type="hidden" name="dir" value="{{ dir }}">{% endif %}
-{% for filter in filters %}{% if filter.value %}<input type="hidden" name="filter.{{ filter.name }}" value="{{ filter.value }}">{% endif %}{% endfor %}
+{% for filter in filters %}{% if filter.kind == "range" %}{% if filter.from %}<input type="hidden" name="filter.{{ filter.name }}.from" value="{{ filter.from }}">{% endif %}{% if filter.to %}<input type="hidden" name="filter.{{ filter.name }}.to" value="{{ filter.to }}">{% endif %}{% elif filter.value %}<input type="hidden" name="filter.{{ filter.name }}" value="{{ filter.value }}">{% endif %}{% endfor %}
 <div class="bulk-bar">
 <label class="check"><input type="checkbox" name="scope" value="page"><span>{{ i18n.bulk_page }}</span></label>
 <label for="bulk-action">{{ i18n.bulk_action }}
@@ -118,6 +118,9 @@
 <input id="filter-{{ filter.name }}" name="filter.{{ filter.name }}" type="number" inputmode="numeric" value="{{ filter.value }}">
 {% elif filter.kind == "date" or filter.kind == "time" or filter.kind == "datetime" %}
 <input id="filter-{{ filter.name }}" name="filter.{{ filter.name }}" type="{% if filter.kind == "date" %}date{% elif filter.kind == "time" %}time{% else %}datetime-local{% endif %}" value="{{ filter.value }}">
+{% elif filter.kind == "range" %}
+<input id="filter-{{ filter.name }}" name="filter.{{ filter.name }}.from" type="date" value="{{ filter.from }}">
+<input id="filter-{{ filter.name }}-to" name="filter.{{ filter.name }}.to" type="date" value="{{ filter.to }}" aria-label="{{ filter.label }}">
 {% else %}
 <input id="filter-{{ filter.name }}" name="filter.{{ filter.name }}" value="{{ filter.value }}">
 {% endif %}

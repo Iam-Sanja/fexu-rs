@@ -226,6 +226,7 @@ async fn records(
         Err(message) => return failure(StatusCode::UNPROCESSABLE_ENTITY, &message),
     };
     let filter_refs: Vec<(&str, DbValue)> = filters
+        .equals
         .iter()
         .map(|(name, value)| (*name, value.clone()))
         .collect();
@@ -237,7 +238,7 @@ async fn records(
             sort,
             descending,
             &filter_refs,
-            &[],
+            &filters.bounds,
             u64::from(page - 1) * u64::from(page_size),
             u64::from(page_size),
             &scope,
@@ -949,15 +950,21 @@ pub(crate) fn reject_locked(
     Ok(())
 }
 
+pub(crate) struct ParsedFilters {
+    pub equals: Vec<(&'static str, DbValue)>,
+    pub bounds: Vec<(&'static str, bool, DbValue)>,
+}
+
 pub(crate) fn filters_from(
     raw: &str,
     columns: &[ColumnSpec],
     registry: &AdminRegistry,
     meta: &AdminModelMeta,
     custom: &[crate::filters::AdminFilter],
-) -> Result<Vec<(&'static str, DbValue)>, String> {
+) -> Result<ParsedFilters, String> {
     let fields = registry.field_slice(meta);
-    let mut filters = Vec::new();
+    let mut equals = Vec::new();
+    let mut ranges: HashMap<&'static str, (Option<String>, Option<String>)> = HashMap::new();
     for pair in raw.split('&').filter(|pair| !pair.is_empty()) {
         let (key, value) = pair.split_once('=').unwrap_or((pair, ""));
         let key = urlencoding_decode(key);
@@ -965,6 +972,28 @@ pub(crate) fn filters_from(
             continue;
         };
         let field_name = urlencoding_decode(field);
+        if let Some((name, start)) = range_edge(&field_name) {
+            let Some(filter) = custom
+                .iter()
+                .find(|filter| filter.model_key == meta.key && filter.name == name)
+            else {
+                return Err("filter field is not allowed".into());
+            };
+            if !matches!(filter.kind, crate::filters::FilterKind::DateRange { .. }) {
+                return Err("filter field is not allowed".into());
+            }
+            let value = urlencoding_decode(value);
+            if value.is_empty() {
+                continue;
+            }
+            let entry = ranges.entry(filter.name).or_default();
+            let slot = if start { &mut entry.0 } else { &mut entry.1 };
+            if slot.is_some() {
+                return Err("filter range is repeated".into());
+            }
+            *slot = Some(value);
+            continue;
+        }
         if let Some(filter) = custom
             .iter()
             .find(|filter| filter.model_key == meta.key && filter.name == field_name)
@@ -973,7 +1002,7 @@ pub(crate) fn filters_from(
             if value.is_empty() {
                 continue;
             }
-            filters.push(filter.bind(columns, &value)?);
+            equals.push(filter.bind(columns, &value)?);
             continue;
         }
         let Some(meta_field) = fields.iter().find(|candidate| candidate.name == field_name) else {
@@ -989,9 +1018,43 @@ pub(crate) fn filters_from(
         if value.is_empty() {
             continue;
         }
-        filters.push((meta_field.name, filter_value(column, &value)?));
+        equals.push((meta_field.name, filter_value(column, &value)?));
     }
-    Ok(filters)
+    let mut bounds = Vec::new();
+    for (name, (from, to)) in ranges {
+        let Some(filter) = custom
+            .iter()
+            .find(|filter| filter.model_key == meta.key && filter.name == name)
+        else {
+            return Err("filter field is not allowed".into());
+        };
+        let crate::filters::FilterKind::DateRange { column } = filter.kind else {
+            return Err("filter field is not allowed".into());
+        };
+        let Some(spec) = columns.iter().find(|candidate| candidate.name == column) else {
+            return Err("filter field is not allowed".into());
+        };
+        bounds.extend(crate::filters::date_range_bounds(
+            spec,
+            from.as_deref(),
+            to.as_deref(),
+        )?);
+    }
+    Ok(ParsedFilters { equals, bounds })
+}
+
+fn range_edge(field: &str) -> Option<(&str, bool)> {
+    if let Some(name) = field.strip_suffix(".from") {
+        if !name.is_empty() && !name.contains('.') {
+            return Some((name, true));
+        }
+    }
+    if let Some(name) = field.strip_suffix(".to") {
+        if !name.is_empty() && !name.contains('.') {
+            return Some((name, false));
+        }
+    }
+    None
 }
 
 fn filter_datetime(column: &ColumnSpec, value: &str) -> Result<DbValue, String> {
