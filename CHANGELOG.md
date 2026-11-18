@@ -2,6 +2,11 @@
 
 > **Release separation (2026-11-18):** `v0.1.2` is published. All entries headed **Unreleased** describe source changes on `main` made after that release and are **not available in the crates.io `0.1.2` packages**. The proposed `0.2.0` and `0.3.0` targets are specified in [docs/roadmap.md](docs/roadmap.md); no release has yet been cut for these changes. Historical internal `v0.x` feature milestones are not Cargo releases.
 
+## Unreleased — forms acceptance
+
+- A board note uses `permissions = "notes"`, so the HTML form and the JSON route share one permission check.
+- A posted name that is not an editable field stays in the form summary with its localized error.
+- An HTML form keeps a repository `validation.url` error instead of rewriting it.
 
 ## Unreleased — admin relation picker and paged membership
 
