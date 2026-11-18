@@ -6,6 +6,13 @@
 - Many-to-many checkboxes render one page of at most 100 rows. Search and paging redisplay the form without writing. Ids outside that page stay selected, and only ids that were shown can be cleared.
 - `query_scoped_ids` resolves membership visibility in batches of 100. Object-policy models still check each returned row.
 
+## Unreleased — forms finalization
+
+- Model `format = "url"` uses `check_url` and `is_http_url`. Form binding, repository writes and admin HTML posts share `validation.url`.
+- `bind_posted_contracts` checks the values present on an admin HTML post with `apply_bounds` and `apply_contracts` before the repository write. Omitted keys stay on that write.
+- Standalone `#[form(disabled)]` and `#[form(readonly)]` reject a forged post with `validation.readonly` and render no successful control.
+- `examples/board` adds `NoteStampForm` and a required `MediaField` cover next to the existing note, project and task forms.
+
 ## Unreleased — form widgets and validation
 
 - `#[derive(FexuForm)]` applies the model `field_contracts` during `from_submit`, `from_submit_in` and `from_submit_in_zone`. HTML and JSON therefore share `min_length`, `max_length` and `format`.

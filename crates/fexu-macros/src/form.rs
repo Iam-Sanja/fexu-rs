@@ -78,6 +78,7 @@ struct FieldAttrs {
     required_when: Option<String>,
     force_required: bool,
     read_only: bool,
+    disabled: bool,
 }
 
 struct ParsedField {
@@ -108,10 +109,10 @@ fn model_form(
         let widget = widget_override(&field.ident, &field.attrs)?;
         let readonly_unless = opt_str(field.attrs.readonly_unless.as_deref());
         let required_when = opt_str(field.attrs.required_when.as_deref());
-        if field.attrs.read_only {
+        if field.attrs.read_only || field.attrs.disabled {
             return Err(syn::Error::new_spanned(
                 &field.ident,
-                "a model field uses readonly_unless; read-only model columns stay out of the allow-list",
+                "a model field uses readonly_unless; disabled and read-only model columns stay out of the allow-list",
             ));
         }
         access.push(quote! {
@@ -280,6 +281,7 @@ fn standalone_form(
         let input_kind = input_kind_tokens(kind);
         let force_required = field.attrs.force_required;
         let read_only = field.attrs.read_only;
+        let disabled = field.attrs.disabled;
         let readonly_unless = opt_str(field.attrs.readonly_unless.as_deref());
         let required_when = opt_str(field.attrs.required_when.as_deref());
         let min_length = opt_usize(field.attrs.min_length);
@@ -299,6 +301,7 @@ fn standalone_form(
                 kind: #input_kind,
                 force_required: #force_required,
                 read_only: #read_only,
+                disabled: #disabled,
                 readonly_unless: #readonly_unless,
                 required_when: #required_when,
                 min_length: #min_length,
@@ -336,12 +339,17 @@ fn standalone_form(
                             | ::fexu::forms::InputKind::Integer
                             | ::fexu::forms::InputKind::Boolean
                     ) || field.force_required;
-                    rendered.push(
+                    let mut rendered_field =
                         ::fexu::forms::Field::new(field.name, field.label, field.widget, required)
                             .help(field.help)
                             .placeholder(field.placeholder)
-                            .css_class(field.class_name),
-                    );
+                            .css_class(field.class_name);
+                    if field.disabled {
+                        rendered_field = rendered_field.disabled();
+                    } else if field.read_only {
+                        rendered_field = rendered_field.locked();
+                    }
+                    rendered.push(rendered_field);
                 }
                 rendered
             }
@@ -425,6 +433,8 @@ fn field_attrs(attrs: &[syn::Attribute]) -> syn::Result<FieldAttrs> {
                 parsed.force_required = true;
             } else if meta.path.is_ident("readonly") {
                 parsed.read_only = true;
+            } else if meta.path.is_ident("disabled") {
+                parsed.disabled = true;
             } else {
                 return Err(meta.error("unsupported form field attribute"));
             }

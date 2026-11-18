@@ -272,6 +272,8 @@ struct LimitedLabel {
     email: String,
     #[field(format = "slug", max_length = 80)]
     site: Option<String>,
+    #[field(format = "url")]
+    page: Option<String>,
 }
 
 #[derive(Debug, FexuForm)]
@@ -280,6 +282,7 @@ struct LimitedLabelForm {
     code: String,
     email: String,
     site: Option<String>,
+    page: Option<String>,
 }
 
 #[test]
@@ -288,6 +291,7 @@ fn derive_applies_model_contracts_for_html_and_json() {
     assert_eq!(widgets[0].widget, fexu::forms::Widget::Text);
     assert_eq!(widgets[1].widget, fexu::forms::Widget::Email);
     assert_eq!(widgets[2].widget, fexu::forms::Widget::Text);
+    assert_eq!(widgets[3].widget, fexu::forms::Widget::Url);
     let mut html = FormValues::default();
     html.insert("code", "x");
     html.insert("email", "ada@example.com");
@@ -331,6 +335,41 @@ fn derive_applies_model_contracts_for_html_and_json() {
     assert_eq!(form.code, "ab");
     assert_eq!(form.email, "ada@example.com");
     assert_eq!(form.site, None);
+    assert_eq!(form.page, None);
+    let mut bad_page = FormValues::default();
+    bad_page.insert("code", "ab");
+    bad_page.insert("email", "ada@example.com");
+    bad_page.insert("page", "javascript:alert(1)");
+    assert_eq!(
+        LimitedLabelForm::from_form(&bad_page)
+            .unwrap_err()
+            .for_field("page"),
+        Some("validation.url")
+    );
+    let page_json = FormValues::parse_json(
+        r#"{"code":"ab","email":"ada@example.com","page":"javascript:alert(1)"}"#,
+    )
+    .unwrap();
+    assert_eq!(
+        LimitedLabelForm::from_submit(SubmitMode::Create, &page_json)
+            .unwrap_err()
+            .for_field("page"),
+        Some("validation.url")
+    );
+    let mut wide = FormValues::default();
+    wide.insert("code", "ää");
+    wide.insert("email", "ada@example.com");
+    wide.insert("page", "https://example.com");
+    let wide_form = LimitedLabelForm::from_form(&wide).unwrap();
+    assert_eq!(wide_form.code, "ää");
+    assert_eq!(wide_form.page.as_deref(), Some("https://example.com"));
+    wide.insert("code", "ääää");
+    assert_eq!(
+        LimitedLabelForm::from_submit(SubmitMode::Create, &wide)
+            .unwrap_err()
+            .for_field("code"),
+        Some("validation.max_length")
+    );
     let mut missing = FormValues::default();
     missing.insert("email", "ada@example.com");
     assert_eq!(
@@ -351,4 +390,46 @@ fn derive_applies_model_contracts_for_html_and_json() {
     let saved = LimitedLabelForm::from_form(&posted).unwrap();
     assert_eq!(saved.code, "ab");
     assert_eq!(saved.email, "ada@example.com");
+}
+
+#[derive(Debug, FexuForm)]
+struct LockedNoteForm {
+    #[form(label = "Title")]
+    title: String,
+    #[form(disabled, label = "Owner")]
+    owner: Option<String>,
+    #[form(readonly, label = "Channel")]
+    channel: Option<String>,
+}
+
+#[test]
+fn disabled_and_readonly_fields_reject_a_forged_post() {
+    let widgets = LockedNoteForm::widgets();
+    assert!(widgets[1].disabled && widgets[1].locked);
+    assert!(widgets[2].locked && !widgets[2].disabled);
+    let mut values = FormValues::default();
+    values.insert("title", "Note");
+    values.insert("owner", "forged-owner");
+    values.insert("channel", "forged-channel");
+    let html = fexu::forms::render_fields(
+        "/notes",
+        None,
+        &values,
+        &fexu::forms::FormErrors::default(),
+        &widgets,
+        "en",
+    );
+    assert!(html.contains("disabled"));
+    assert!(!html.contains("name=\"owner\""));
+    assert!(!html.contains("name=\"channel\""));
+    assert!(html.contains("forged-owner") || html.contains("forged-channel"));
+    let errors = LockedNoteForm::from_form(&values).unwrap_err();
+    assert_eq!(errors.for_field("owner"), Some("validation.readonly"));
+    assert_eq!(errors.for_field("channel"), Some("validation.readonly"));
+    values.remove("owner");
+    values.remove("channel");
+    let saved = LockedNoteForm::from_form(&values).unwrap();
+    assert_eq!(saved.title, "Note");
+    assert_eq!(saved.owner, None);
+    assert_eq!(saved.channel, None);
 }

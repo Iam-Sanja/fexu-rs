@@ -806,6 +806,10 @@ pub struct Field {
     pub placeholder: &'static str,
     pub options: &'static [(&'static str, &'static str)],
     pub class_name: &'static str,
+    /// The control is not successful. A posted value is `validation.readonly`.
+    pub locked: bool,
+    /// Renders `disabled` and uses the same server rejection as [`Self::locked`].
+    pub disabled: bool,
 }
 
 impl Field {
@@ -824,7 +828,20 @@ impl Field {
             placeholder: "",
             options: &[],
             class_name: "",
+            locked: false,
+            disabled: false,
         }
+    }
+
+    pub const fn locked(mut self) -> Self {
+        self.locked = true;
+        self
+    }
+
+    pub const fn disabled(mut self) -> Self {
+        self.locked = true;
+        self.disabled = true;
+        self
     }
 
     pub const fn css_class(mut self, class_name: &'static str) -> Self {
@@ -928,6 +945,13 @@ pub(crate) fn render_control(
         format!(" placeholder=\"{}\"", escape(field.placeholder))
     };
     let class = class_attr(field.class_name);
+    if field.locked {
+        let flag = if field.disabled { " disabled" } else { "" };
+        return format!(
+            "<span id=\"{name}\"{class}{flag}{described}{invalid}>{value}</span>",
+            value = escape(value)
+        );
+    }
     match field.widget {
         Widget::Textarea => format!(
             "<textarea id=\"{name}\" name=\"{name}\"{class}{required}{placeholder}{described}{invalid}>{value}</textarea>",
@@ -1274,6 +1298,68 @@ pub fn apply_bounds(fields: &mut [ModelField], bounds: &[fexu_core::NumericBound
             field.max = bound.max;
         }
     }
+}
+
+/// Checks posted admin or API values with the model contract.
+///
+/// Only keys that are present are checked. An omitted checkbox stays with the
+/// repository. Control names such as `csrf_token` are ignored. Date, time,
+/// datetime and JSON stay on their existing parsers. An empty contract does nothing.
+pub fn bind_posted_contracts(
+    creating: bool,
+    columns: &[ColumnSpec],
+    contracts: &[fexu_core::FieldContract],
+    bounds: &[fexu_core::NumericBound],
+    posted: &FormValues,
+) -> Result<(), FormErrors> {
+    if contracts.is_empty() {
+        return Ok(());
+    }
+    let names: Vec<&str> = contracts
+        .iter()
+        .filter(|contract| {
+            if creating {
+                contract.in_create
+            } else {
+                contract.in_update
+            }
+        })
+        .filter(|contract| posted.get(contract.column).is_some())
+        .filter_map(|contract| {
+            let column = columns
+                .iter()
+                .find(|column| column.name == contract.column)?;
+            if column.primary_key
+                || matches!(
+                    column.kind,
+                    ColumnKind::Date | ColumnKind::Time | ColumnKind::DateTime | ColumnKind::Json
+                )
+            {
+                return None;
+            }
+            Some(contract.column)
+        })
+        .collect();
+    if names.is_empty() {
+        return Ok(());
+    }
+    let mut fields = match model_fields(columns, &[], &names) {
+        Ok(fields) => fields,
+        Err(error) => {
+            let mut errors = FormErrors::default();
+            errors.push_form(error.code);
+            return Err(errors);
+        }
+    };
+    apply_bounds(&mut fields, bounds);
+    apply_contracts(&mut fields, contracts);
+    let mut values = FormValues::default();
+    for field in &fields {
+        if let Some(value) = posted.get(field.name) {
+            values.insert(field.name, value);
+        }
+    }
+    bind_submission(SubmitMode::Create, &fields, &values, &[], &[]).map(|_| ())
 }
 
 /// Copies text limits and `format` from the same model contract used by JSON writes.
@@ -1837,9 +1923,9 @@ pub use widgets::{WidgetInput, WidgetRender};
 #[cfg(test)]
 mod tests {
     use super::{
-        apply_bounds, apply_contracts, bind_formset, bind_model, bind_submission, escape,
-        inspect_upload, message, model_fields, model_widget, plan_formset, render_fields,
-        render_relation_select, require_confirmation, required_choice, required_i64,
+        apply_bounds, apply_contracts, bind_formset, bind_model, bind_posted_contracts,
+        bind_submission, escape, inspect_upload, message, model_fields, model_widget, plan_formset,
+        render_fields, render_relation_select, require_confirmation, required_choice, required_i64,
         required_postal, required_uuid, store_upload, BoundValue, ContactForm, FexuForm, Field,
         FormErrors, FormValues, ModelField, SubmitMode, UploadPolicy, Widget,
     };
@@ -2267,6 +2353,84 @@ mod tests {
             bind_model(SubmitMode::Create, &fields, &accepted, &[]).unwrap()[0].value,
             BoundValue::Text("https://example.com".to_owned())
         );
+        assert!(message("en", "validation.url").contains("http"));
+        assert!(fexu_core::localize_detail("de", "field:site: validation.url").contains("http"));
+    }
+
+    #[test]
+    fn posted_contracts_reject_present_values_and_ignore_controls() {
+        let mut title = column("title", ColumnKind::Text, false, false);
+        title.choices = &[];
+        let stock = column("stock", ColumnKind::BigInt, false, false);
+        let contracts = [
+            fexu_core::FieldContract {
+                column: "title",
+                in_create: true,
+                in_update: true,
+                create_required: true,
+                min_length: Some(2),
+                max_length: Some(4),
+                format: None,
+                api_read: true,
+            },
+            fexu_core::FieldContract {
+                column: "site",
+                in_create: true,
+                in_update: true,
+                create_required: false,
+                min_length: None,
+                max_length: None,
+                format: Some("url"),
+                api_read: true,
+            },
+            fexu_core::FieldContract {
+                column: "stock",
+                in_create: true,
+                in_update: true,
+                create_required: true,
+                min_length: None,
+                max_length: None,
+                format: None,
+                api_read: true,
+            },
+        ];
+        let bounds = [fexu_core::NumericBound {
+            column: "stock",
+            min: Some(1),
+            max: Some(5),
+        }];
+        let columns = [
+            title,
+            column("site", ColumnKind::Text, true, false),
+            stock,
+            column("kept_on", ColumnKind::Date, false, false),
+        ];
+        let mut posted = FormValues::default();
+        posted.insert("csrf_token", "token");
+        posted.insert("owner_id", "forged");
+        posted.insert("kept_on", "not-a-date");
+        assert!(bind_posted_contracts(true, &columns, &contracts, &bounds, &posted).is_ok());
+        posted.insert("title", "ää");
+        posted.insert("site", "https://example.com");
+        posted.insert("stock", "2");
+        assert!(bind_posted_contracts(true, &columns, &contracts, &bounds, &posted).is_ok());
+        posted.insert("title", "äääää");
+        let too_long =
+            bind_posted_contracts(true, &columns, &contracts, &bounds, &posted).unwrap_err();
+        assert_eq!(too_long.for_field("title"), Some("validation.max_length"));
+        posted.insert("title", "Ok");
+        posted.insert("site", "not a url");
+        posted.insert("stock", "9");
+        let errors =
+            bind_posted_contracts(true, &columns, &contracts, &bounds, &posted).unwrap_err();
+        assert_eq!(errors.for_field("title"), None);
+        assert_eq!(errors.for_field("site"), Some("validation.url"));
+        assert_eq!(errors.for_field("stock"), Some("validation.max_value"));
+        posted.insert("title", "");
+        let required =
+            bind_posted_contracts(true, &columns, &contracts, &bounds, &posted).unwrap_err();
+        assert_eq!(required.for_field("title"), Some("validation.required"));
+        assert!(bind_posted_contracts(true, &columns, &[], &[], &posted).is_ok());
     }
 
     fn column(

@@ -18,7 +18,7 @@
 | `foreign_key`, `on_delete` |one column|Database foreign key; invalid reference and `restrict` become 422|
 | `Option<T>` | Supported scalar and date/time types | Create: missing or `null` stores SQL `NULL`. PATCH: see `PatchField` |
 
-Generated model validators check required fields, string length, `min` and explicitly declared `format = "email"` or `format = "slug"` rules during `create` and `update`. They do not provide a general validator registry or regex validation. Form-level helpers are described in [forms-validation.md](forms-validation.md). The database enforces unique and foreign-key constraints, and the repository maps those sqlx errors to `Validation`. Unique indexes allow multiple `NULL` values. See [constraints.md](constraints.md).
+Generated model validators check required fields, string length, `min` and explicitly declared `format = "email"`, `format = "slug"` or `format = "url"` rules during `create` and `update`. They do not provide a general validator registry or regex validation. Form-level helpers are described in [forms-validation.md](forms-validation.md). The database enforces unique and foreign-key constraints, and the repository maps those sqlx errors to `Validation`. Unique indexes allow multiple `NULL` values. See [constraints.md](constraints.md).
 
 ### PATCH null semantics
 

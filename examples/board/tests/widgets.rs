@@ -73,4 +73,32 @@ fn filter_form_escapes_a_custom_widget_and_keeps_two_model_forms() {
     let html = fexu::forms::render_configured(render);
     assert!(html.contains("&lt;script&gt;"));
     assert!(!html.contains("<script>"));
+
+    let mut marks = FormValues::default();
+    marks.insert("title", "ä".repeat(80));
+    assert_eq!(
+        NoteReviseForm::from_form(&marks)
+            .unwrap()
+            .title
+            .chars()
+            .count(),
+        80
+    );
+    marks.insert("title", "ä".repeat(81));
+    assert_eq!(
+        NoteReviseForm::from_form(&marks)
+            .unwrap_err()
+            .for_field("title"),
+        Some("validation.max_length")
+    );
+
+    let stamp = board::NoteStampForm::widgets();
+    assert!(stamp[1].disabled);
+    let mut forged = FormValues::default();
+    forged.insert("title", "Visible");
+    forged.insert("owner", "forged");
+    forged.insert("channel", "forged");
+    let errors = board::NoteStampForm::from_form(&forged).unwrap_err();
+    assert_eq!(errors.for_field("owner"), Some("validation.readonly"));
+    assert_eq!(errors.for_field("channel"), Some("validation.readonly"));
 }
