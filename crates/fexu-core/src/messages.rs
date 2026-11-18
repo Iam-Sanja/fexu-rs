@@ -320,8 +320,8 @@ mod bundled_catalog_tests {
     #[test]
     fn core_messages_are_complete_and_preserve_legacy_text() {
         let (english, german) = validation_catalogs();
-        assert_eq!(english.len(), 35);
-        assert_eq!(german.len(), 35);
+        assert_eq!(english.len(), 40);
+        assert_eq!(german.len(), 40);
         german.check_keys(english).unwrap();
         assert_eq!(
             message_text("en", "validation.required"),
