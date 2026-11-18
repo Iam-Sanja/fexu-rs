@@ -1103,6 +1103,8 @@ async fn finish_page(
         Err(error) => return error_page(headers, error),
     };
     context.insert("flashes", &flashes);
+    // Keep app template language consistent with the bound form locale.
+    context.insert("locale", locale_of(headers));
     let list_url = match named(routes, resource.list_name, &[]) {
         Ok(path) => path,
         Err(error) => return error_page(headers, error),
