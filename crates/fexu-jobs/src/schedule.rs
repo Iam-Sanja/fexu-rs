@@ -80,9 +80,7 @@ pub fn next_after(expression: &str, zone: &str, after_unix: i64) -> Result<i64, 
     let start = to_local(&zone, after_unix)?;
     let mut cursor = start
         .checked_add_signed(Duration::minutes(1))
-        .ok_or_else(|| {
-                schedule("The next occurrence is outside the supported calendar range.")
-            })?;
+        .ok_or_else(|| schedule("The next occurrence is outside the supported calendar range."))?;
     cursor = cursor.with_second(0).unwrap_or(cursor);
     for _ in 0..(366 * 24 * 60) {
         match local_to_utc(&zone, cursor) {
@@ -94,7 +92,9 @@ pub fn next_after(expression: &str, zone: &str, after_unix: i64) -> Result<i64, 
         }
         cursor = cursor
             .checked_add_signed(Duration::minutes(1))
-            .ok_or_else(|| schedule("The next occurrence is outside the supported calendar range."))?;
+            .ok_or_else(|| {
+                schedule("The next occurrence is outside the supported calendar range.")
+            })?;
     }
     Err(schedule(
         "No matching occurrence exists in the next 366 days.",
