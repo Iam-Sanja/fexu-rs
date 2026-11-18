@@ -1354,6 +1354,7 @@ fn static_code(code: &str) -> &'static str {
         "validation.max_value" => "validation.max_value",
         "validation.email" => "validation.email",
         "validation.slug" => "validation.slug",
+        "validation.url" => "validation.url",
         "validation.choice" => "validation.choice",
         "validation.invalid_type" => "validation.invalid_type",
         "validation.readonly" => "validation.readonly",

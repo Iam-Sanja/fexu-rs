@@ -585,6 +585,30 @@ mod tests {
         let (status, body) = call(app.clone(), spoofed).await;
         assert_eq!(status, StatusCode::UNSUPPORTED_MEDIA_TYPE, "{body}");
 
+        let oversized = Request::post("/uploads")
+            .header("cookie", ada.cookie.split(';').next().unwrap())
+            .header("x-csrf-token", &ada.csrf_token)
+            .header("content-type", "text/plain")
+            .header("x-original-name", "notes.txt")
+            .body(Body::from(vec![b'a'; 1025]))
+            .unwrap();
+        let (status, body) = call(app.clone(), oversized).await;
+        assert_eq!(status, StatusCode::PAYLOAD_TOO_LARGE, "{body}");
+        assert!(body.contains("upload.too_large"), "{body}");
+
+        let multipart = format!(
+            "--bound\r\nContent-Disposition: form-data; name=\"csrf_token\"\r\n\r\n{}\r\n--bound\r\nContent-Disposition: form-data; name=\"file\"; filename=\"photo.png\"\r\nContent-Type: image/png\r\n\r\nhello fexu\r\n--bound--\r\n",
+            ada.csrf_token
+        );
+        let forged_type = Request::post("/uploads")
+            .header("cookie", ada.cookie.split(';').next().unwrap())
+            .header("content-type", "multipart/form-data; boundary=bound")
+            .body(Body::from(multipart))
+            .unwrap();
+        let (status, body) = call(app.clone(), forged_type).await;
+        assert_eq!(status, StatusCode::UNSUPPORTED_MEDIA_TYPE, "{body}");
+        assert!(body.contains("upload.type"), "{body}");
+
         let request = Request::delete(format!("/uploads/{id}"))
             .header("cookie", ada.cookie.split(';').next().unwrap())
             .header("x-csrf-token", &ada.csrf_token)
