@@ -266,14 +266,14 @@ pub fn render_plan(locale: &str, plan: &UpgradePlan, dry_run: bool) -> String {
     }
     if dry_run {
         text.push_str(if locale == "de" {
-            "\nGeplante Dateiänderungen:\n"
+            "\nPlanned file changes:\n"
         } else {
             "\nPlanned file changes:\n"
         });
     }
     if plan.actions.is_empty() {
         text.push_str(if locale == "de" {
-            "Keine Dateiänderung.\n"
+            "No file changes.\n"
         } else {
             "No file changes.\n"
         });
@@ -373,7 +373,7 @@ pub fn contained_target(root: &Path, relative: &str) -> Result<PathBuf, Migratio
             .map_err(|error| MigrationError::new(format!("upgrade.unsafe_path: {error}")))?;
         if !canonical.starts_with(&root) {
             return Err(MigrationError::new(format!(
-                "upgrade.unsafe_path: `{relative}` zeigt aus dem Projekt heraus."
+                "upgrade.unsafe_path: `{relative}` points outside the project directory."
             )));
         }
         return Ok(canonical);
@@ -398,7 +398,7 @@ pub fn contained_target(root: &Path, relative: &str) -> Result<PathBuf, Migratio
         .map_err(|error| MigrationError::new(format!("upgrade.unsafe_path: {error}")))?;
     if !rebuilt.starts_with(&root) {
         return Err(MigrationError::new(format!(
-            "upgrade.unsafe_path: `{relative}` zeigt aus dem Projekt heraus."
+            "upgrade.unsafe_path: `{relative}` points outside the project directory."
         )));
     }
     for name in missing.iter().rev() {
