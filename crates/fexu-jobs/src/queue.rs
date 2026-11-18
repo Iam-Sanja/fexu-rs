@@ -960,7 +960,7 @@ async fn insert_job(db: &impl ConnectionTrait, job: &NewJob<'_>) -> Result<(), J
         Ok(_) => Ok(()),
         Err(error) if error.code() == "job.conflict" => Err(JobError::message(
             "job.conflict",
-            "Der Job ist bereits eingetragen.",
+            "The job is already registered.",
         )),
         Err(error) => Err(error),
     }
@@ -1300,11 +1300,11 @@ fn owned_error(code: &str) -> String {
 fn database(error: impl ToString) -> JobError {
     let text = error.to_string().to_ascii_lowercase();
     if text.contains("unique") || text.contains("duplicate") {
-        JobError::message("job.conflict", "Der Job ist bereits eingetragen.")
+        JobError::message("job.conflict", "The job is already registered.")
     } else if text.contains("locked") || text.contains("busy") {
         JobError::message(
             "job.locked",
-            "Die Datenbank ist gerade gesperrt. Der Vorgang wurde nicht als Erfolg gewertet.",
+            "The database is currently locked. The operation was not considered successful.",
         )
     } else {
         JobError::message("job.database", "The job table could not be updated.")
