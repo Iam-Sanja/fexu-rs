@@ -805,6 +805,10 @@ pub struct Field {
     pub help: &'static str,
     pub placeholder: &'static str,
     pub options: &'static [(&'static str, &'static str)],
+    /// Static choice list. When this is non-empty, a select renders these
+    /// labels instead of [`Self::options`]. `de` uses `label_de`; every other
+    /// locale uses `label_en`.
+    pub choice_values: &'static [fexu_core::ChoiceValue],
     pub class_name: &'static str,
     /// The control is not successful. A posted value is `validation.readonly`.
     pub locked: bool,
@@ -827,6 +831,7 @@ impl Field {
             help: "",
             placeholder: "",
             options: &[],
+            choice_values: &[],
             class_name: "",
             locked: false,
             disabled: false,
@@ -929,6 +934,7 @@ pub(crate) fn render_control(
     input_name: &str,
     values: &[String],
     errors: &FormErrors,
+    locale: &str,
 ) -> String {
     let value = values.first().map(String::as_str).unwrap_or("");
     let name = escape(input_name);
@@ -957,9 +963,16 @@ pub(crate) fn render_control(
             "<textarea id=\"{name}\" name=\"{name}\"{class}{required}{placeholder}{described}{invalid}>{value}</textarea>",
             value = escape(value)
         ),
-        Widget::Select | Widget::Relation => {
-            select_control(&name, field, value, &class, required, &described, invalid)
-        }
+        Widget::Select | Widget::Relation => select_control(
+            &name,
+            field,
+            value,
+            &class,
+            required,
+            &described,
+            invalid,
+            locale,
+        ),
         Widget::SelectMultiple => {
             select_multiple(&name, field, values, &class, required, &described, invalid)
         }
@@ -1021,6 +1034,7 @@ fn select_control(
     required: &str,
     described: &str,
     invalid: &str,
+    locale: &str,
 ) -> String {
     let relation = if field.widget == Widget::Relation {
         " data-fexu-relation=\"true\""
@@ -1033,13 +1047,33 @@ fn select_control(
     if !field.required {
         html.push_str("<option value=\"\"></option>");
     }
-    for (option, label) in field.options {
-        let selected = if *option == value { " selected" } else { "" };
-        html.push_str(&format!(
-            "<option value=\"{option}\"{selected}>{label}</option>",
-            option = escape(option),
-            label = escape(label)
-        ));
+    if field.choice_values.is_empty() {
+        for (option, label) in field.options {
+            let selected = if *option == value { " selected" } else { "" };
+            html.push_str(&format!(
+                "<option value=\"{option}\"{selected}>{label}</option>",
+                option = escape(option),
+                label = escape(label)
+            ));
+        }
+    } else {
+        for choice in field.choice_values {
+            let label = if locale == "de" {
+                choice.label_de
+            } else {
+                choice.label_en
+            };
+            let selected = if choice.value == value {
+                " selected"
+            } else {
+                ""
+            };
+            html.push_str(&format!(
+                "<option value=\"{option}\"{selected}>{label}</option>",
+                option = escape(choice.value),
+                label = escape(label)
+            ));
+        }
     }
     html.push_str("</select>");
     html
@@ -1391,6 +1425,7 @@ pub fn model_widget(field: &ModelField, label: &'static str) -> Field {
             ColumnKind::Date => Widget::Date,
             ColumnKind::Time => Widget::Time,
             ColumnKind::Decimal => Widget::Decimal,
+            ColumnKind::Choice if !field.choices.is_empty() => Widget::Select,
             ColumnKind::Text
             | ColumnKind::Uuid
             | ColumnKind::DateTime
@@ -1398,7 +1433,11 @@ pub fn model_widget(field: &ModelField, label: &'static str) -> Field {
             | ColumnKind::Json => Widget::Text,
         }
     };
-    Field::new(field.name, label, widget, field.required)
+    let mut built = Field::new(field.name, label, widget, field.required);
+    if field.kind == ColumnKind::Choice {
+        built.choice_values = field.choices;
+    }
+    built
 }
 
 /// `choices` restricts field values to allowed options. Extra input fields are rejected.
@@ -2042,6 +2081,58 @@ mod tests {
                 .code,
             "validation.choice"
         );
+    }
+
+    #[test]
+    fn choice_widget_renders_known_options_as_a_select() {
+        const CHOICES: &[fexu_core::ChoiceValue] = &[fexu_core::ChoiceValue {
+            value: "open",
+            label_de: "Offen",
+            label_en: "Open",
+        }];
+        let field = ModelField {
+            name: "status",
+            kind: ColumnKind::Choice,
+            required: true,
+            precision: 0,
+            scale: 0,
+            choices: CHOICES,
+            min: None,
+            max: None,
+            min_length: None,
+            max_length: None,
+            format: None,
+        };
+        let widget = model_widget(&field, "Status");
+        assert_eq!(widget.widget, Widget::Select);
+        let mut values = FormValues::default();
+        values.insert("status", "open");
+        let german = render_fields(
+            "/save",
+            None,
+            &values,
+            &FormErrors::default(),
+            &[widget],
+            "de",
+        );
+        assert!(german.contains("<select"), "{german}");
+        assert!(german.contains("value=\"open\""), "{german}");
+        assert!(german.contains(" selected"), "{german}");
+        assert!(german.contains(">Offen</option>"), "{german}");
+        let english = render_fields(
+            "/save",
+            None,
+            &values,
+            &FormErrors::default(),
+            &[widget],
+            "en",
+        );
+        assert!(english.contains(">Open</option>"), "{english}");
+        let empty = ModelField {
+            choices: &[],
+            ..field
+        };
+        assert_eq!(model_widget(&empty, "Status").widget, Widget::Text);
     }
 
     #[test]
