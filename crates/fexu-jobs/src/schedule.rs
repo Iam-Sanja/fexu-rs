@@ -80,7 +80,9 @@ pub fn next_after(expression: &str, zone: &str, after_unix: i64) -> Result<i64, 
     let start = to_local(&zone, after_unix)?;
     let mut cursor = start
         .checked_add_signed(Duration::minutes(1))
-        .ok_or_else(|| schedule("The next occurrence is outside the supported calendar range."))?;
+        .ok_or_else(|| {
+                schedule("The next occurrence is outside the supported calendar range.")
+            })?;
     cursor = cursor.with_second(0).unwrap_or(cursor);
     for _ in 0..(366 * 24 * 60) {
         match local_to_utc(&zone, cursor) {
@@ -307,9 +309,7 @@ fn number(value: &str, min: u32, max: u32) -> Result<u32, JobError> {
     if (min..=max).contains(&parsed) {
         Ok(parsed)
     } else {
-        Err(schedule(
-            "Cron field is outside the allowed range.",
-        ))
+        Err(schedule("Cron field is outside the allowed range."))
     }
 }
 
