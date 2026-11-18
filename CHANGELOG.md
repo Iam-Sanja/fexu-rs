@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased — MyShop contact language
+
+- The MyShop contact and thank-you pages use English with an explicit English browser language and otherwise retain the previous German default. The new `render_page_in` supports the appropriate HTML document language while the existing `render_page` API remains backward compatible.
+- HTTP tests assert both language variants and keep existing CSRF fixtures unchanged.
+
 ## Unreleased — forms acceptance
 
 - A board note uses `permissions = "notes"`, so the HTML form and the JSON route share one permission check.
