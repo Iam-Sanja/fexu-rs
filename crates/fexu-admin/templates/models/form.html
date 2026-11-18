@@ -79,8 +79,20 @@
 {% for group in memberships %}
 <fieldset class="form-section" id="m2m-{{ group.name }}" {% if group.invalid %}aria-invalid="true" tabindex="-1"{% endif %} aria-describedby="m2m-{{ group.name }}-hint{% if group.error %} m2m-{{ group.name }}-error{% endif %}">
 <legend>{{ group.label }}</legend>
-{% if group.ready %}<input type="hidden" name="m2m_present" value="{{ group.name }}">{% endif %}
+{% if group.ready %}<input type="hidden" name="m2m_present" value="{{ group.name }}"><input type="hidden" name="m2m_shown_present" value="{{ group.name }}">{% endif %}
 <p class="hint" id="m2m-{{ group.name }}-hint">{{ group.hint }}</p>
+{% if group.ready %}
+{% for id in group.kept %}<input type="hidden" name="m2m.{{ group.name }}" value="{{ id }}">{% endfor %}
+<div class="filters">
+<label for="m2m-{{ group.name }}-q">{{ i18n.search }}</label>
+<input id="m2m-{{ group.name }}-q" name="m2m_q.{{ group.name }}" type="search" value="{{ group.query }}">
+<input type="hidden" name="m2m_page.{{ group.name }}" value="{{ group.page }}">
+<button class="button ghost" type="submit" name="save" value="members">{{ i18n.search }}</button>
+{% if group.page > 1 %}<button class="button ghost" type="submit" name="m2m_go" value="{{ group.name }}:prev">{{ i18n.previous }}</button>{% endif %}
+{% if group.truncated %}<button class="button ghost" type="submit" name="m2m_go" value="{{ group.name }}:next">{{ i18n.next }}</button>{% endif %}
+</div>
+<p class="meta">{{ i18n.total }}: {{ group.selected_count }} · {{ i18n.page }} {{ group.page }}</p>
+{% endif %}
 {% if group.blocked %}
 <p class="hint">{{ i18n.m2m_blocked }}</p>
 {% elif group.options | length == 0 %}
@@ -89,13 +101,14 @@
 <ul class="checks">
 {% for option in group.options %}
 <li>
+<input type="hidden" name="m2m_shown.{{ group.name }}" value="{{ option.id }}">
 <input id="m2m-{{ group.name }}-{{ option.id }}" name="m2m.{{ group.name }}" type="checkbox" value="{{ option.id }}" {% if option.selected %}checked{% endif %}>
 <label for="m2m-{{ group.name }}-{{ option.id }}">{{ option.label }}</label>
 </li>
 {% endfor %}
 </ul>
 {% endif %}
-{% if group.truncated %}<p class="hint">{{ i18n.m2m_truncated }}</p>{% endif %}
+{% if group.truncated or group.kept_count > 0 %}<p class="hint">{{ i18n.m2m_truncated }}</p>{% endif %}
 {% if group.error %}<p class="field-error" id="m2m-{{ group.name }}-error" role="alert">{{ group.error }}</p>{% endif %}
 </fieldset>
 {% endfor %}

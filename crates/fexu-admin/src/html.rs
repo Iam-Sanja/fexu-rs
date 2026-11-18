@@ -9,7 +9,10 @@ use crate::http::{
 };
 use crate::localization::{bulk_notice, catalog, normalize, notice, validation_text};
 use crate::registry::{redact, sensitive, AdminRegistry, ManagedModel};
-use crate::relations::{current_members, lookup_page, posted_members, scoped_membership};
+use crate::relations::{
+    current_members, lookup_page, page_membership, posted_members, scoped_membership, shape_of,
+    RelationShape,
+};
 use crate::rendering::render;
 use axum::body::Bytes;
 use axum::extract::{Extension, Path, Query, RawQuery, State};
@@ -6202,15 +6205,8 @@ async fn pick_page(
         .and_then(|value| value.parse::<u32>().ok())
         .unwrap_or(1)
         .clamp(1, 10_000);
-    let page_size = u64::from(registry.per_page_of(target.meta()).clamp(1, 100));
-    let search_columns: Vec<&str> = registry
-        .field_slice(target.meta())
-        .iter()
-        .filter(|item| item.searchable && !item.hidden && !sensitive(item.name))
-        .map(|item| item.name)
-        .collect();
     let query = params.get("q").cloned().unwrap_or_default();
-    if query.chars().count() > 200 || (!query.is_empty() && search_columns.is_empty()) {
+    if query.chars().count() > 200 {
         return error_page(
             state,
             headers,
@@ -6224,22 +6220,19 @@ async fn pick_page(
         .await;
     }
     let scope = access_scope(target.as_ref(), &user, false);
-    let listed = target
-        .page(
-            &state.db,
-            &search_columns,
-            (!query.is_empty()).then_some(query.as_str()),
-            label,
-            false,
-            &[],
-            &[],
-            u64::from(page_number - 1) * page_size,
-            page_size,
-            &scope,
-        )
-        .await;
+    let listed = lookup_page(
+        &state.db,
+        target.descriptor().table,
+        target.columns(),
+        label,
+        (!query.is_empty()).then_some(query.as_str()),
+        page_number,
+        100,
+        &scope,
+    )
+    .await;
     let (rows, has_more, total) = match listed {
-        Ok(value) => value,
+        Ok(value) => (value.rows, value.has_more, value.total),
         Err(_) => {
             return error_page(
                 state,
@@ -6396,9 +6389,32 @@ async fn plan_memberships(
                 candidates.push(*id);
             }
         }
+        let paged = repeated
+            .get("m2m_shown_present")
+            .is_some_and(|names| names.iter().any(|name| name == link.name));
+        let shown = if paged {
+            posted_members(
+                repeated
+                    .get(&format!("m2m_shown.{}", link.name))
+                    .map(Vec::as_slice)
+                    .unwrap_or(&[]),
+            )
+            .map_err(|code| (link.name.to_owned(), code))?
+        } else {
+            Vec::new()
+        };
+        for id in &shown {
+            if !candidates.contains(id) {
+                candidates.push(*id);
+            }
+        }
         let visible = visible_member_ids(state, user, child.as_ref(), &candidates).await;
-        let next = scoped_membership(&current, &visible, &requested)
-            .map_err(|code| (link.name.to_owned(), code))?;
+        let next = if paged {
+            page_membership(&current, &visible, &shown, &requested)
+        } else {
+            scoped_membership(&current, &visible, &requested)
+        }
+        .map_err(|code| (link.name.to_owned(), code))?;
         let changed = !same_ids(&current, &next);
         planned.push(PlannedLink {
             name: link.name.to_owned(),
@@ -6430,13 +6446,25 @@ async fn visible_member_ids(
     if list_blocked(child) || permit(auth, user, child.meta(), "read").await.is_err() {
         return Vec::new();
     }
+    let scope = access_scope(child, user, false);
+    let Ok(found) = fexu_db::query_scoped_ids(
+        &state.db,
+        child.descriptor().table,
+        child.columns(),
+        ids,
+        &scope,
+    )
+    .await
+    else {
+        return Vec::new();
+    };
+    if !(child.policy_bound() && child.descriptor().requires_object_policy && !user.is_superuser) {
+        return found;
+    }
     let mut visible = Vec::new();
-    for id in ids {
-        if read_visible(state, user, child, *id, "read")
-            .await
-            .is_some()
-        {
-            visible.push(*id);
+    for id in found {
+        if read_visible(state, user, child, id, "read").await.is_some() {
+            visible.push(id);
         }
     }
     visible
@@ -6451,6 +6479,7 @@ async fn membership_widgets(
     parent: Option<Uuid>,
     posted: Option<&Value>,
     errors: Option<&Value>,
+    query: Option<&Value>,
     locale: &str,
 ) -> Vec<Value> {
     let hint = catalog(locale)
@@ -6499,6 +6528,22 @@ async fn membership_widgets(
             };
         let mut options = Vec::new();
         let mut truncated = false;
+        let mut page_number = 1_u32;
+        let mut search = String::new();
+        let spec = query.and_then(|value| value.get(link.name));
+        if let Some(spec) = spec {
+            search = spec
+                .get("q")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_owned();
+            page_number = spec
+                .get("page")
+                .and_then(Value::as_u64)
+                .and_then(|value| u32::try_from(value).ok())
+                .unwrap_or(1)
+                .clamp(1, 10_000);
+        }
         if let Some(label) = display_column(registry.field_slice(child.meta()), child.columns()) {
             let scope = access_scope(child.as_ref(), user, false);
             if let Ok(page) = lookup_page(
@@ -6506,40 +6551,37 @@ async fn membership_widgets(
                 child.descriptor().table,
                 child.columns(),
                 label,
-                None,
-                1,
+                (!search.is_empty()).then_some(search.as_str()),
+                page_number,
                 100,
                 &scope,
             )
             .await
             {
-                truncated = page.total > i64::try_from(page.rows.len()).unwrap_or(i64::MAX);
+                truncated = page.has_more
+                    || page.total > i64::try_from(page.rows.len()).unwrap_or(i64::MAX);
                 for row in &page.rows {
                     if let Some(option) = member_option(row, label, &chosen) {
                         options.push(option);
                     }
                 }
             }
-            for id in &chosen {
-                let shown = options.iter().any(|option| {
+        }
+        let kept: Vec<String> = chosen
+            .iter()
+            .filter(|id| {
+                !options.iter().any(|option| {
                     option
                         .get("id")
                         .and_then(Value::as_str)
                         .and_then(|text| Uuid::parse_str(text).ok())
+                        .as_ref()
                         == Some(*id)
-                });
-                if shown {
-                    continue;
-                }
-                let Some(record) = read_visible(state, user, child.as_ref(), *id, "read").await
-                else {
-                    continue;
-                };
-                if let Some(option) = member_option(&record, label, &chosen) {
-                    options.push(option);
-                }
-            }
-        }
+                })
+            })
+            .map(ToString::to_string)
+            .collect();
+        let kept_count = kept.len();
         widgets.push(json!({
             "name": link.name,
             "label": link.label,
@@ -6550,6 +6592,11 @@ async fn membership_widgets(
             "invalid": !error.is_empty(),
             "error": error,
             "options": options,
+            "kept": kept,
+            "query": search,
+            "page": page_number,
+            "selected_count": chosen.len(),
+            "kept_count": kept_count,
         }));
     }
     widgets
@@ -6566,7 +6613,49 @@ fn empty_membership(link: &ManyLink, hint: &str, error: &str, ready: bool, block
         "invalid": !error.is_empty(),
         "error": error,
         "options": [],
+        "kept": [],
+        "query": "",
+        "page": 1,
+        "selected_count": 0,
+        "kept_count": 0,
     })
+}
+
+fn member_query_value(form: &HashMap<String, String>, go: Option<&str>) -> Value {
+    let mut names = Vec::new();
+    for key in form.keys() {
+        let Some(name) = key
+            .strip_prefix("m2m_q.")
+            .or_else(|| key.strip_prefix("m2m_page."))
+        else {
+            continue;
+        };
+        if !names.iter().any(|seen| seen == name) {
+            names.push(name.to_owned());
+        }
+    }
+    let mut query = Map::new();
+    for name in names {
+        let mut page = form
+            .get(&format!("m2m_page.{name}"))
+            .and_then(|value| value.parse::<u32>().ok())
+            .unwrap_or(1)
+            .clamp(1, 10_000);
+        let next = format!("{name}:next");
+        let previous = format!("{name}:prev");
+        if go == Some(next.as_str()) {
+            page = page.saturating_add(1).min(10_000);
+        }
+        if go == Some(previous.as_str()) {
+            page = page.saturating_sub(1).max(1);
+        }
+        let term = form
+            .get(&format!("m2m_q.{name}"))
+            .map(|value| value.chars().take(200).collect::<String>())
+            .unwrap_or_default();
+        query.insert(name, json!({ "q": term, "page": page }));
+    }
+    Value::Object(query)
 }
 
 async fn chosen_member_ids(
@@ -6692,6 +6781,7 @@ async fn form_page(
         .unwrap_or_default();
     let posted_membership = values.remove("_m2m");
     let membership_errors = values.remove("_m2m_error");
+    let member_query = values.remove("_m2m_query");
     let draft_id = take_draft(state, &user, model_key, id, &mut values).await;
     if let Some(id) = id {
         values
@@ -6717,6 +6807,7 @@ async fn form_page(
         id,
         posted_membership.as_ref(),
         membership_errors.as_ref(),
+        member_query.as_ref(),
         &locale,
     )
     .await;
@@ -6918,7 +7009,11 @@ fn store_text(
     name: String,
     text: String,
 ) -> Result<(), ()> {
-    if name == "m2m_present" || name.starts_with("m2m.") {
+    if name == "m2m_present"
+        || name == "m2m_shown_present"
+        || name.starts_with("m2m.")
+        || name.starts_with("m2m_shown.")
+    {
         if !text.is_empty() {
             repeated.entry(name).or_default().push(text);
         }
@@ -7214,6 +7309,29 @@ async fn save_form(
     let posted_links = posted_link_values(&repeated);
     if !posted_links.is_empty() {
         raw.insert("_m2m".into(), Value::Object(posted_links));
+    }
+    let member_go = form.get("m2m_go").map(String::as_str);
+    let member_query = member_query_value(&form, member_go);
+    if member_query
+        .as_object()
+        .is_some_and(|query| !query.is_empty())
+    {
+        raw.insert("_m2m_query".into(), member_query);
+    }
+    if member_go.is_some() || form.get("save").is_some_and(|value| value == "members") {
+        return form_page(
+            state,
+            headers,
+            registry,
+            model_key,
+            id,
+            raw,
+            FormFeedback {
+                notice: "",
+                alert: "",
+            },
+        )
+        .await;
     }
     if let Err((field, code)) = normalize_temporal(model.columns(), &mut object, &form) {
         let text = validation_text(&locale, code);
@@ -7835,6 +7953,12 @@ async fn input_fields(
                 }
             }
             input["input"] = json!("text");
+            if let Some(shape) = shape_of(column) {
+                input["relation_shape"] = json!(match shape {
+                    RelationShape::OneToOne => "one_to_one",
+                    RelationShape::ForeignKey => "foreign_key",
+                });
+            }
             input["related"] = related_links(
                 state,
                 registry,
@@ -7930,13 +8054,22 @@ async fn relation_options(
         return (json!([]), false);
     };
     let scope = access_scope(target.as_ref(), user, false);
-    let Ok((rows, _, total)) = target
-        .page(&state.db, &[], None, label, false, &[], &[], 0, 100, &scope)
-        .await
+    let Ok(page) = lookup_page(
+        &state.db,
+        target.descriptor().table,
+        target.columns(),
+        label,
+        None,
+        1,
+        100,
+        &scope,
+    )
+    .await
     else {
         return (json!([]), false);
     };
-    let truncated = total > rows.len() as i64;
+    let rows = page.rows;
+    let truncated = page.has_more || page.total > rows.len() as i64;
     let mut options: Vec<Value> = rows
         .into_iter()
         .filter_map(|row| {
@@ -8198,7 +8331,15 @@ fn payload(
         {
             continue;
         }
-        if key == "m2m_present" || key.starts_with("m2m.") || key.starts_with("clear.") {
+        if key == "m2m_present"
+            || key == "m2m_shown_present"
+            || key == "m2m_go"
+            || key.starts_with("m2m.")
+            || key.starts_with("m2m_shown.")
+            || key.starts_with("m2m_q.")
+            || key.starts_with("m2m_page.")
+            || key.starts_with("clear.")
+        {
             continue;
         }
         if key.ends_with("__fold") {

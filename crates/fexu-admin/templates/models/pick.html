@@ -2,7 +2,8 @@
 {% block content %}
 <nav class="crumbs" aria-label="{{ i18n.breadcrumb }}"><a href="/admin">{{ i18n.dashboard }}</a> / <a href="{{ back }}">{{ i18n.pick_back }}</a></nav>
 <form class="filters" method="get" action="{{ action }}">
-<label>{{ i18n.search }} <input name="q" value="{{ query }}"></label>
+<label for="pick-query">{{ i18n.search }}</label>
+<input id="pick-query" name="q" type="search" value="{{ query }}">
 <button class="ghost" type="submit">{{ i18n.search }}</button>
 </form>
 <p class="meta">{{ i18n.total }}: {{ total }} · {{ i18n.page }} {{ page }}</p>

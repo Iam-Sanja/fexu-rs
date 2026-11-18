@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased — admin relation picker and paged membership
+
+- The native foreign-key picker and the record select call `lookup_page`, so search, page size and the visible total stay inside the caller's query scope. A one-to-one column is marked on the select.
+- Many-to-many checkboxes render one page of at most 100 rows. Search and paging redisplay the form without writing. Ids outside that page stay selected, and only ids that were shown can be cleared.
+- `query_scoped_ids` resolves membership visibility in batches of 100. Object-policy models still check each returned row.
+
 ## Unreleased — form widgets and validation
 
 - `#[derive(FexuForm)]` applies the model `field_contracts` during `from_submit`, `from_submit_in` and `from_submit_in_zone`. HTML and JSON therefore share `min_length`, `max_length` and `format`.

@@ -189,8 +189,8 @@ msgid "No records are available to select."
 msgstr "Keine auswählbaren Einträge."
 
 msgctxt "m2m_truncated"
-msgid "The list shows the first 100 visible records. Already selected visible records stay listed."
-msgstr "Die Liste zeigt die ersten 100 sichtbaren Einträge. Bereits ausgewählte sichtbare Einträge bleiben erhalten."
+msgid "This page lists at most 100 visible records. Selected records on other pages stay selected."
+msgstr "Diese Seite zeigt höchstens 100 sichtbare Einträge. Ausgewählte Einträge auf anderen Seiten bleiben ausgewählt."
 
 msgctxt "m2m_blocked"
 msgid "This account cannot read the related records."

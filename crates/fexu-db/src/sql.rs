@@ -530,6 +530,63 @@ pub async fn query_labels(
     Ok(found)
 }
 
+/// Returns ids that exist inside `scope`, in batches of 100. An empty label still counts.
+pub async fn query_scoped_ids(
+    db: &DatabaseConnection,
+    table: &str,
+    columns: &[ColumnSpec],
+    ids: &[Uuid],
+    scope: &QueryScope,
+) -> Result<Vec<Uuid>, FexuError> {
+    if !is_safe_ident(table) {
+        return Err(FexuError::Validation(format!(
+            "table {table} is not available"
+        )));
+    }
+    ensure_column(columns, "id")?;
+    let mut unique = Vec::new();
+    for id in ids {
+        if !unique.contains(id) {
+            unique.push(*id);
+        }
+    }
+    let mut found = Vec::new();
+    for chunk in unique.chunks(100) {
+        let mut query = Query::select();
+        query
+            .column(Alias::new("id"))
+            .from(Alias::new(table))
+            .limit(100);
+        query.and_where(Expr::col(Alias::new("id")).is_in(chunk.iter().copied()));
+        if let Some(condition) = scope_condition(columns, scope)? {
+            query.and_where(condition);
+        }
+        let rows = db
+            .query_all({
+                crate::query::note_statement();
+                statement(db, &query)?
+            })
+            .await
+            .map_err(FexuError::database)?;
+        for row in rows {
+            let id = row
+                .try_get::<Option<Uuid>>("", "id")
+                .or_else(|_| {
+                    row.try_get::<Option<String>>("", "id")
+                        .map(|value| value.and_then(|text| Uuid::parse_str(&text).ok()))
+                })
+                .map_err(FexuError::database)?
+                .filter(|id| chunk.contains(id));
+            if let Some(id) = id {
+                if !found.contains(&id) {
+                    found.push(id);
+                }
+            }
+        }
+    }
+    Ok(found)
+}
+
 #[allow(clippy::too_many_arguments)]
 pub async fn date_buckets(
     db: &DatabaseConnection,
