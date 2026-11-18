@@ -148,7 +148,7 @@ fn redirect_rejected() -> ViewError {
     ViewError::new(
         StatusCode::BAD_REQUEST,
         "view.redirect",
-        "Redirects müssen auf einen lokalen Pfad zeigen.",
+        "Redirects must point to a local path.",
     )
 }
 
