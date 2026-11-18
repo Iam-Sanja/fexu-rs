@@ -663,6 +663,7 @@ fn registry_projects_pin_the_release_without_a_framework_checkout() {
         "src/apps.rs",
         "fexu.toml",
         "templates/index.html",
+        "templates/partials/header.html",
         "templates/errors/404.html",
         "static/css/app.css",
         ".fexu/project.json",
@@ -670,6 +671,8 @@ fn registry_projects_pin_the_release_without_a_framework_checkout() {
         assert!(project.join(relative).is_file(), "{relative}");
         assert!(api.join(relative).is_file(), "{relative}");
     }
+    let base = std::fs::read_to_string(project.join("templates/base.html")).unwrap();
+    assert!(base.contains("{% include \"partials/header.html\" %}"));
     let before = std::fs::read(project.join("Cargo.toml")).unwrap();
     let database = format!(
         "sqlite://{}/integration.sqlite?mode=rwc",
