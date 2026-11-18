@@ -33,10 +33,11 @@ pub async fn show(State(state): State<AppState>, headers: HeaderMap) -> Response
     }
 }
 
-pub async fn thanks() -> Html<String> {
+pub async fn thanks(headers: HeaderMap) -> Html<String> {
+    let locale = contact_locale(&headers);
     Html(render_page(
-        "Kontakt",
-        &format!("<p role=\"status\">{}</p>", message("de", "form.thanks")),
+        if locale == "de" { "Kontakt" } else { "Contact" },
+        &format!("<p role=\"status\">{}</p>", message(locale, "form.thanks")),
     ))
 }
 
@@ -139,15 +140,17 @@ async fn page(
         }
         None => (None, None),
     };
+    let locale = contact_locale(headers);
     let form = render_fields(
         "/contact",
         csrf.as_deref(),
         values,
         errors,
-        &contact_widgets("de"),
-        "de",
+        &contact_widgets(locale),
+        locale,
     );
-    Ok((render_page("Kontakt", &form), cookie))
+    let title = if locale == "de" { "Kontakt" } else { "Contact" };
+    Ok((render_page(title, &form), cookie))
 }
 
 fn html_response(html: String, cookie: Option<String>) -> Response {
@@ -164,4 +167,15 @@ fn append_set_cookie(response: &mut Response, value: &str) {
             .headers_mut()
             .append(header::SET_COOKIE, header_value);
     }
+}
+
+/// Keep this example compatible with its original German default while
+/// honoring an explicit English browser preference.
+fn contact_locale(headers: &HeaderMap) -> &'static str {
+    headers
+        .get(header::ACCEPT_LANGUAGE)
+        .and_then(|value| value.to_str().ok())
+        .filter(|value| value.to_ascii_lowercase().starts_with("en"))
+        .map(|_| "en")
+        .unwrap_or("de")
 }
