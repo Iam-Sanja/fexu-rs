@@ -11,6 +11,8 @@ mod scaffold;
 mod text;
 
 #[cfg(test)]
+mod ci_postgres;
+#[cfg(test)]
 mod release_set;
 
 use clap::{Parser, Subcommand};
