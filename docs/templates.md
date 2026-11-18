@@ -65,4 +65,4 @@ Tera does not cache rendered pages. `Site::render` runs the template on every ca
 
 ## Limitations
 
-Panics do not automatically become the 500 page. `fexu dev` reloads templates at process start, not every time you save without restart. Changing a Rust file restarts the process and reloads the templates. `include` for partials is possible, but the generator does not yet create its own partial file. The basic template is the common layout.
+Panics do not automatically become the 500 page. `fexu dev` reloads templates at process start, not every time you save without restart. Changing a Rust file restarts the process and reloads the templates. `include` for partials is possible. `fexu new project` writes `templates/partials/header.html` and `base.html` includes it. The basic template is the common layout.
