@@ -266,14 +266,14 @@ pub fn render_plan(locale: &str, plan: &UpgradePlan, dry_run: bool) -> String {
     }
     if dry_run {
         text.push_str(if locale == "de" {
-            "\nPlanned file changes:\n"
+            "\nGeplante Dateiänderungen:\n"
         } else {
             "\nPlanned file changes:\n"
         });
     }
     if plan.actions.is_empty() {
         text.push_str(if locale == "de" {
-            "No file changes.\n"
+            "Keine Dateiänderung.\n"
         } else {
             "No file changes.\n"
         });
