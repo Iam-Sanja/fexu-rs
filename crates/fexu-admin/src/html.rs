@@ -3386,7 +3386,7 @@ async fn board_slices(
             registry.filters(),
         ) {
             Ok(filters) => {
-                applied.insert(model_key.clone(), filters);
+                applied.insert(model_key.clone(), filters.equals);
             }
             Err(_) => {
                 return Err(Box::new(
@@ -4468,6 +4468,7 @@ async fn model_list(
         }
     };
     let filter_refs: Vec<(&str, DbValue)> = filters
+        .equals
         .iter()
         .map(|(name, value)| (*name, value.clone()))
         .collect();
@@ -4521,6 +4522,8 @@ async fn model_list(
         }
     };
     let page_size = u64::from(registry.per_page_of(model.meta()).clamp(1, 100));
+    let mut list_bounds = navigation.bounds.clone();
+    list_bounds.extend(filters.bounds);
     let listed = model
         .page(
             &state.db,
@@ -4529,7 +4532,7 @@ async fn model_list(
             &sort,
             descending,
             &filter_refs,
-            &navigation.bounds,
+            &list_bounds,
             u64::from(page_number - 1) * page_size,
             page_size,
             &scope,
@@ -8766,6 +8769,8 @@ async fn filter_inputs(
             "kind": kind,
             "facet": facet,
             "value": value,
+            "from": "",
+            "to": "",
             "options": options,
             "yes": yes,
             "no": no
@@ -8796,6 +8801,23 @@ async fn filter_inputs(
                 ),
             ),
             crate::filters::FilterKind::Equals { .. } => ("text", json!([])),
+            crate::filters::FilterKind::DateRange { .. } => ("range", json!([])),
+        };
+        let from = if kind == "range" {
+            params
+                .get(&format!("filter.{}.from", filter.name))
+                .cloned()
+                .unwrap_or_default()
+        } else {
+            String::new()
+        };
+        let to = if kind == "range" {
+            params
+                .get(&format!("filter.{}.to", filter.name))
+                .cloned()
+                .unwrap_or_default()
+        } else {
+            String::new()
         };
         let facet = kind == "choice";
         let options = if facet {
@@ -8815,6 +8837,8 @@ async fn filter_inputs(
             "kind": kind,
             "facet": facet,
             "value": raw,
+            "from": from,
+            "to": to,
             "options": options,
             "yes": yes,
             "no": no
@@ -11456,8 +11480,8 @@ async fn stage_bulk(
                 (!query.is_empty()).then_some(query),
                 &sort,
                 descending,
-                &filters,
-                &[],
+                &filters.equals,
+                &filters.bounds,
                 u64::from(page_number - 1) * page_size,
                 page_size,
                 &access_scope(model.as_ref(), &user, true),
