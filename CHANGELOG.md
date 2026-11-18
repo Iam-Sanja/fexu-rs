@@ -5,6 +5,11 @@
 - `#[derive(FexuForm)]` accepts a standalone struct or `#[form(model = Type)]`. The struct fields are the allow-list. Two structs can bind different subsets of one model. `examples/board` publishes and revises `Note` that way and leaves `owner_id` to the caller.
 - Repeated keys stay `validation.duplicate` unless the name is passed to `parse_urlencoded_multi` or `parse_json_multi`. `Vec<String>` is the repeated field type. `FormContext` flags change `readonly_unless` and `required_when`. `push_form` records a form-level code.
 - Formset transactions, upload storage and wizards are unchanged. The form crate still does not authenticate `csrf_token`.
+- `from_submit` still requires a canonical UTC instant for a `DateTime` column. `from_submit_in_zone` converts civil time only when the caller passes a `ProjectTimeZone`, then stores `canonical_utc`.
+
+## Unreleased — timezone-aware form datetimes
+
+- `FEXU_TIMEZONE` unset keeps zone-free `datetime-local` values as UTC. An exact IANA name such as `Europe/Berlin` converts civil time to a UTC instant. Spring gaps and autumn overlaps return `validation.datetime_gap` and `validation.datetime_ambiguous`; the overlap needs `{field}__fold=earlier` or `later`. `NaiveDate` and job schedules are unchanged (#142).
 
 ## Unreleased — safe schema evolution
 

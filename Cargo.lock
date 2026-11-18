@@ -897,6 +897,7 @@ name = "fexu-core"
 version = "0.1.2"
 dependencies = [
  "chrono",
+ "chrono-tz",
  "rust_decimal",
  "serde",
  "serde_json",

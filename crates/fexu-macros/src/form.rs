@@ -157,6 +157,15 @@ fn model_form(
                 values: &::fexu::forms::FormValues,
                 context: &::fexu::forms::FormContext<'_>,
             ) -> ::core::result::Result<Self, ::fexu::forms::FormErrors> {
+                Self::from_submit_in_zone(mode, values, context, ::core::option::Option::None)
+            }
+
+            pub fn from_submit_in_zone(
+                mode: ::fexu::forms::SubmitMode,
+                values: &::fexu::forms::FormValues,
+                context: &::fexu::forms::FormContext<'_>,
+                zone: ::core::option::Option<::fexu::forms::Zone>,
+            ) -> ::core::result::Result<Self, ::fexu::forms::FormErrors> {
                 let allow: &[&str] = &[#(#columns),*];
                 let admin = <#model as ::fexu::core::FexuModel>::admin_meta()
                     .map(|meta| meta.fields)
@@ -178,6 +187,20 @@ fn model_form(
                     <#model as ::fexu::core::FexuModel>::numeric_bounds(),
                 );
                 let access = [#(#access),*];
+                let prepared;
+                let values = if let ::core::option::Option::Some(zone) = zone {
+                    match ::fexu::forms::prepare_model_datetimes(&fields, values, zone) {
+                        ::core::result::Result::Ok(next) => {
+                            prepared = next;
+                            &prepared
+                        }
+                        ::core::result::Result::Err(errors) => {
+                            return ::core::result::Result::Err(errors);
+                        }
+                    }
+                } else {
+                    values
+                };
                 let bound = ::fexu::forms::bind_in_context(
                     mode,
                     &fields,

@@ -34,7 +34,9 @@ A UTC `+00:00` offset is accepted on input and serialized as `Z`. Other offsets 
 | Time | `<input type="time">` |
 | DateTime | `<input type="datetime-local">` |
 
-`datetime-local` does not contain a zone. Fexu treats the value as UTC and says so in the Note. `2026-11-07T13:30` becomes `2026-11-07T13:30:00Z`. There is no conversion to the time zone of the browser and therefore no summer time gap.
+`datetime-local` does not contain a zone. With `FEXU_TIMEZONE` unset, Fexu treats the value as UTC and says so in the note. `2026-11-07T13:30` becomes `2026-11-07T13:30:00Z`. There is no conversion to the browser zone.
+
+Set `FEXU_TIMEZONE` to an exact IANA name, for example `Europe/Berlin`, to opt into civil time. The stored column remains `DateTime<Utc>`. `2027-02-08T09:00` in Berlin is `2027-02-08T08:00:00Z`, and `2026-07-08T09:00` is `2026-07-08T07:00:00Z`. A spring gap such as `2026-03-29T02:30` returns `validation.datetime_gap`. An autumn overlap such as `2026-10-25T02:30` returns `validation.datetime_ambiguous` until the companion field `{name}__fold` is `earlier` or `later`. A fold on a unique time returns `validation.datetime_fold`. A `Z` or numeric offset in that civil field returns `validation.datetime_offset` and is not read as UTC. `NaiveDate` is still a calendar day and is not shifted. Date hierarchy for a `DateTime` column stays on the UTC calendar. Job schedules keep their own zone parser and do not read `FEXU_TIMEZONE`.
 
 ## Model
 

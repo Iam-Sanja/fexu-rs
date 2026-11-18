@@ -14,6 +14,20 @@ enum ItemStatus {
 }
 
 #[derive(Debug, fexu::FexuModel, fexu::serde::Serialize, fexu::serde::Deserialize)]
+#[fexu(table = "derived_form_events")]
+struct TimedEvent {
+    #[field(primary_key, auto)]
+    id: Uuid,
+    starts: fexu::chrono::DateTime<fexu::chrono::Utc>,
+}
+
+#[derive(Debug, FexuForm)]
+#[form(model = TimedEvent)]
+struct TimedEventForm {
+    starts: String,
+}
+
+#[derive(Debug, fexu::FexuModel, fexu::serde::Serialize, fexu::serde::Deserialize)]
 #[fexu(table = "derived_form_items")]
 struct DerivedItem {
     #[field(primary_key, auto)]
@@ -219,5 +233,30 @@ fn standalone_form_and_context_rules_compile_and_reject_forged_fields() {
     .unwrap();
     assert_eq!(allowed.name, "Bolt");
     assert_eq!(allowed.price.as_deref(), Some("1.50"));
+    let mut civil = FormValues::default();
+    civil.insert("starts", "2027-02-08T09:00");
+    assert_eq!(
+        TimedEventForm::from_submit(SubmitMode::Create, &civil)
+            .unwrap_err()
+            .for_field("starts"),
+        Some("validation.datetime")
+    );
+    let berlin = fexu::forms::Zone::parse("Europe/Berlin").unwrap();
+    let zoned = TimedEventForm::from_submit_in_zone(
+        SubmitMode::Create,
+        &civil,
+        &fexu::forms::FormContext::create(),
+        Some(berlin),
+    )
+    .unwrap();
+    assert_eq!(zoned.starts, "2027-02-08T08:00:00Z");
+    let utc = TimedEventForm::from_submit_in_zone(
+        SubmitMode::Create,
+        &civil,
+        &fexu::forms::FormContext::create(),
+        Some(fexu::forms::Zone::utc()),
+    )
+    .unwrap();
+    assert_eq!(utc.starts, "2027-02-08T09:00:00Z");
     assert_eq!(allowed.status.as_deref(), Some("active"));
 }

@@ -120,6 +120,22 @@ pub fn validation_text(locale: &str, detail: &str) -> String {
             .unwrap_or(detail)
             .to_owned();
     }
+    if detail.contains("validation.datetime_gap")
+        || detail.contains("validation.datetime_ambiguous")
+        || detail.contains("validation.datetime_fold")
+        || detail.contains("validation.timezone")
+    {
+        let code = if detail.contains("validation.datetime_gap") {
+            "validation.datetime_gap"
+        } else if detail.contains("validation.datetime_ambiguous") {
+            "validation.datetime_ambiguous"
+        } else if detail.contains("validation.datetime_fold") {
+            "validation.datetime_fold"
+        } else {
+            "validation.timezone"
+        };
+        return fexu_core::message_text(locale, code).to_owned();
+    }
     if detail.contains("validation.datetime") {
         return catalog(locale)["validation_datetime"]
             .as_str()
