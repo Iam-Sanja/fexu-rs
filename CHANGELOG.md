@@ -1,5 +1,8 @@
 # Changelog
 
+> **Release separation (2026-11-18):** `v0.1.2` is published. All entries headed **Unreleased** describe source changes on `main` made after that release and are **not available in the crates.io `0.1.2` packages**. The proposed `0.2.0` and `0.3.0` targets are specified in [docs/roadmap.md](docs/roadmap.md); no release has yet been cut for these changes. Historical internal `v0.x` feature milestones are not Cargo releases.
+
+
 ## Unreleased — admin relation picker and paged membership
 
 - The native foreign-key picker and the record select call `lookup_page`, so search, page size and the visible total stay inside the caller's query scope. A one-to-one column is marked on the select.
