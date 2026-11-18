@@ -813,6 +813,7 @@ fn page(locale: &str, kind: &str, error: Option<&str>, csrf: Option<&str>) -> St
         "expired" => "Link ungültig",
         "forbidden" if english => "Request rejected",
         "forbidden" => "Anfrage abgelehnt",
+        "missing" if english => "Not found",
         "missing" => "Nicht gefunden",
         "request" if english => "Reset password",
         _ => "Passwort zurücksetzen",
@@ -850,6 +851,7 @@ fn page(locale: &str, kind: &str, error: Option<&str>, csrf: Option<&str>) -> St
                 "Das Formular konnte nicht bestätigt werden."
             })
         ),
+        _ if english => "<p>Authentication is not configured.</p>".to_owned(),
         _ => "<p>Authentifizierung ist nicht konfiguriert.</p>".to_owned(),
     };
     format!(
