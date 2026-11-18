@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased — example localization
+
+- Board HTML CRUD pages expose English and German titles and links in the request's form-validation locale. Desk stock rendering supports an explicit locale with English fallback.
+- Board HTTP acceptance and Desk component tests cover localization and escaping. This does not translate database content or arbitrary model labels.
+
 ## Unreleased — forms acceptance
 
 - A board note uses `permissions = "notes"`, so the HTML form and the JSON route share one permission check.
