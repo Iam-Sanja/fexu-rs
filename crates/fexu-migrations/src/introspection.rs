@@ -85,9 +85,7 @@ async fn table_info(
             format!("PRAGMA table_info(\"{table}\")"),
         ))
         .await
-        .map_err(|error| {
-            MigrationError::new(format!("PRAGMA table_info failed: {error}"))
-        })?;
+        .map_err(|error| MigrationError::new(format!("PRAGMA table_info failed: {error}")))?;
     let mut columns = Vec::new();
     for row in rows {
         let notnull = read_i64(&row, "notnull")?;
@@ -117,9 +115,7 @@ async fn index_info(
             format!("PRAGMA index_list(\"{table}\")"),
         ))
         .await
-        .map_err(|error| {
-            MigrationError::new(format!("PRAGMA index_list failed: {error}"))
-        })?;
+        .map_err(|error| MigrationError::new(format!("PRAGMA index_list failed: {error}")))?;
     let mut indexes = Vec::new();
     for row in rows {
         let name: String = row
@@ -138,9 +134,7 @@ async fn index_info(
                 format!("PRAGMA index_info(\"{name}\")"),
             ))
             .await
-            .map_err(|error| {
-                MigrationError::new(format!("PRAGMA index_info failed: {error}"))
-            })?;
+            .map_err(|error| MigrationError::new(format!("PRAGMA index_info failed: {error}")))?;
         let mut named = Vec::new();
         for column in columns {
             let column_name: Option<String> = column.try_get("", "name").unwrap_or(None);
@@ -170,9 +164,7 @@ async fn foreign_key_info(
             format!("PRAGMA foreign_key_list(\"{table}\")"),
         ))
         .await
-        .map_err(|error| {
-            MigrationError::new(format!("PRAGMA foreign_key_list failed: {error}"))
-        })?;
+        .map_err(|error| MigrationError::new(format!("PRAGMA foreign_key_list failed: {error}")))?;
     let mut grouped: Vec<(i64, i64, LiveForeignKey)> = Vec::new();
     for row in rows {
         let id = read_i64(&row, "id")?;
