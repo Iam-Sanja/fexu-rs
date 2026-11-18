@@ -319,7 +319,9 @@ fn load_csrf_secret() -> Result<[u8; 32], String> {
         let _ = std::fs::create_dir_all(parent);
     }
     if std::fs::write(&path, secret).is_err() {
-        tracing::warn!("The CSRF key file could not be written. The process key is valid only until restart.");
+        tracing::warn!(
+            "The CSRF key file could not be written. The process key is valid only until restart."
+        );
     }
     Ok(secret)
 }
