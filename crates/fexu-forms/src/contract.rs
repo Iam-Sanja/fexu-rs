@@ -60,6 +60,7 @@ pub struct DeclaredField {
     pub max_length: Option<usize>,
     pub choices: &'static [&'static str],
     pub check: Option<FieldCheck>,
+    pub class_name: &'static str,
 }
 
 impl DeclaredField {
@@ -79,6 +80,7 @@ impl DeclaredField {
             max_length: None,
             choices: &[],
             check: None,
+            class_name: "",
         }
     }
 }

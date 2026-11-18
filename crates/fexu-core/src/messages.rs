@@ -96,6 +96,7 @@ fn known_code(message: &str) -> Option<&'static str> {
         "validation.relation" => "validation.relation",
         "validation.relation_missing" => "validation.relation_missing",
         "validation.relation_denied" => "validation.relation_denied",
+        "validation.unique" => "validation.unique",
         "form.relation_page" => "form.relation_page",
         "validation.date" => "validation.date",
         "validation.time" => "validation.time",
@@ -115,6 +116,7 @@ fn known_code(message: &str) -> Option<&'static str> {
         _ if message.contains("must be <=") => "validation.max_value",
         _ if message.contains("must be an email") => "validation.email",
         _ if message.contains("lowercase slug") => "validation.slug",
+        "unique constraint violated" => "validation.unique",
         _ => return None,
     };
     Some(code)
@@ -320,8 +322,8 @@ mod bundled_catalog_tests {
     #[test]
     fn core_messages_are_complete_and_preserve_legacy_text() {
         let (english, german) = validation_catalogs();
-        assert_eq!(english.len(), 40);
-        assert_eq!(german.len(), 40);
+        assert_eq!(english.len(), 41);
+        assert_eq!(german.len(), 41);
         german.check_keys(english).unwrap();
         assert_eq!(
             message_text("en", "validation.required"),

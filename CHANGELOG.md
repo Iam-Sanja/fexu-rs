@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased — form widgets and validation
+
+- `#[derive(FexuForm)]` applies the model `field_contracts` during `from_submit`, `from_submit_in` and `from_submit_in_zone`. HTML and JSON therefore share `min_length`, `max_length` and `format`.
+- Widgets cover decimal, date, time, datetime-local, radio, checkbox groups, hidden and readonly controls. `Widget::Custom` has to escape request text; unescaped request text is not emitted.
+- `render_configured` keeps field order, prefixes, classes, overrides and escaped form or field templates. `render_form` keeps its previous signature. `constraint_errors` maps a known unique or foreign-key failure without copying the database message.
+
 ## Unreleased — relation fields and formsets
 
 - `bind_relation` accepts a foreign key, a one-to-one id, or many-to-many ids only from the caller's allowed set. Missing and out-of-scope ids stay distinct. Widgets render at most 100 options.

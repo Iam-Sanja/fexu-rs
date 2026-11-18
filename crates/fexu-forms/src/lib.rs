@@ -765,6 +765,7 @@ pub fn message(locale: &str, code: &str) -> &'static str {
 pub use fexu_core::{localize_detail, message_for, FieldOverride};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(unpredictable_function_pointer_comparisons)]
 pub enum Widget {
     Text,
     Email,
@@ -777,6 +778,16 @@ pub enum Widget {
     SelectMultiple,
     File,
     Relation,
+    Decimal,
+    Date,
+    Time,
+    DateTime,
+    Radio,
+    CheckboxGroup,
+    Hidden,
+    Readonly,
+    /// Caller-supplied markup. Request text is escaped by [`crate::WidgetInput`].
+    Custom(crate::WidgetRender),
 }
 
 /// Visible field. `required` is only a hint; validation remains server-side.
@@ -789,6 +800,7 @@ pub struct Field {
     pub help: &'static str,
     pub placeholder: &'static str,
     pub options: &'static [(&'static str, &'static str)],
+    pub class_name: &'static str,
 }
 
 impl Field {
@@ -806,7 +818,13 @@ impl Field {
             help: "",
             placeholder: "",
             options: &[],
+            class_name: "",
         }
+    }
+
+    pub const fn css_class(mut self, class_name: &'static str) -> Self {
+        self.class_name = class_name;
+        self
     }
 
     pub const fn help(mut self, help: &'static str) -> Self {
@@ -865,57 +883,10 @@ pub fn render_fields_with(
     locale: &str,
     overrides: &[FieldOverride],
 ) -> String {
-    let mut html = format!(
-        "<form method=\"post\" action=\"{}\"{}>",
-        escape(action),
-        if fields.iter().any(|field| field.widget == Widget::File) {
-            " enctype=\"multipart/form-data\""
-        } else {
-            ""
-        }
-    );
-    if let Some(token) = csrf {
-        html.push_str(&format!(
-            "<input type=\"hidden\" name=\"csrf_token\" value=\"{}\">",
-            escape(token)
-        ));
-    }
-    if let Some(code) = errors.for_field("") {
-        html.push_str(&format!(
-            "<p role=\"alert\">{}</p>",
-            escape(&message_for(locale, "", code, &[], overrides))
-        ));
-    }
-    for field in fields {
-        let name = escape(field.name);
-        html.push_str(&format!(
-            "<label for=\"{name}\">{label}",
-            label = escape(field.label)
-        ));
-        if field.required {
-            html.push_str("<span aria-hidden=\"true\">*</span>");
-        }
-        html.push_str("</label>");
-        let shown = values.get_all(field.name);
-        let shown: Vec<String> = shown.into_iter().map(str::to_owned).collect();
-        html.push_str(&control(field, &shown, errors));
-        if let Some(code) = errors.for_field(field.name) {
-            html.push_str(&format!(
-                "<p id=\"{name}-error\" role=\"alert\">{text}</p>",
-                text = escape(&message_for(locale, field.name, code, &[], overrides))
-            ));
-        }
-        if !field.help.is_empty() {
-            html.push_str(&format!(
-                "<p id=\"{name}-help\">{text}</p>",
-                text = escape(field.help)
-            ));
-        }
-    }
-    html.push_str("<button type=\"submit\">");
-    html.push_str(if locale == "de" { "Senden" } else { "Send" });
-    html.push_str("</button></form>");
-    html
+    let mut spec = render::FormRender::new(action, values, errors, fields, locale);
+    spec.csrf = csrf;
+    spec.overrides = overrides;
+    render::render_form(spec)
 }
 
 fn field_from_input(spec: &InputSpec) -> Field {
@@ -931,10 +902,15 @@ fn field_from_input(spec: &InputSpec) -> Field {
     Field::new(spec.name, spec.label, widget, spec.required)
 }
 
-fn control(field: &Field, values: &[String], errors: &FormErrors) -> String {
+pub(crate) fn render_control(
+    field: &Field,
+    input_name: &str,
+    values: &[String],
+    errors: &FormErrors,
+) -> String {
     let value = values.first().map(String::as_str).unwrap_or("");
-    let name = escape(field.name);
-    let described = described_by(field, errors);
+    let name = escape(input_name);
+    let described = described_by(input_name, field, errors);
     let invalid = if errors.for_field(field.name).is_some() {
         " aria-invalid=\"true\""
     } else {
@@ -946,15 +922,18 @@ fn control(field: &Field, values: &[String], errors: &FormErrors) -> String {
     } else {
         format!(" placeholder=\"{}\"", escape(field.placeholder))
     };
+    let class = class_attr(field.class_name);
     match field.widget {
         Widget::Textarea => format!(
-            "<textarea id=\"{name}\" name=\"{name}\"{required}{placeholder}{described}{invalid}>{value}</textarea>",
+            "<textarea id=\"{name}\" name=\"{name}\"{class}{required}{placeholder}{described}{invalid}>{value}</textarea>",
             value = escape(value)
         ),
         Widget::Select | Widget::Relation => {
-            select_control(&name, field, value, required, &described, invalid)
+            select_control(&name, field, value, &class, required, &described, invalid)
         }
-        Widget::SelectMultiple => select_multiple(&name, field, values, required, &described, invalid),
+        Widget::SelectMultiple => {
+            select_multiple(&name, field, values, &class, required, &described, invalid)
+        }
         Widget::Checkbox => {
             let checked = if matches!(value, "true" | "1" | "on") {
                 " checked"
@@ -962,14 +941,14 @@ fn control(field: &Field, values: &[String], errors: &FormErrors) -> String {
                 ""
             };
             format!(
-                "<input id=\"{name}\" name=\"{name}\" type=\"checkbox\" value=\"on\"{checked}{required}{described}{invalid}>"
+                "<input id=\"{name}\" name=\"{name}\" type=\"checkbox\" value=\"on\"{class}{checked}{required}{described}{invalid}>"
             )
         }
         Widget::Password => format!(
-            "<input id=\"{name}\" name=\"{name}\" type=\"password\" value=\"\"{required}{placeholder}{described}{invalid}>"
+            "<input id=\"{name}\" name=\"{name}\" type=\"password\" value=\"\"{class}{required}{placeholder}{described}{invalid}>"
         ),
         Widget::File => format!(
-            "<input id=\"{name}\" name=\"{name}\" type=\"file\"{required}{described}{invalid}>"
+            "<input id=\"{name}\" name=\"{name}\" type=\"file\"{class}{required}{described}{invalid}>"
         ),
         Widget::Email | Widget::Number | Widget::Url | Widget::Text => {
             let kind = match field.widget {
@@ -979,10 +958,29 @@ fn control(field: &Field, values: &[String], errors: &FormErrors) -> String {
                 _ => "text",
             };
             format!(
-                "<input id=\"{name}\" name=\"{name}\" type=\"{kind}\" value=\"{value}\"{required}{placeholder}{described}{invalid}>",
+                "<input id=\"{name}\" name=\"{name}\" type=\"{kind}\" value=\"{value}\"{class}{required}{placeholder}{described}{invalid}>",
                 value = escape(value)
             )
         }
+        Widget::Decimal
+        | Widget::Date
+        | Widget::Time
+        | Widget::DateTime
+        | Widget::Radio
+        | Widget::CheckboxGroup
+        | Widget::Hidden
+        | Widget::Readonly
+        | Widget::Custom(_) => {
+            widgets::render_special(field, input_name, values, required, &described, invalid, &class)
+        }
+    }
+}
+
+fn class_attr(class_name: &str) -> String {
+    if class_name.is_empty() {
+        String::new()
+    } else {
+        format!(" class=\"{}\"", escape(class_name))
     }
 }
 
@@ -990,6 +988,7 @@ fn select_control(
     name: &str,
     field: &Field,
     value: &str,
+    class: &str,
     required: &str,
     described: &str,
     invalid: &str,
@@ -999,8 +998,9 @@ fn select_control(
     } else {
         ""
     };
-    let mut html =
-        format!("<select id=\"{name}\" name=\"{name}\"{required}{described}{invalid}{relation}>");
+    let mut html = format!(
+        "<select id=\"{name}\" name=\"{name}\"{class}{required}{described}{invalid}{relation}>"
+    );
     if !field.required {
         html.push_str("<option value=\"\"></option>");
     }
@@ -1020,12 +1020,14 @@ fn select_multiple(
     name: &str,
     field: &Field,
     values: &[String],
+    class: &str,
     required: &str,
     described: &str,
     invalid: &str,
 ) -> String {
-    let mut html =
-        format!("<select id=\"{name}\" name=\"{name}\" multiple{required}{described}{invalid}>");
+    let mut html = format!(
+        "<select id=\"{name}\" name=\"{name}\"{class} multiple{required}{described}{invalid}>"
+    );
     for (option, label) in field.options {
         let selected = if values.iter().any(|value| value == option) {
             " selected"
@@ -1042,13 +1044,13 @@ fn select_multiple(
     html
 }
 
-fn described_by(field: &Field, errors: &FormErrors) -> String {
+fn described_by(id: &str, field: &Field, errors: &FormErrors) -> String {
     let mut ids = Vec::new();
     if errors.for_field(field.name).is_some() {
-        ids.push(format!("{}-error", field.name));
+        ids.push(format!("{id}-error"));
     }
     if !field.help.is_empty() {
-        ids.push(format!("{}-help", field.name));
+        ids.push(format!("{id}-help"));
     }
     if ids.is_empty() {
         String::new()
@@ -1281,10 +1283,23 @@ pub fn apply_contracts(fields: &mut [ModelField], contracts: &[fexu_core::FieldC
 }
 
 pub fn model_widget(field: &ModelField, label: &'static str) -> Field {
-    let widget = match field.kind {
-        ColumnKind::BigInt => Widget::Number,
-        ColumnKind::Boolean => Widget::Checkbox,
-        _ => Widget::Text,
+    let widget = if field.format == Some("email") {
+        Widget::Email
+    } else if field.format == Some("url") {
+        Widget::Url
+    } else {
+        match field.kind {
+            ColumnKind::BigInt => Widget::Number,
+            ColumnKind::Boolean => Widget::Checkbox,
+            ColumnKind::Date => Widget::Date,
+            ColumnKind::Time => Widget::Time,
+            ColumnKind::Decimal => Widget::Decimal,
+            ColumnKind::Text
+            | ColumnKind::Uuid
+            | ColumnKind::DateTime
+            | ColumnKind::Choice
+            | ColumnKind::Json => Widget::Text,
+        }
     };
     Field::new(field.name, label, widget, field.required)
 }
@@ -1789,6 +1804,9 @@ fn decode(value: &str) -> String {
 mod contract;
 mod formset;
 mod relations;
+mod render;
+mod validate;
+mod widgets;
 pub use contract::{
     bind_create, bind_declared, bind_in_context, bind_update, posted_csrf, render_presentation,
     CleanField, CleanValue, DeclaredField, FieldAccess, FieldCheck, FormContext, InputKind,
@@ -1802,15 +1820,23 @@ pub use relations::{
     bind_relation, relation_window, render_relation_widget, BoundRelation, RelationInput,
     RelationLink, RelationOption, RelationPresentation, RelationWidget, RELATION_PAGE_LIMIT,
 };
+pub use render::{
+    order_fields, render_form as render_configured, unprefix, FieldFragments, FieldTemplate,
+    FormFragments, FormRender, FormTemplate,
+};
+pub use validate::{
+    constraint_errors, constraint_errors_from_message, validation_order, ConstraintKind,
+};
+pub use widgets::{WidgetInput, WidgetRender};
 
 #[cfg(test)]
 mod tests {
     use super::{
         apply_bounds, apply_contracts, bind_formset, bind_model, bind_submission, escape,
-        inspect_upload, message, model_fields, plan_formset, render_fields, render_relation_select,
-        require_confirmation, required_choice, required_i64, required_postal, required_uuid,
-        store_upload, BoundValue, ContactForm, FexuForm, Field, FormErrors, FormValues, ModelField,
-        SubmitMode, UploadPolicy, Widget,
+        inspect_upload, message, model_fields, model_widget, plan_formset, render_fields,
+        render_relation_select, require_confirmation, required_choice, required_i64,
+        required_postal, required_uuid, store_upload, BoundValue, ContactForm, FexuForm, Field,
+        FormErrors, FormValues, ModelField, SubmitMode, UploadPolicy, Widget,
     };
     use fexu_core::{AdminFieldMeta, ColumnKind, ColumnSpec, NumericBound};
     use fexu_storage::Storage;
@@ -2188,6 +2214,54 @@ mod tests {
         let (_meta, bytes) = storage.read(owner, stored.id).await.unwrap();
         assert_eq!(bytes, png);
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn url_contract_matches_across_html_and_json() {
+        let mut fields = model_fields(
+            &[column("site", ColumnKind::Text, true, false)],
+            &[],
+            &["site"],
+        )
+        .unwrap();
+        apply_contracts(
+            &mut fields,
+            &[fexu_core::FieldContract {
+                column: "site",
+                in_create: true,
+                in_update: true,
+                create_required: false,
+                min_length: None,
+                max_length: Some(80),
+                format: Some("url"),
+                api_read: true,
+            }],
+        );
+        assert_eq!(model_widget(&fields[0], "Site").widget, Widget::Url);
+        let html = FormValues::parse_urlencoded("site=not-a-url").unwrap();
+        let json = FormValues::parse_json(r#"{"site":"not-a-url"}"#).unwrap();
+        assert_eq!(
+            bind_model(SubmitMode::Create, &fields, &html, &[])
+                .unwrap_err()
+                .for_field("site"),
+            Some("validation.url")
+        );
+        assert_eq!(
+            bind_model(SubmitMode::Create, &fields, &json, &[])
+                .unwrap_err()
+                .for_field("site"),
+            Some("validation.url")
+        );
+        let empty = FormValues::parse_urlencoded("site=").unwrap();
+        assert_eq!(
+            bind_model(SubmitMode::Create, &fields, &empty, &[]).unwrap()[0].value,
+            BoundValue::Null
+        );
+        let accepted = FormValues::parse_json(r#"{"site":"https://example.com"}"#).unwrap();
+        assert_eq!(
+            bind_model(SubmitMode::Create, &fields, &accepted, &[]).unwrap()[0].value,
+            BoundValue::Text("https://example.com".to_owned())
+        );
     }
 
     fn column(

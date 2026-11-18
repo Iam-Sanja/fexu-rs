@@ -68,6 +68,8 @@ struct FieldAttrs {
     help: Option<String>,
     placeholder: Option<String>,
     widget: Option<String>,
+    widget_fn: Option<Path>,
+    class_name: Option<String>,
     min_length: Option<u32>,
     max_length: Option<u32>,
     choices: Option<String>,
@@ -102,10 +104,8 @@ fn model_form(
         let label = field.attrs.label.clone().unwrap_or_else(|| column.clone());
         let help = field.attrs.help.clone().unwrap_or_default();
         let placeholder = field.attrs.placeholder.clone().unwrap_or_default();
-        let widget = match widget_tokens(field.attrs.widget.as_deref())? {
-            Some(kind) => quote! { ::core::option::Option::Some(#kind) },
-            None => quote! { ::core::option::Option::None },
-        };
+        let class_name = field.attrs.class_name.clone().unwrap_or_default();
+        let widget = widget_override(&field.ident, &field.attrs)?;
         let readonly_unless = opt_str(field.attrs.readonly_unless.as_deref());
         let required_when = opt_str(field.attrs.required_when.as_deref());
         if field.attrs.read_only {
@@ -131,6 +131,7 @@ fn model_form(
                 let mut widget = ::fexu::forms::model_widget(spec, #label);
                 widget.help = #help;
                 widget.placeholder = #placeholder;
+                widget.class_name = #class_name;
                 if let ::core::option::Option::Some(kind) = #widget {
                     widget.widget = kind;
                 }
@@ -186,6 +187,10 @@ fn model_form(
                     &mut fields,
                     <#model as ::fexu::core::FexuModel>::numeric_bounds(),
                 );
+                ::fexu::forms::apply_contracts(
+                    &mut fields,
+                    <#model as ::fexu::core::FexuModel>::field_contracts(),
+                );
                 let access = [#(#access),*];
                 let prepared;
                 let values = if let ::core::option::Option::Some(zone) = zone {
@@ -223,11 +228,19 @@ fn model_form(
                 let admin = <#model as ::fexu::core::FexuModel>::admin_meta()
                     .map(|meta| meta.fields)
                     .unwrap_or(&[]);
-                let fields = ::fexu::forms::model_fields(
+                let mut fields = ::fexu::forms::model_fields(
                     <#model as ::fexu::core::FexuModel>::columns(),
                     admin,
                     allow,
                 )?;
+                ::fexu::forms::apply_bounds(
+                    &mut fields,
+                    <#model as ::fexu::core::FexuModel>::numeric_bounds(),
+                );
+                ::fexu::forms::apply_contracts(
+                    &mut fields,
+                    <#model as ::fexu::core::FexuModel>::field_contracts(),
+                );
                 let mut rendered = ::std::vec::Vec::new();
                 #(#widgets)*
                 ::core::result::Result::Ok(rendered)
@@ -262,8 +275,8 @@ fn standalone_form(
         let label = field.attrs.label.clone().unwrap_or_else(|| column.clone());
         let help = field.attrs.help.clone().unwrap_or_default();
         let placeholder = field.attrs.placeholder.clone().unwrap_or_default();
-        let widget = widget_tokens(field.attrs.widget.as_deref())?
-            .unwrap_or_else(|| quote! { ::fexu::forms::Widget::Text });
+        let widget = standalone_widget(&field.ident, &field.attrs)?;
+        let class_name = field.attrs.class_name.clone().unwrap_or_default();
         let input_kind = input_kind_tokens(kind);
         let force_required = field.attrs.force_required;
         let read_only = field.attrs.read_only;
@@ -292,6 +305,7 @@ fn standalone_form(
                 max_length: #max_length,
                 choices: #choices,
                 check: #check,
+                class_name: #class_name,
             }
         });
         readers.push(read_clean_field(&field.ident, column, kind)?);
@@ -325,7 +339,8 @@ fn standalone_form(
                     rendered.push(
                         ::fexu::forms::Field::new(field.name, field.label, field.widget, required)
                             .help(field.help)
-                            .placeholder(field.placeholder),
+                            .placeholder(field.placeholder)
+                            .css_class(field.class_name),
                     );
                 }
                 rendered
@@ -390,6 +405,10 @@ fn field_attrs(attrs: &[syn::Attribute]) -> syn::Result<FieldAttrs> {
                 parsed.placeholder = Some(meta.value()?.parse::<LitStr>()?.value());
             } else if meta.path.is_ident("widget") {
                 parsed.widget = Some(meta.value()?.parse::<LitStr>()?.value());
+            } else if meta.path.is_ident("widget_fn") {
+                parsed.widget_fn = Some(meta.value()?.parse()?);
+            } else if meta.path.is_ident("class") {
+                parsed.class_name = Some(meta.value()?.parse::<LitStr>()?.value());
             } else if meta.path.is_ident("min_length") {
                 parsed.min_length = Some(meta.value()?.parse::<syn::LitInt>()?.base10_parse()?);
             } else if meta.path.is_ident("max_length") {
@@ -415,6 +434,36 @@ fn field_attrs(attrs: &[syn::Attribute]) -> syn::Result<FieldAttrs> {
     Ok(parsed)
 }
 
+fn widget_override(ident: &Ident, attrs: &FieldAttrs) -> syn::Result<TokenStream> {
+    if attrs.widget_fn.is_some() && attrs.widget.is_some() {
+        return Err(syn::Error::new_spanned(
+            ident,
+            "widget and widget_fn cannot both be set",
+        ));
+    }
+    if let Some(path) = &attrs.widget_fn {
+        return Ok(quote! { ::core::option::Option::Some(::fexu::forms::Widget::Custom(#path)) });
+    }
+    Ok(match widget_tokens(attrs.widget.as_deref())? {
+        Some(kind) => quote! { ::core::option::Option::Some(#kind) },
+        None => quote! { ::core::option::Option::None },
+    })
+}
+
+fn standalone_widget(ident: &Ident, attrs: &FieldAttrs) -> syn::Result<TokenStream> {
+    if attrs.widget_fn.is_some() && attrs.widget.is_some() {
+        return Err(syn::Error::new_spanned(
+            ident,
+            "widget and widget_fn cannot both be set",
+        ));
+    }
+    if let Some(path) = &attrs.widget_fn {
+        return Ok(quote! { ::fexu::forms::Widget::Custom(#path) });
+    }
+    Ok(widget_tokens(attrs.widget.as_deref())?
+        .unwrap_or_else(|| quote! { ::fexu::forms::Widget::Text }))
+}
+
 fn widget_tokens(name: Option<&str>) -> syn::Result<Option<TokenStream>> {
     let Some(name) = name else {
         return Ok(None);
@@ -431,6 +480,14 @@ fn widget_tokens(name: Option<&str>) -> syn::Result<Option<TokenStream>> {
         "select_multiple" => quote! { ::fexu::forms::Widget::SelectMultiple },
         "file" => quote! { ::fexu::forms::Widget::File },
         "relation" => quote! { ::fexu::forms::Widget::Relation },
+        "decimal" => quote! { ::fexu::forms::Widget::Decimal },
+        "date" => quote! { ::fexu::forms::Widget::Date },
+        "time" => quote! { ::fexu::forms::Widget::Time },
+        "datetime" => quote! { ::fexu::forms::Widget::DateTime },
+        "radio" => quote! { ::fexu::forms::Widget::Radio },
+        "checkbox_group" => quote! { ::fexu::forms::Widget::CheckboxGroup },
+        "hidden" => quote! { ::fexu::forms::Widget::Hidden },
+        "readonly" => quote! { ::fexu::forms::Widget::Readonly },
         _ => {
             return Err(syn::Error::new(
                 proc_macro2::Span::call_site(),

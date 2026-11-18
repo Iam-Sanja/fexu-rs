@@ -260,3 +260,95 @@ fn standalone_form_and_context_rules_compile_and_reject_forged_fields() {
     assert_eq!(utc.starts, "2027-02-08T09:00:00Z");
     assert_eq!(allowed.status.as_deref(), Some("active"));
 }
+
+#[derive(Debug, fexu::FexuModel, fexu::serde::Serialize, fexu::serde::Deserialize)]
+#[fexu(table = "derived_form_labels")]
+struct LimitedLabel {
+    #[field(primary_key, auto)]
+    id: Uuid,
+    #[field(required, min_length = 2, max_length = 3)]
+    code: String,
+    #[field(format = "email")]
+    email: String,
+    #[field(format = "slug", max_length = 80)]
+    site: Option<String>,
+}
+
+#[derive(Debug, FexuForm)]
+#[form(model = LimitedLabel)]
+struct LimitedLabelForm {
+    code: String,
+    email: String,
+    site: Option<String>,
+}
+
+#[test]
+fn derive_applies_model_contracts_for_html_and_json() {
+    let widgets = LimitedLabelForm::widgets().unwrap();
+    assert_eq!(widgets[0].widget, fexu::forms::Widget::Text);
+    assert_eq!(widgets[1].widget, fexu::forms::Widget::Email);
+    assert_eq!(widgets[2].widget, fexu::forms::Widget::Text);
+    let mut html = FormValues::default();
+    html.insert("code", "x");
+    html.insert("email", "ada@example.com");
+    assert_eq!(
+        LimitedLabelForm::from_form(&html)
+            .unwrap_err()
+            .for_field("code"),
+        Some("validation.min_length")
+    );
+    let json = FormValues::parse_json(r#"{"code":"too long","email":"ada@example.com"}"#).unwrap();
+    assert_eq!(
+        LimitedLabelForm::from_submit(SubmitMode::Create, &json)
+            .unwrap_err()
+            .for_field("code"),
+        Some("validation.max_length")
+    );
+    let mut bad_mail = FormValues::default();
+    bad_mail.insert("code", "ab");
+    bad_mail.insert("email", "not-an-email");
+    assert_eq!(
+        LimitedLabelForm::from_form(&bad_mail)
+            .unwrap_err()
+            .for_field("email"),
+        Some("validation.email")
+    );
+    let mut bad_url = FormValues::default();
+    bad_url.insert("code", "ab");
+    bad_url.insert("email", "ada@example.com");
+    bad_url.insert("site", "Not a slug");
+    assert_eq!(
+        LimitedLabelForm::from_form(&bad_url)
+            .unwrap_err()
+            .for_field("site"),
+        Some("validation.slug")
+    );
+    let mut empty_site = FormValues::default();
+    empty_site.insert("code", "ab");
+    empty_site.insert("email", "ada@example.com");
+    empty_site.insert("site", "   ");
+    let form = LimitedLabelForm::from_form(&empty_site).unwrap();
+    assert_eq!(form.code, "ab");
+    assert_eq!(form.email, "ada@example.com");
+    assert_eq!(form.site, None);
+    let mut missing = FormValues::default();
+    missing.insert("email", "ada@example.com");
+    assert_eq!(
+        LimitedLabelForm::from_form(&missing)
+            .unwrap_err()
+            .for_field("code"),
+        Some("validation.required")
+    );
+    let mut posted =
+        FormValues::parse_urlencoded("code=ab&email=ada@example.com&id=forged").unwrap();
+    assert_eq!(
+        LimitedLabelForm::from_form(&posted)
+            .unwrap_err()
+            .for_field("id"),
+        Some("validation.unknown_field")
+    );
+    posted.remove("id");
+    let saved = LimitedLabelForm::from_form(&posted).unwrap();
+    assert_eq!(saved.code, "ab");
+    assert_eq!(saved.email, "ada@example.com");
+}

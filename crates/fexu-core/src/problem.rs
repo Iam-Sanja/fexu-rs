@@ -44,6 +44,7 @@ fn classify(detail: &str) -> (&'static str, Option<String>, String) {
         "validation.timezone" => "validation.timezone",
         "validation.json" => "validation.json",
         "validation.datetime" => "validation.datetime",
+        "validation.unique" => "validation.unique",
         _ => legacy_code(message, field.is_some()),
     };
     (code, field, detail.to_owned())
