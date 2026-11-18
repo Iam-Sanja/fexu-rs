@@ -6220,6 +6220,7 @@ async fn pick_page(
         .await;
     }
     let scope = access_scope(target.as_ref(), &user, false);
+    let page_size = registry.per_page_of(target.meta()).clamp(1, 100);
     let listed = lookup_page(
         &state.db,
         target.descriptor().table,
@@ -6227,7 +6228,7 @@ async fn pick_page(
         label,
         (!query.is_empty()).then_some(query.as_str()),
         page_number,
-        100,
+        page_size,
         &scope,
     )
     .await;
