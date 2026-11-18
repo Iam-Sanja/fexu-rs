@@ -464,6 +464,17 @@ pub struct QueryPage<T> {
     pub has_more: bool,
 }
 
+/// Rows from one `limit` window, and whether another match exists past it.
+///
+/// [`Select::all`] returns only the rows. [`Select::window`] keeps that cap and
+/// says when the cap hid another row. It does not count the whole table.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RowWindow<T> {
+    pub rows: Vec<T>,
+    pub limit: u64,
+    pub truncated: bool,
+}
+
 /// One keyset page. `next` is `None` when the page is empty.
 /// Pass `next` back to [`Select::keyset`] to read the following page.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -755,6 +766,34 @@ impl<M> Select<M> {
         apply_orders(&mut query, &plan.orders);
         query.limit(plan.limit).offset(plan.offset);
         fetch_models(db, &query).await
+    }
+
+    /// One window of at most `limit` rows, plus whether a further row matches.
+    ///
+    /// The returned list is the same window as [`Select::all`]. `truncated` is
+    /// true when the query reads one extra row past that window. That probe row
+    /// is not returned, and the public page cap stays [`PAGE_LIMIT`].
+    pub async fn window<C>(&self, db: &C) -> Result<RowWindow<M>, FexuError>
+    where
+        M: FexuModel + DeserializeOwned,
+        C: ConnectionTrait,
+    {
+        let plan = self.plan(db.get_database_backend())?;
+        let mut query = select_body::<M>(plan.filter);
+        apply_orders(&mut query, &plan.orders);
+        query
+            .limit(plan.limit.saturating_add(1))
+            .offset(plan.offset);
+        let mut rows = fetch_models(db, &query).await?;
+        let truncated = rows.len() as u64 > plan.limit;
+        if truncated {
+            rows.truncate(usize::try_from(plan.limit).unwrap_or(rows.len()));
+        }
+        Ok(RowWindow {
+            rows,
+            limit: plan.limit,
+            truncated,
+        })
     }
 
     pub async fn count<C>(&self, db: &C) -> Result<i64, FexuError>
@@ -2866,6 +2905,43 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn window_reports_a_row_past_the_limit() {
+        let db = memory().await;
+        for number in 1_u128..=3 {
+            let name = format!("row-{number}");
+            insert(
+                &db,
+                NewItem {
+                    id: number,
+                    name: &name,
+                    stock: 1,
+                    active: true,
+                    price: i64::try_from(number).unwrap(),
+                    category: Some(50),
+                    owner: 7,
+                },
+            )
+            .await;
+        }
+        let open = Item::query()
+            .order_by("price_cents", Direction::Asc)
+            .limit(2)
+            .window(&db)
+            .await
+            .unwrap();
+        assert!(open.truncated);
+        assert_eq!(open.limit, 2);
+        assert_eq!(open.rows.len(), 2);
+        assert_eq!(open.rows[0].name, "row-1");
+        assert_eq!(open.rows[1].name, "row-2");
+        let exact = Item::query().limit(3).window(&db).await.unwrap();
+        assert!(!exact.truncated);
+        assert_eq!(exact.rows.len(), 3);
+        let silent = Item::query().limit(2).all(&db).await.unwrap();
+        assert_eq!(silent.len(), 2);
+    }
+
+    #[tokio::test]
     async fn pages_more_than_one_hundred_rows_without_gaps() {
         let db = memory().await;
         for number in 1_u128..=120 {
@@ -4872,6 +4948,25 @@ mod tests {
                 .await
                 .unwrap(),
             5
+        );
+        let too_many: Vec<i64> = (0..101).collect();
+        let rejected_in = Item::query()
+            .filter(col("stock").is_in(too_many.clone()))
+            .count(db)
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(rejected_in, FexuError::Validation(ref message) if message.contains("at most 100")),
+            "{rejected_in}"
+        );
+        let rejected_not = Item::query()
+            .filter(col("stock").is_not_in(too_many))
+            .count(db)
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(rejected_not, FexuError::Validation(ref message) if message.contains("at most 100")),
+            "{rejected_not}"
         );
     }
 
