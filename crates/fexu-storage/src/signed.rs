@@ -7,6 +7,27 @@ use uuid::Uuid;
 
 type MacSha256 = Hmac<Sha256>;
 
+/// Longest signed-download lifetime accepted by [`sign_download_for`], in seconds.
+pub const MAX_DOWNLOAD_TTL: i64 = 15 * 60;
+
+/// Signs a download that expires `ttl` seconds after `now`.
+///
+/// `ttl` must be between 1 and [`MAX_DOWNLOAD_TTL`]. The token is the same
+/// shape as [`sign_download`].
+pub fn sign_download_for(
+    key: &[u8],
+    owner: Uuid,
+    id: Uuid,
+    now: i64,
+    ttl: i64,
+) -> Result<String, StorageError> {
+    if !(1..=MAX_DOWNLOAD_TTL).contains(&ttl) {
+        return Err(StorageError::Failed);
+    }
+    let expires_at = now.checked_add(ttl).ok_or(StorageError::Failed)?;
+    sign_download(key, owner, id, expires_at)
+}
+
 pub fn sign_download(
     key: &[u8],
     owner: Uuid,
@@ -104,6 +125,17 @@ mod tests {
         let other = b"abcdef0123456789abcdef0123456789";
         assert!(open_download(other, &token, 1_699).is_err());
         assert!(sign_download(b"short", owner, id, 1_700).is_err());
+        let bounded = super::sign_download_for(key, owner, id, 1_000, 60).expect("ttl");
+        assert_eq!(
+            open_download(key, &bounded, 1_059).expect("open"),
+            (owner, id)
+        );
+        assert_eq!(
+            open_download(key, &bounded, 1_060),
+            Err(crate::StorageError::Expired)
+        );
+        assert!(super::sign_download_for(key, owner, id, 1_000, 0).is_err());
+        assert!(super::sign_download_for(key, owner, id, 1_000, 15 * 60 + 1).is_err());
     }
 
     fn hmac_sha256_hex(key: &[u8], data: &[u8]) -> String {

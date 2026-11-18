@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased — file and image field lifecycle
+
+- `lettre` 0.11.24 closes the SMTP advisories RUSTSEC-2026-0560 through RUSTSEC-2026-0565. The mail API is unchanged.
+
+- `prepare_media` validates a file or image field without writing. PNG bytes are inflated under a pixel limit. JPEG bytes stay a container check, and that result is not reported as a pixel decode. A staged file expires unless `commit` runs after the database transaction. `abort` deletes only the new ids, so a validation or database failure leaves the previous file in place.
+- Signed download lifetimes requested through `sign_download_for` are at most 15 minutes. S3 remains a checked configuration without a network client. Admin record images stay in the database and send `Content-Security-Policy: default-src 'none'`.
+
 ## Unreleased — custom forms and model forms
 
 - `#[derive(FexuForm)]` accepts a standalone struct or `#[form(model = Type)]`. The struct fields are the allow-list. Two structs can bind different subsets of one model. `examples/board` publishes and revises `Note` that way and leaves `owner_id` to the caller.

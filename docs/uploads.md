@@ -45,7 +45,11 @@ The HTTP test creates two users in SQLite, loads a text file, denies anonymous a
 
 ## Limitations
 
-There is no virus scanner, no image processing and no public upload URL. `read_multipart` accepts a quoted boundary, at most 16 parts and 1 MiB. Duplicate names are errors. `inspect_image` is a separate, optional container check; see [storage.md](storage.md).
+There is no virus scanner, no image processing and no public upload URL. `read_multipart` accepts a quoted boundary, at most 16 parts and 1 MiB. Duplicate names are errors. `inspect_image` is a separate, optional container check. `decode_png` inflates PNG pixels under a limit and is the check an image field uses. See [storage.md](storage.md).
+
+## Form integration
+
+Another forms change can call `fexu_storage::prepare_media` and pass the errors through `fexu_forms::media_field_errors`. The handler validates the other fields first. It stages the upload only when those fields are valid, then writes the `MediaRef` inside its own database transaction. A rollback calls `abort`. A commit calls `StagedMedia::commit` afterwards. The storage call is not part of the database transaction. `store_upload` and `inspect_upload` stay available for a single immediate file and do not implement replace, clear or readonly. Admin record images remain database blobs. Their private response sends `nosniff` and `Content-Security-Policy: default-src 'none'`.
 
 ## Extension
 
