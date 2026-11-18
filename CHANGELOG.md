@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased — relation fields and formsets
+
+- `bind_relation` accepts a foreign key, a one-to-one id, or many-to-many ids only from the caller's allowed set. Missing and out-of-scope ids stay distinct. Widgets render at most 100 options.
+- `bind_model_formset` and `bind_inline_formset` extend the existing formset names with delete, order, minimum size, and a server-owned parent id. `examples/board` saves a project and its tasks in one transaction.
+- Upload storage is unchanged.
+
 ## Unreleased — custom forms and model forms
 
 - `#[derive(FexuForm)]` accepts a standalone struct or `#[form(model = Type)]`. The struct fields are the allow-list. Two structs can bind different subsets of one model. `examples/board` publishes and revises `Note` that way and leaves `owner_id` to the caller.

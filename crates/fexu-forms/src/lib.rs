@@ -1747,7 +1747,7 @@ pub fn escape(value: &str) -> String {
     output
 }
 
-fn valid_field_name(name: &str) -> bool {
+pub(crate) fn valid_field_name(name: &str) -> bool {
     !name.is_empty()
         && name.len() <= 64
         && name
@@ -1785,10 +1785,20 @@ fn decode(value: &str) -> String {
 }
 
 mod contract;
+mod formset;
+mod relations;
 pub use contract::{
     bind_create, bind_declared, bind_in_context, bind_update, posted_csrf, render_presentation,
     CleanField, CleanValue, DeclaredField, FieldAccess, FieldCheck, FormContext, InputKind,
     Presentation,
+};
+pub use formset::{
+    bind_inline_formset, bind_model_formset, render_formset_management, InlineAction, InlineChange,
+    InlineFormset, ModelFormset,
+};
+pub use relations::{
+    bind_relation, relation_window, render_relation_widget, BoundRelation, RelationInput,
+    RelationLink, RelationOption, RelationPresentation, RelationWidget, RELATION_PAGE_LIMIT,
 };
 
 #[cfg(test)]

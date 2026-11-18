@@ -12,6 +12,7 @@ mod directory;
 mod drafts;
 mod files;
 mod filters;
+mod form_bridge;
 mod html;
 mod http;
 mod localization;
@@ -30,6 +31,7 @@ pub use audit::fail_next_insert;
 pub use compose::{groups as inline_form_groups, save as save_with_children, SaveResult};
 pub use configure::{CheckedModelAdmin, ConfigError, ManyLink, ModelAdmin};
 pub use filters::{AdminFilter, FilterKind, FilterOption};
+pub use form_bridge::{options_from_lookup, render_scoped_page};
 pub use registry::{AdminBranding, AdminRegistry};
 pub use relations::{
     bulk_targets, current_members, lookup_page, posted_members, replace_links, scoped_membership,
