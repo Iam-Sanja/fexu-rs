@@ -10,6 +10,9 @@ mod models;
 mod scaffold;
 mod text;
 
+#[cfg(test)]
+mod ci_postgres;
+
 use clap::{Parser, Subcommand};
 use fexu_migrations::{
     apply_directory, apply_packages, baseline_database, discover_project, inspect_framework,
