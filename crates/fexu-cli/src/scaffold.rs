@@ -33,6 +33,7 @@ pub fn new_project(
         "migrations",
         "tests",
         "templates/errors",
+        "templates/partials",
         "static/css",
         "static/js",
         "media",
@@ -87,7 +88,11 @@ pub fn new_project(
         "document.documentElement.dataset.fexuStatic = \"ready\";\n",
     )?;
     write(&destination.join("media/.gitkeep"), "")?;
-    write(&destination.join("templates/base.html"), "<!doctype html>\n<html lang=\"{{ locale }}\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>{{ app_name }}</title><link rel=\"stylesheet\" href=\"/static/css/app.css\"></head><body><header>{{ app_name }}</header><main>{% block content %}{% endblock %}</main></body></html>\n")?;
+    write(
+        &destination.join("templates/partials/header.html"),
+        "<header>{{ app_name }}</header>\n",
+    )?;
+    write(&destination.join("templates/base.html"), "<!doctype html>\n<html lang=\"{{ locale }}\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>{{ app_name }}</title><link rel=\"stylesheet\" href=\"/static/css/app.css\"></head><body>{% include \"partials/header.html\" %}<main>{% block content %}{% endblock %}</main></body></html>\n")?;
     write(&destination.join("templates/index.html"), "{% extends \"base.html\" %}{% block content %}<h1>{{ project_name }}</h1><p>Your Fexu project is running. Business apps are added explicitly.</p><p>Create an app with <code>fexu new app &lt;name&gt;</code>.</p>{% if admin %}<p><a href=\"/admin\">Admin</a></p>{% endif %}{% endblock %}\n")?;
     for status in [404, 500] {
         write(&destination.join(format!("templates/errors/{status}.html")), &format!("{{% extends \"base.html\" %}}{{% block content %}}<h1>{status}</h1>{{% endblock %}}\n"))?;

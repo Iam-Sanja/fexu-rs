@@ -31,6 +31,14 @@ pub enum FilterKind {
         column: &'static str,
         options: &'static [FilterOption],
     },
+    /// Inclusive `from` and `to` dates on a `Date` or `DateTime` column.
+    ///
+    /// The query keys are `filter.{name}.from` and `filter.{name}.to`. Either
+    /// edge may be omitted. A datetime column uses UTC midnight, matching the
+    /// date hierarchy, and the `to` date stays included through the next midnight.
+    DateRange {
+        column: &'static str,
+    },
 }
 
 #[derive(Clone, Debug)]
@@ -68,6 +76,17 @@ impl AdminFilter {
         }
     }
 
+    /// Inclusive date window. `column` must be `Date` or `DateTime`.
+    pub fn date_range(model_key: &'static str, name: &'static str, column: &'static str) -> Self {
+        Self {
+            model_key,
+            name,
+            label_de: name,
+            label_en: name,
+            kind: FilterKind::DateRange { column },
+        }
+    }
+
     pub fn labels(mut self, german: &'static str, english: &'static str) -> Self {
         self.label_de = german;
         self.label_en = english;
@@ -84,7 +103,9 @@ impl AdminFilter {
 
     pub(crate) fn column(&self) -> &'static str {
         match self.kind {
-            FilterKind::Equals { column } | FilterKind::Choice { column, .. } => column,
+            FilterKind::Equals { column }
+            | FilterKind::Choice { column, .. }
+            | FilterKind::DateRange { column } => column,
         }
     }
 
@@ -107,6 +128,9 @@ impl AdminFilter {
                 }
             }
             FilterKind::Equals { .. } => {}
+            FilterKind::DateRange { .. } => {
+                return Err("filter range uses from and to".into());
+            }
         }
         typed(column, value).map(|bound| (column.name, bound))
     }
@@ -157,7 +181,23 @@ pub(crate) fn check_filter(
                 ));
             }
         }
-        FilterKind::Equals { .. } => {}
+        FilterKind::Equals { .. } | FilterKind::DateRange { .. } => {}
+    }
+    if matches!(filter.kind, FilterKind::DateRange { .. }) {
+        if let Some(columns) = columns {
+            let Some(column) = columns.iter().find(|column| column.name == filter.column()) else {
+                return Err(ExtensionError::new(
+                    "extension.filter",
+                    "The filter column does not belong to the model.",
+                ));
+            };
+            if !matches!(column.kind, ColumnKind::Date | ColumnKind::DateTime) {
+                return Err(ExtensionError::new(
+                    "extension.filter",
+                    "A date range filter needs a date or datetime column.",
+                ));
+            }
+        }
     }
     if let (Some(meta), Some(columns)) = (meta, columns) {
         if meta.fields.iter().any(|field| field.name == filter.name) {
@@ -241,4 +281,105 @@ fn choice_filter(column: &ColumnSpec, value: &str) -> Result<DbValue, String> {
         return Err(format!("filter {} is not a known choice", column.name));
     }
     Ok(DbValue::from(value.to_owned()))
+}
+
+/// Inclusive date bounds. `to` becomes an exclusive upper bound on the next day.
+pub(crate) fn date_range_bounds(
+    column: &ColumnSpec,
+    from: Option<&str>,
+    to: Option<&str>,
+) -> Result<Vec<(&'static str, bool, DbValue)>, String> {
+    if !matches!(column.kind, ColumnKind::Date | ColumnKind::DateTime) {
+        return Err(format!("filter {} must be a date", column.name));
+    }
+    let start = match from {
+        Some(value) => Some(parse_range_date(column, value)?),
+        None => None,
+    };
+    let end = match to {
+        Some(value) => Some(parse_range_date(column, value)?),
+        None => None,
+    };
+    if let (Some(start), Some(end)) = (start, end) {
+        if start > end {
+            return Err(format!("filter {} range is reversed", column.name));
+        }
+    }
+    let mut bounds = Vec::new();
+    if let Some(start) = start {
+        bounds.push((column.name, true, range_value(column, start)?));
+    }
+    if let Some(end) = end {
+        let next = end
+            .succ_opt()
+            .ok_or_else(|| format!("filter {} must be a date", column.name))?;
+        bounds.push((column.name, false, range_value(column, next)?));
+    }
+    Ok(bounds)
+}
+
+fn parse_range_date(column: &ColumnSpec, value: &str) -> Result<chrono::NaiveDate, String> {
+    fexu_core::parse_date(value).map_err(|_| format!("filter {} must be a date", column.name))
+}
+
+fn range_value(column: &ColumnSpec, date: chrono::NaiveDate) -> Result<DbValue, String> {
+    match column.kind {
+        ColumnKind::Date => Ok(DbValue::from(date)),
+        ColumnKind::DateTime => {
+            let instant = date
+                .and_hms_opt(0, 0, 0)
+                .ok_or_else(|| format!("filter {} must be a date", column.name))?
+                .and_utc();
+            Ok(DbValue::from(instant))
+        }
+        _ => Err(format!("filter {} must be a date", column.name)),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn date_column() -> ColumnSpec {
+        ColumnSpec {
+            name: "due",
+            kind: ColumnKind::Date,
+            nullable: true,
+            primary_key: false,
+            default_bool: None,
+            unique: false,
+            indexed: false,
+            foreign_table: None,
+            foreign_column: None,
+            on_delete: None,
+            precision: 0,
+            scale: 0,
+            choices: &[],
+        }
+    }
+
+    #[test]
+    fn date_range_includes_both_ends() {
+        let column = date_column();
+        let bounds = date_range_bounds(&column, Some("2026-11-01"), Some("2026-11-03")).unwrap();
+        assert_eq!(bounds.len(), 2);
+        assert_eq!(bounds[0].0, "due");
+        assert!(bounds[0].1);
+        assert_eq!(
+            bounds[0].2,
+            DbValue::from(fexu_core::parse_date("2026-11-01").unwrap())
+        );
+        assert!(!bounds[1].1);
+        assert_eq!(
+            bounds[1].2,
+            DbValue::from(fexu_core::parse_date("2026-11-04").unwrap())
+        );
+    }
+
+    #[test]
+    fn reversed_date_range_is_rejected() {
+        let error =
+            date_range_bounds(&date_column(), Some("2026-11-03"), Some("2026-11-01")).unwrap_err();
+        assert!(error.contains("reversed"));
+    }
 }
