@@ -4900,6 +4900,63 @@ mod tests {
             0
         );
 
+        // An empty membership predicate must remain a constant under nested
+        // boolean expressions, while the row scope stays outside that expression.
+        let scoped_nested = Item::query()
+            .filter(any_of([
+                all_of([
+                    not(col("category_id").is_in(Vec::<Uuid>::new())),
+                    col("name").eq("gamma"),
+                ]),
+                col("name").eq("alpha"),
+            ]))
+            .scope(QueryScope::Equals {
+                column: "owner_id",
+                value: ScopeValue::Uuid(Uuid::from_u128(8)),
+            })
+            .all(db)
+            .await
+            .unwrap();
+        assert_eq!(names(&scoped_nested), vec!["gamma"]);
+
+        let scoped_negation = Item::query()
+            .filter(not(any_of([
+                col("name").is_in(Vec::<String>::new()),
+                col("name").eq("gamma"),
+            ])))
+            .scope(QueryScope::Equals {
+                column: "owner_id",
+                value: ScopeValue::Uuid(Uuid::from_u128(8)),
+            })
+            .all(db)
+            .await
+            .unwrap();
+        assert_eq!(names(&scoped_negation), vec!["hidden"]);
+
+        // The constant false/true branches do not inherit SQL NULL's
+        // three-valued comparison behavior.
+        assert_eq!(
+            names(
+                &Item::query()
+                    .filter(any_of([
+                        col("category_id").is_in(Vec::<Uuid>::new()),
+                        col("category_id").is_null(),
+                    ]))
+                    .all(db)
+                    .await
+                    .unwrap()
+            ),
+            vec!["gamma"]
+        );
+        assert_eq!(
+            Item::query()
+                .filter(col("stock").is_not_in([0_i64]))
+                .count(db)
+                .await
+                .unwrap(),
+            4
+        );
+
         let owned = Item::query()
             .filter(col("name").is_not_in(Vec::<String>::new()))
             .scope(QueryScope::Equals {
@@ -4948,6 +5005,14 @@ mod tests {
                 .await
                 .unwrap(),
             5
+        );
+        assert_eq!(
+            Item::query()
+                .filter(col("stock").is_not_in(0_i64..100))
+                .count(db)
+                .await
+                .unwrap(),
+            0
         );
         let too_many: Vec<i64> = (0..101).collect();
         let rejected_in = Item::query()
