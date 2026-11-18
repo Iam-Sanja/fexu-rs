@@ -201,8 +201,10 @@ pub fn load_migration_text(id: &str, text: &str) -> Result<MigrationFile, Migrat
     })?;
     if file.format_version != crate::snapshot::FORMAT_VERSION {
         return Err(MigrationError::new(format!(
-            "Migration {} hat die unbekannte Formatversion {}.",
-            file.id, file.format_version
+            "Migration {} uses unknown format version {}. Only {} is supported.",
+            file.id,
+            file.format_version,
+            crate::snapshot::FORMAT_VERSION
         )));
     }
     if id != file.id {
@@ -649,7 +651,7 @@ pub fn migration_number(id: &str) -> Option<u32> {
 
 #[cfg(test)]
 mod tests {
-    use super::{inspect_directory, save_migration, seal};
+    use super::{inspect_directory, load_migration_text, save_migration, seal};
     use crate::diff::MigrationPlan;
     use crate::snapshot::SchemaSnapshot;
 
@@ -683,6 +685,41 @@ mod tests {
             file.checksum,
             "ab5905659a9ca344716f29595fe87efa489aa82831e954e8cc3a20fc0b04a4de"
         );
+    }
+
+    #[test]
+    fn older_snapshot_file_without_later_fields_loads() {
+        let legacy = r#"{"format_version":1,"tables":[{"name":"products","columns":[{"name":"id","type":"uuid","primary_key":true,"nullable":false},{"name":"name","type":"string","primary_key":false,"nullable":false}]}]}"#;
+        let snapshot = SchemaSnapshot::from_json(legacy).unwrap();
+        let plan = MigrationPlan {
+            operations: Vec::new(),
+            risks: Vec::new(),
+            refusal: None,
+        };
+        let file = seal(
+            "0001_legacy".into(),
+            "legacy".into(),
+            snapshot.clone(),
+            snapshot,
+            &plan,
+        )
+        .unwrap();
+        let text = serde_json::to_string(&file).unwrap();
+        assert!(!text.contains("depends_on"));
+        assert!(!text.contains("foreign_keys"));
+        assert!(!text.contains("external_tables"));
+        let loaded = load_migration_text("0001_legacy", &text).unwrap();
+        assert!(loaded.operations.is_empty());
+        assert_eq!(loaded.to_snapshot.tables[0].name, "products");
+    }
+
+    #[test]
+    fn unknown_migration_format_names_the_file() {
+        let text = r#"{"format_version":99,"id":"0001_old","name":"old","from_snapshot":{"format_version":1,"tables":[]},"to_snapshot":{"format_version":1,"tables":[]},"operations":[],"risks":[],"checksum":"unused"}"#;
+        let error = load_migration_text("0001_old", text).unwrap_err();
+        assert!(error.0.contains("0001_old"), "{error:?}");
+        assert!(error.0.contains("unknown format version"), "{error:?}");
+        assert!(error.0.contains("99"), "{error:?}");
     }
 
     #[test]

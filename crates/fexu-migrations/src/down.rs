@@ -105,7 +105,29 @@ pub fn simulated_target(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::diff::{plan_change, plan_change_with_backfills, BackfillLiteral, ColumnBackfill};
+
+    #[test]
+    fn older_drop_foreign_key_without_previous_does_not_invent_a_restore() {
+        let operation = MigrationOperation::DropForeignKey {
+            table: "orders".to_owned(),
+            name: "fk_orders_customer".to_owned(),
+            previous: None,
+        };
+        let json = serde_json::to_string(&operation).unwrap();
+        assert!(!json.contains("previous"));
+        let parsed: MigrationOperation = serde_json::from_str(&json).unwrap();
+        let error = invert_operations(std::slice::from_ref(&parsed)).unwrap_err();
+        assert!(error
+            .0
+            .contains("drop_foreign_key orders.fk_orders_customer"));
+        assert!(error.0.contains("cannot be reversed"));
+        assert!(error.0.contains("No tables or rows were changed"));
+    }
+
+    use crate::diff::{
+        plan_change, plan_change_with_backfills, BackfillLiteral, ColumnBackfill,
+        MigrationOperation,
+    };
     use crate::snapshot::{
         ColumnSnapshot, ForeignKeySnapshot, LogicalType, OnDelete, SchemaSnapshot, TableSnapshot,
         FORMAT_VERSION,
