@@ -6,6 +6,10 @@
 - A posted name that is not an editable field stays in the form summary with its localized error.
 - An HTML form keeps a repository `validation.url` error instead of rewriting it.
 
+## Unreleased — admin relation acceptance
+
+- `examples/admin-browser` seeds a loopback staff account, scoped shelves, a unique desk, paged tags and a project inline for `tests/browser/admin-relations.spec.js`. The password comes from `FEXU_BROWSER_ADMIN_PASSWORD`. The counts 0, 1, 100 and 1000 stay on the existing SQLite and PostgreSQL lookup tests.
+
 ## Unreleased — admin relation picker and paged membership
 
 - The native foreign-key picker and the record select call `lookup_page`, so search, page size and the visible total stay inside the caller's query scope. A one-to-one column is marked on the select.
