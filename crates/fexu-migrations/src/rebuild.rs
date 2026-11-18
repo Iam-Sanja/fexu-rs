@@ -421,7 +421,7 @@ async fn reconstruct_sqlite(
             "PRAGMA integrity_check",
         ))
         .await
-        .map_err(|error| MigrationError::new(format!("integrity_check fehlgeschlagen: {error}")))?
+        .map_err(|error| MigrationError::new(format!("integrity_check failed: {error}")))?
         .ok_or_else(|| MigrationError::new("integrity_check lieferte keine Zeile."))?;
     let status: String = integrity
         .try_get("", "integrity_check")
@@ -438,7 +438,7 @@ async fn reconstruct_sqlite(
         ))
         .await
         .map_err(|error| {
-            MigrationError::new(format!("foreign_key_check fehlgeschlagen: {error}"))
+            MigrationError::new(format!("foreign_key_check failed: {error}"))
         })?;
     if !violations.is_empty() {
         return Err(MigrationError::new(
@@ -797,7 +797,7 @@ async fn validate_changed_column(
         .await
         .map_err(|error| {
             MigrationError::new(format!(
-                "Lesen von `{table}.{}` fehlgeschlagen: {error}",
+                "Reading `{table}.{}` failed: {error}",
                 from.name
             ))
         })?;
@@ -1027,7 +1027,7 @@ async fn execute(
 ) -> Result<(), MigrationError> {
     db.execute(Statement::from_string(backend, sql))
         .await
-        .map_err(|error| MigrationError::new(format!("SQL fehlgeschlagen: {error}")))?;
+        .map_err(|error| MigrationError::new(format!("SQL failed: {error}")))?;
     Ok(())
 }
 
