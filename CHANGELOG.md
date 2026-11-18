@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased — form widgets and validation
+
+- `#[derive(FexuForm)]` applies the model `field_contracts` during `from_submit`, `from_submit_in` and `from_submit_in_zone`. HTML and JSON therefore share `min_length`, `max_length` and `format`.
+- Widgets cover decimal, date, time, datetime-local, radio, checkbox groups, hidden and readonly controls. `Widget::Custom` has to escape request text; unescaped request text is not emitted.
+- `render_configured` keeps field order, prefixes, classes, overrides and escaped form or field templates. `render_form` keeps its previous signature. `constraint_errors` maps a known unique or foreign-key failure without copying the database message.
+
 ## Unreleased — form media fields and admin image adapter
 
 - `MediaField`, `bind_media`, `read_media_parts`, `render_media_field` and `finish_media` let an application form require, replace, clear or keep a file without writing it before validation. `finish_media` stages, runs the database future, then aborts or commits storage. Those two steps are not one transaction.

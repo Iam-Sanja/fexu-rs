@@ -20,6 +20,56 @@ pub struct NoteReviseForm {
     pub title: String,
 }
 
+pub fn tone_widget(input: fexu::forms::WidgetInput<'_>) -> String {
+    format!(
+        "<input id=\"{name}\" name=\"{name}\" type=\"text\" class=\"{class}\" data-fexu-widget=\"tone\" value=\"{value}\">",
+        name = input.escaped_name(),
+        class = input.escaped_class(),
+        value = input.escaped_value(),
+    )
+}
+
+pub fn note_form_template(parts: fexu::forms::FormFragments<'_>) -> String {
+    format!(
+        "<section class=\"note-form\">{start}{summary}{controls}{submit}{end}</section>",
+        start = parts.start,
+        summary = parts.summary,
+        controls = parts.controls,
+        submit = parts.submit,
+        end = parts.end,
+    )
+}
+
+fn tone_is_word(value: &str) -> Result<(), &'static str> {
+    if !value.is_empty() && value.chars().all(|char| char.is_ascii_alphabetic()) {
+        Ok(())
+    } else {
+        Err("validation.invalid_type")
+    }
+}
+
+fn filter_rejects_none(form: &NoteFilterForm) -> Result<(), FormErrors> {
+    if form.tone.eq_ignore_ascii_case("none") {
+        let mut errors = FormErrors::default();
+        errors.push_form("validation.mismatch");
+        return Err(errors);
+    }
+    Ok(())
+}
+
+#[derive(Debug, fexu::FexuForm)]
+#[form(cross = filter_rejects_none)]
+pub struct NoteFilterForm {
+    #[form(
+        label = "Tone",
+        widget_fn = tone_widget,
+        check = tone_is_word,
+        class = "tone",
+        placeholder = "calm"
+    )]
+    pub tone: String,
+}
+
 fn search_needs_a_term(form: &NoteSearchForm) -> Result<(), FormErrors> {
     if form.title.is_none() && form.tags.is_empty() {
         let mut errors = FormErrors::default();

@@ -23,7 +23,10 @@ use fexu::views::{
 
 mod forms;
 mod project;
-pub use forms::{NotePublishForm, NoteReviseForm, NoteSearchForm, ProjectForm, TaskLineForm};
+pub use forms::{
+    note_form_template, tone_widget, NoteFilterForm, NotePublishForm, NoteReviseForm,
+    NoteSearchForm, ProjectForm, TaskLineForm,
+};
 pub use project::{
     create_tables, save_project_with_tasks, Member, MemberCreate, Project, Task, TaskCreate,
 };

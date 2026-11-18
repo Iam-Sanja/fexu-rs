@@ -164,3 +164,7 @@ msgctxt "form.relation_page"
 msgid "The relation page is too large to render."
 msgstr "Die Beziehungsseite ist zu groß für die Ausgabe."
 
+msgctxt "validation.unique"
+msgid "This value is already used."
+msgstr "Dieser Wert wird bereits verwendet."
+
