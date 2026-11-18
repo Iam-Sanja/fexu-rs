@@ -6,7 +6,7 @@ use axum::http::{header, HeaderMap, HeaderValue, Method, StatusCode};
 use axum::response::{Html, IntoResponse, Response};
 use fexu::auth::AppState;
 use fexu::forms::{
-    contact_widgets, message, render_fields, render_page, ContactForm, FexuForm, FormErrors,
+    contact_widgets, message, render_fields, render_page_in, ContactForm, FexuForm, FormErrors,
     FormValues,
 };
 use fexu::views::{fail, redirect_to};
@@ -35,7 +35,8 @@ pub async fn show(State(state): State<AppState>, headers: HeaderMap) -> Response
 
 pub async fn thanks(headers: HeaderMap) -> Html<String> {
     let locale = contact_locale(&headers);
-    Html(render_page(
+    Html(render_page_in(
+        locale,
         if locale == "de" { "Kontakt" } else { "Contact" },
         &format!("<p role=\"status\">{}</p>", message(locale, "form.thanks")),
     ))
@@ -150,7 +151,7 @@ async fn page(
         locale,
     );
     let title = if locale == "de" { "Kontakt" } else { "Contact" };
-    Ok((render_page(title, &form), cookie))
+    Ok((render_page_in(locale, title, &form), cookie))
 }
 
 fn html_response(html: String, cookie: Option<String>) -> Response {
