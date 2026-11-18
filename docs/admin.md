@@ -77,7 +77,7 @@ Admin model and directory requests require a valid session and `is_staff = true`
 
 ## Tests
 
-`examples/myshop/tests/admin_http.rs` covers the JSON API. `examples/myshop/tests/admin_html.rs` covers login, lists, search, filters, sorting, pagination, CRUD forms, user management, confirmation, relation labels, CSRF, HTML escaping, many-to-many selection, and keyboard-related form markup. `crates/fexu-admin/src/relations.rs` covers 0, 1, 100 and 1000 lookup rows on SQLite and, when `DATABASE_URL` points at an approved test database, on PostgreSQL. `examples/admin-browser` serves the authenticated Playwright flows in `tests/browser/admin-relations.spec.js`: foreign key, one-to-one, many-to-many, picker pages, a scoped shelf, inline edits, and a confirmed bulk action.
+`examples/myshop/tests/admin_http.rs` covers the JSON API. `examples/myshop/tests/admin_html.rs` covers login, lists, search, filters, sorting, pagination, CRUD forms, user management, confirmation, relation labels, CSRF, HTML escaping, many-to-many selection, and keyboard-related form markup. `crates/fexu-admin/src/relations.rs` covers 0, 1, 100 and 1000 lookup rows on SQLite and, when `DATABASE_URL` points at an approved test database, on PostgreSQL. `examples/admin-browser` reads `FEXU_BROWSER_ADMIN_PASSWORD` and serves the authenticated Playwright flows in `tests/browser/admin-relations.spec.js`: foreign key, one-to-one, many-to-many, picker pages, a scoped shelf, inline edits, and a confirmed bulk action.
 
 ## Limitations
 

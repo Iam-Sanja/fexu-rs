@@ -247,6 +247,7 @@ jobs:
           FEXU_ADMIN_BROWSER_BASE_URL: http://127.0.0.1:4174
         run: |
           mkdir -p /tmp/fexu-browser
+          export FEXU_BROWSER_ADMIN_PASSWORD="$(openssl rand -hex 16)"
           DATABASE_URL="sqlite:///tmp/fexu-browser/admin.sqlite3?mode=rwc" BIND_ADDRESS=127.0.0.1:4174 cargo run -p admin-browser --bin admin-browser --manifest-path "$GITHUB_WORKSPACE/Cargo.toml" >/tmp/fexu-browser/admin.log 2>&1 &
           echo $! > /tmp/fexu-browser/admin.pid
           DATABASE_URL="sqlite:///tmp/fexu-browser/browser.sqlite3?mode=rwc" BIND_ADDRESS=127.0.0.1:4173 cargo run -p myshop --bin myshop --manifest-path "$GITHUB_WORKSPACE/Cargo.toml" >/tmp/fexu-browser/server.log 2>&1 &

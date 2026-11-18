@@ -14,7 +14,15 @@ use fexu::App;
 const STAFF_EMAIL: &str = "staff@example.test";
 const READER_EMAIL: &str = "reader@example.test";
 const OTHER_EMAIL: &str = "other@example.test";
-const PASSWORD: &str = "browser-admin-pass";
+
+fn browser_password() -> String {
+    let password = std::env::var("FEXU_BROWSER_ADMIN_PASSWORD")
+        .unwrap_or_else(|_| panic!("FEXU_BROWSER_ADMIN_PASSWORD is required"));
+    if password.len() < 12 {
+        panic!("FEXU_BROWSER_ADMIN_PASSWORD is too short");
+    }
+    password
+}
 
 #[derive(FexuModel, fexu::serde::Serialize, fexu::serde::Deserialize)]
 #[fexu(
@@ -167,9 +175,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut auth_config = fexu::auth::AuthConfig::from_env();
     auth_config.apply_bound_address(&address);
     let auth = AuthService::new(db.clone(), auth_config);
-    let staff = auth.create_user(STAFF_EMAIL, PASSWORD, true, false).await?;
-    let other = auth.create_user(OTHER_EMAIL, PASSWORD, true, false).await?;
-    auth.create_user(READER_EMAIL, PASSWORD, true, false)
+    let password = browser_password();
+    let staff = auth
+        .create_user(STAFF_EMAIL, &password, true, false)
+        .await?;
+    let other = auth
+        .create_user(OTHER_EMAIL, &password, true, false)
+        .await?;
+    auth.create_user(READER_EMAIL, &password, true, false)
         .await?;
     grant(&auth, "reader", &[("items", &["read"])], READER_EMAIL).await?;
     grant(

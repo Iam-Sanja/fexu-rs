@@ -2,7 +2,7 @@
 
 ## Unreleased — admin relation acceptance
 
-- `examples/admin-browser` seeds a loopback staff account, scoped shelves, a unique desk, paged tags and a project inline for `tests/browser/admin-relations.spec.js`. The counts 0, 1, 100 and 1000 stay on the existing SQLite and PostgreSQL lookup tests.
+- `examples/admin-browser` seeds a loopback staff account, scoped shelves, a unique desk, paged tags and a project inline for `tests/browser/admin-relations.spec.js`. The password comes from `FEXU_BROWSER_ADMIN_PASSWORD`. The counts 0, 1, 100 and 1000 stay on the existing SQLite and PostgreSQL lookup tests.
 
 ## Unreleased — admin relation picker and paged membership
 

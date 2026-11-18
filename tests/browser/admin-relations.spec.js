@@ -1,6 +1,9 @@
 const { test, expect } = require("@playwright/test");
 
-const PASSWORD = process.env.FEXU_BROWSER_ADMIN_PASSWORD || "browser-admin-pass";
+const PASSWORD = process.env.FEXU_BROWSER_ADMIN_PASSWORD;
+if (!PASSWORD) {
+  throw new Error("FEXU_BROWSER_ADMIN_PASSWORD is required");
+}
 const STAFF = "staff@example.test";
 const READER = "reader@example.test";
 
