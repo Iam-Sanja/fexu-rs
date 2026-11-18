@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased — forms acceptance
+
+- A board note uses `permissions = "notes"`, so the HTML form and the JSON route share one permission check.
+- A posted name that is not an editable field stays in the form summary with its localized error.
+- An HTML form keeps a repository `validation.url` error instead of rewriting it.
+
 ## Unreleased — admin relation picker and paged membership
 
 - The native foreign-key picker and the record select call `lookup_page`, so search, page size and the visible total stay inside the caller's query scope. A one-to-one column is marked on the select.

@@ -185,6 +185,7 @@ jobs:
           cargo test -p board --test crud -- --ignored postgres_board_covers_crud_permissions_csrf_and_pages
           cargo test -p board --test forms -- --ignored postgres_note_forms_keep_owner_outside_the_allow_list
           cargo test -p board --test relations -- --ignored postgres_project_formset_keeps_relations_inside_one_transaction
+          cargo test -p board --test acceptance -- --ignored postgres_note_http_and_json_share_validation_errors
           cargo test -p fexu-admin --lib relations::tests::postgres_lookup_covers_zero_one_hundred_and_thousand_rows -- --ignored
           cargo test -p fexu-db --lib write::tests::postgres_shop_cases -- --ignored
           cargo test -p fexu-db --lib write::tests::postgres_write_security -- --ignored

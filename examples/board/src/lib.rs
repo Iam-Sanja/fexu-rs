@@ -34,7 +34,7 @@ pub use project::{
 const ORIGIN: &str = "http://127.0.0.1:3000";
 
 #[derive(Debug, Clone, PartialEq, Eq, FexuModel, Serialize, Deserialize)]
-#[fexu(table = "board_notes")]
+#[fexu(table = "board_notes", permissions = "notes")]
 pub struct Note {
     #[field(primary_key, auto)]
     pub id: Uuid,
