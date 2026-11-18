@@ -22,3 +22,5 @@ List and detail labels are loaded with one `WHERE id IN (...)` query per target 
 When saving, `ensure_relations` rejects a UUID that the user cannot read at the unique registered destination. The answer remains the form with the error in the field.
 
 After a validation error, a readable selection remains in the form because the transmitted field values are rendered again.
+
+Many-to-many checkboxes use the same offset lookup of 100 rows. Search and paging redisplay the form without writing. A selected id outside the current page stays in a hidden field, and only an id that was shown can be cleared. `examples/admin-browser` and `tests/browser/admin-relations.spec.js` exercise the signed-in flows: foreign key, one-to-one, many-to-many search and paging, a scoped shelf, a forged id, inline create/update/delete, and a confirmed bulk action. Those tests also cover a 390-pixel viewport, keyboard focus, and the form without JavaScript. A manual screen reader was not run, and contrast was not measured.
