@@ -166,6 +166,7 @@ jobs:
           cargo test -p fexu-db --lib -- --ignored postgres_admin_search_runtime
           cargo test -p fexu-db --lib -- --ignored postgres_temporal_filters_and_keyset
           cargo test -p fexu-db --lib -- --ignored berlin_civil_time_roundtrips_as_one_postgres_timestamptz
+          cargo test -p fexu-storage --lib -- --ignored postgres_rollback_removes_the_staged_file_only_through_abort
           cargo test -p fexu-db --lib -- --ignored postgres_empty_in_and_bounded_scan
           cargo test -p fexu-migrations --lib fixtures::tests::postgres_temporal_fixture_roundtrip -- --ignored
           cargo test -p fexu-api --lib testing::tests::postgres_isolated_databases_do_not_share_rows -- --ignored

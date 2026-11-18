@@ -249,6 +249,18 @@ impl LocalStorage {
                 if !regular_file(&entry.path()) {
                     continue;
                 }
+                if let Some(id) = name.strip_suffix(".json.tmp") {
+                    if Uuid::parse_str(id).is_ok() {
+                        let dest = directory.join(format!("{id}.json"));
+                        if regular_file(&dest) {
+                            let _ = std::fs::remove_file(entry.path());
+                        } else if std::fs::rename(entry.path(), &dest).is_err() {
+                            continue;
+                        }
+                        report.removed_partials += 1;
+                    }
+                    continue;
+                }
                 if let Some(id) = name.strip_suffix(".partial") {
                     if Uuid::parse_str(id).is_ok() {
                         let _ = std::fs::remove_file(entry.path());
@@ -372,6 +384,38 @@ impl Storage for LocalStorage {
         self.save_until(owner, original_name, bytes, None).await
     }
 
+    async fn save_expiring(
+        &self,
+        owner: Uuid,
+        original_name: &str,
+        bytes: &[u8],
+        expires_at: Option<i64>,
+    ) -> Result<StoredFile, StorageError> {
+        self.save_until(owner, original_name, bytes, expires_at)
+            .await
+    }
+
+    async fn retain(&self, owner: Uuid, id: Uuid) -> Result<StoredFile, StorageError> {
+        let _guard = self
+            .gate
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let directory = self.rooted_owner(owner, false)?;
+        let path = directory.join(format!("{id}.json"));
+        if !regular_file(&path) {
+            return Err(StorageError::NotFound);
+        }
+        let path = Self::contained(&directory, &path)?;
+        let mut stored = read_meta(&path)?;
+        if stored.owner != owner || stored.id != id {
+            return Err(StorageError::NotFound);
+        }
+        stored.expires_at = None;
+        let json = serde_json::to_vec(&stored).map_err(|_| StorageError::Failed)?;
+        replace_sidecar(&path, &json)?;
+        Ok(stored)
+    }
+
     async fn read(&self, owner: Uuid, id: Uuid) -> Result<(StoredFile, Vec<u8>), StorageError> {
         let meta = self.metadata(owner, id).await?;
         if expired(&meta, unix_now()) {
@@ -488,6 +532,29 @@ fn bytes_match(meta: &StoredFile, bytes: &[u8]) -> bool {
         return false;
     }
     meta.sha256.is_empty() || hex(Sha256::digest(bytes)) == meta.sha256
+}
+
+fn replace_sidecar(path: &Path, bytes: &[u8]) -> Result<(), StorageError> {
+    let Some(stem) = path.file_stem().and_then(|stem| stem.to_str()) else {
+        return Err(StorageError::Failed);
+    };
+    let Some(parent) = path.parent() else {
+        return Err(StorageError::Failed);
+    };
+    let temporary = parent.join(format!("{stem}.json.tmp"));
+    write_new(&temporary, bytes)?;
+    if std::fs::rename(&temporary, path).is_ok() {
+        return Ok(());
+    }
+    if std::fs::remove_file(path).is_err() {
+        let _ = std::fs::remove_file(&temporary);
+        return Err(StorageError::Failed);
+    }
+    if std::fs::rename(&temporary, path).is_err() {
+        Err(StorageError::Failed)
+    } else {
+        Ok(())
+    }
 }
 
 fn write_new(path: &Path, bytes: &[u8]) -> Result<(), StorageError> {

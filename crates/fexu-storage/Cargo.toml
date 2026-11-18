@@ -17,6 +17,7 @@ axum.workspace = true
 fexu-auth.workspace = true
 fexu-core.workspace = true
 hmac = "0.13.0"
+miniz_oxide = "0.8"
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true

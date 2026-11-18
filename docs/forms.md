@@ -77,7 +77,7 @@ let _title = &bound[0].value;
 
 ## Limitations
 
-File inputs use `enctype="multipart/form-data"`. The stored path still comes from `store_upload`, which ignores the client file name. A formset plan does not open a transaction by itself. Remote storage is not included. `parse_json` accepts only a flat object of strings, numbers, booleans and null. `parse_json_multi` additionally accepts an array of those scalars for declared repeated names.
+File inputs use `enctype="multipart/form-data"`. `store_upload` still stores one file immediately and ignores the client file name as a path. A field that must keep the previous file until the database commits uses `fexu_storage::prepare_media`, `stage`, `abort` and `commit`. `media_field_errors` copies those codes into `FormErrors`. A formset plan does not open a transaction by itself. Remote storage is not included. `parse_json` accepts only a flat object of strings, numbers, booleans and null. `parse_json_multi` additionally accepts an array of those scalars for declared repeated names.
 
 ## Example app
 
@@ -85,4 +85,4 @@ File inputs use `enctype="multipart/form-data"`. The stored path still comes fro
 
 ## Not in this contract
 
-`bind_formset` and `plan_formset` remain for callers that only need a row count. Upload bytes still go through `inspect_upload` and `store_upload`; this work does not change `fexu-storage`. Wizards are not implemented. The next wizard step would be a list of the existing form types plus the index of the current step, with each step calling `from_form_in` or `from_submit_in` and no step writing until the last one succeeds. `render_relation_select` remains for a caller that already holds a small option list. `#[derive(FexuForm)]` still does not call `apply_contracts` by itself. The admin HTTP picker and `save_with_children` remain the admin paths; `render_scoped_page` renders one `lookup_page` through the same widget.
+`bind_formset` and `plan_formset` remain for callers that only need a row count. The caller opens the database transaction and rolls it back. `inspect_upload` and `store_upload` remain the immediate helpers. The replace, clear and readonly lifecycle lives in `fexu-storage` and is described in [storage.md](storage.md). Wizards are not implemented. The next wizard step would be a list of the existing form types plus the index of the current step, with each step calling `from_form_in` or `from_submit_in` and no step writing until the last one succeeds. `render_relation_select` remains for a caller that already holds a small option list. `bind_relation` does not widen `QueryScope`. `#[derive(FexuForm)]` still does not call `apply_contracts` by itself. The admin HTTP picker and `save_with_children` remain the admin paths; `render_scoped_page` renders one `lookup_page` through the same widget.

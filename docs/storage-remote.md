@@ -4,9 +4,9 @@
 
 **Not a client.** `prepare_s3` checks an `https://` endpoint, a region and a bucket name. It does not open a socket. `credentials_from_env` reads the two environment names stored on the plan at call time. The names are `FEXU_S3_ACCESS_KEY` and `FEXU_S3_SECRET_KEY` when the application chooses those constants. Credentials are not compiled into the binary. `Debug` for `S3Credentials` prints `[redacted]`.
 
-There is no success path that pretends an upload reached a bucket. Callers that need bytes today use `LocalStorage`. `Storage` is the backend-neutral contract (`save`, `read`, `delete`, `exists`, `metadata`). An S3 client is not part of this crate until it can be tested without a mandatory network service.
+There is no success path that pretends an upload reached a bucket. Callers that need bytes today use `LocalStorage`. `Storage` is the backend-neutral contract (`save`, `read`, `delete`, `exists`, `metadata`, `save_expiring`, `retain`). The default `save_expiring` ignores the deadline and the default `retain` fails, so a backend has to override both before it can stage files. An S3 client is not part of this crate. A client that cannot be tested without a live bucket would report success it cannot prove.
 
-Signed downloads are separate from cookies. `sign_download` builds `v1.{owner}.{id}.{exp}.{mac}` with HMAC-SHA256. The key is at least 32 bytes and comes from the caller. A bad MAC is `NotFound`. An expired signature is `Expired`. The signature does not grant another owner's file.
+Signed downloads are separate from cookies. `sign_download` builds `v1.{owner}.{id}.{exp}.{mac}` with HMAC-SHA256. The key is at least 32 bytes and comes from the caller. `sign_download_for` accepts a lifetime from 1 second through 15 minutes. A bad MAC is `NotFound`. An expired signature is `Expired`. The signature does not grant another owner's file. The local download response uses `Content-Disposition: attachment`, `application/octet-stream`, `nosniff` and `Content-Security-Policy: sandbox; default-src 'none'`. The filename is the sanitized basename.
 
 `save_for` and `read_for` require the actor id to equal the owner id. Staff is not implied.
 
