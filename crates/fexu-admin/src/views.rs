@@ -337,31 +337,31 @@ pub(crate) fn check_view(view: &AdminView, templates: &[&str]) -> Result<(), Ext
     if !valid_key(view.key) || RESERVED_KEYS.contains(&view.key) {
         return Err(ExtensionError::new(
             "extension.route",
-            "Der Seitenname ist leer, reserviert oder enthält unerlaubte Zeichen.",
+            "The page name is empty, reserved, or contains invalid characters.",
         ));
     }
     if !valid_permission(view.permission) {
         return Err(ExtensionError::new(
             "extension.permission",
-            "Eine eigene Seite braucht einen Berechtigungscode resource.action.",
+            "A custom page requires a resource.action permission code.",
         ));
     }
     if !valid_label(view.title_de) || !valid_label(view.title_en) {
         return Err(ExtensionError::new(
             "extension.route",
-            "Der Seitentitel ist leer oder enthält Steuerzeichen.",
+            "The page title is empty or contains control characters.",
         ));
     }
     if view.get.is_none() {
         return Err(ExtensionError::new(
             "extension.route",
-            "Eine eigene Seite braucht einen GET-Handler.",
+            "A custom page requires a GET handler.",
         ));
     }
     if !templates.contains(&view.template) && view.template != "custom.html" {
         return Err(ExtensionError::new(
             "extension.template",
-            "Die Seitenvorlage ist nicht registriert.",
+            "The page template is not registered.",
         ));
     }
     Ok(())
@@ -374,7 +374,7 @@ impl AdminRegistry {
 }
 
 fn invalid_query() -> ExtensionError {
-    ExtensionError::new("extension.query", "Die Filterparameter sind ungültig.")
+    ExtensionError::new("extension.query", "The filter parameters are invalid.")
 }
 
 fn query_key(value: &str) -> bool {

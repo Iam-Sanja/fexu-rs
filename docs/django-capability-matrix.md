@@ -1,5 +1,8 @@
 # Django 6.1 vs Fexu — capability and evidence matrix
 
+> **Evidence warning (2026-11-18):** The detailed row-by-row evidence below was originally compiled against `a39c952` (2026-11-14), **not** the current `main`, which has moved past `a591b85`. PRs #177–#184 added significant forms, media, validation, relation picker and browser coverage, and older “In PR” labels (including features of #89) may now be stale. Do not interpret a historical row status as current absence. [Issue #70](https://github.com/Iam-Sanja/fexu-rs/issues/70) tracks the full per-capability revalidation; [roadmap.md](roadmap.md) records proposed 0.2/0.3 gates. Source presence and CI success are not a blanket assertion of complete Django parity.
+
+
 [Documentation portal](index.md) · [Roadmap](roadmap.md) · [Admin comparison](admin-django-parity.md) · [Django 6.1 documentation](https://docs.djangoproject.com/en/6.1/) · [Django 6.1 release notes](https://docs.djangoproject.com/en/6.1/releases/6.1/)
 
 **Current source baseline (2026-11-14):** `main` at `a39c952` (PRs #115/#116). The matrix originated in a 2026-11-12 `work/api-quality` review and preserves historical test measurements. Previously pending keyset pagination, aggregation annotations, many-to-many loading, `migrate down`, derived forms, OpenAPI, `TestClient`, HTTP cursor lists, `check --deploy` and browser CI are now on `main`. **Partial** remains appropriate wherever Django-equivalent functionality is incomplete. Current execution uses bundled rusqlite for SQLite and SQLx PostgreSQL, not SeaORM. See [driver](database-driver.md), [roadmap](roadmap.md), [release readiness](release-readiness.md) and the dated test notes below.

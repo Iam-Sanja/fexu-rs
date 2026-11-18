@@ -1,5 +1,8 @@
 # crates.io release preparation
 
+> **Current status (2026-11-18):** `v0.1.2` was released on 2026-11-15 and all 16 publishable crates have a `0.1.2` registry version. The `0.1.2` commands and steps below are retained as the **historical release procedure**, not instructions to republish that version. For the next release, first choose and synchronize an approved version (proposed `0.2.0`), review [roadmap gates](roadmap.md), and adjust the planner, tag and consumer smoke-test commands accordingly. **Publishing a GitHub Release triggers the publishing workflow** when the configured environment allows it; do not create a tag/release for documentation checks.
+
+
 This repository intentionally does **not** publish on pushes to `main` or on pull requests.
 Publishing requires a stable GitHub Release (`vX.Y.Z`), a tag pointing to the
 current `main` HEAD, an eligible deployment tag in the GitHub `release`

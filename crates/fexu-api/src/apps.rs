@@ -151,7 +151,7 @@ impl TemplateCatalog {
         let app = name.split('/').next().unwrap_or("");
         let site = self.sites.get(app).ok_or_else(|| {
             PageError::new(format!(
-                "Die Vorlage `{name}` gehört zu keiner registrierten App."
+                "Template `{name}` does not belong to any registered app."
             ))
         })?;
         site.render(name, context)
@@ -188,7 +188,7 @@ impl<'a> Registration<'a> {
             if namespace != self.name {
                 return Err(AppError::new(
                     "app.route.namespace",
-                    format!("`{route}` gehört nicht zur App `{}`.", self.name),
+                    format!("`{route}` does not belong to app `{}`.", self.name),
                 ));
             }
         }
@@ -407,7 +407,7 @@ impl<'a> Registration<'a> {
         {
             return Err(AppError::new(
                 "app.static.duplicate",
-                format!("Das Präfix `{}` ist schon vergeben.", mount.prefix),
+                format!("Prefix `{}` is already registered.", mount.prefix),
             ));
         }
         self.app.statics.push(mount);
@@ -500,7 +500,7 @@ impl App {
             let Some(settings) = self.settings.as_ref() else {
                 return Err(AppError::new(
                     "app.migration.undeclared",
-                    "App-Migrationen sind nicht an fexu.toml gebunden. Der Start gilt nicht als geprüft.",
+                    "App migrations are not bound to fexu.toml. Startup is not considered verified.",
                 ));
             };
             let declared = settings
@@ -693,7 +693,7 @@ fn validate_app_name(name: &str) -> Result<(), AppError> {
     {
         return Err(AppError::new(
             "app.name",
-            format!("`{name}` ist kein zulässiger App-Name."),
+            format!("`{name}` is not a valid app name."),
         ));
     }
     Ok(())
@@ -711,7 +711,7 @@ fn validate_prefix(prefix: &str) -> Result<(), AppError> {
     {
         return Err(AppError::new(
             "app.prefix",
-            format!("`{prefix}` ist kein zulässiges URL-Präfix."),
+            format!("`{prefix}` is not a valid URL prefix."),
         ));
     }
     Ok(())
@@ -843,7 +843,7 @@ fn walk_templates(
         if !canonical.starts_with(root) {
             return Err(AppError::new(
                 "app.template.path",
-                "Eine Vorlage liegt außerhalb des App-Verzeichnisses.",
+                "A template is outside the app directory.",
             ));
         }
         let relative = canonical

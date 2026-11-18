@@ -1,6 +1,6 @@
 # Fexu documentation portal
 
-Fexu is an experimental Rust framework with a model-first data layer, versioned migrations, authentication, a native admin, typed apps and background jobs. The Cargo package version is `0.1.2` (experimental); historical v0.x feature milestones are not registry releases. crates.io may still list `0.1.0` until this release is published. SQLite is the local default, and PostgreSQL is the optional server backend. The documentation is in English; the admin supports German and English.
+Fexu is an experimental Rust framework with a model-first data layer, versioned migrations, authentication, a native admin, typed apps and background jobs. The latest published workspace release is `0.1.2` (2026-11-15, experimental); all 16 publishable crates are available on crates.io at that version. `main` includes newer unreleased changes. Historical v0.x feature milestones are not registry releases. Proposed targets `0.2.0` and `0.3.0` have no committed dates; see the [release roadmap](roadmap.md). SQLite is the local default, and PostgreSQL is the optional server backend. The documentation is in English; the admin supports German and English.
 
 ## How to read this manual
 
@@ -14,7 +14,7 @@ The [Django 6.1 capability matrix](django-capability-matrix.md) compares Fexu's 
 
 ## Documentation by topic
 
-**Status labels below describe source capabilities, not published versions.** The numbered `v0.x` labels in older per-feature pages refer to historical development milestones. Fexu's Cargo version is `0.1.2` and publishing proceeds by crate dependency order. Verify any registry-based install commands against the live registry.
+**Status labels below describe source capabilities, not published versions.** The numbered `v0.x` labels in older per-feature pages refer to historical development milestones. The published Cargo version is `0.1.2`; newer `main` features are unreleased. The proposed `0.2.0` / `0.3.0` plan is not a publication claim. Verify registry install commands against the live registry.
 
 | Topic | Status | Pages | Responsibility |
 |---|---|---|---|

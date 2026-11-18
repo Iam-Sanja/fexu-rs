@@ -60,7 +60,7 @@ pub fn parse_cron(expression: &str) -> Result<CronExpr, JobError> {
     let fields: Vec<_> = expression.split_whitespace().collect();
     if fields.len() != 5 || expression.len() > 64 {
         return Err(schedule(
-            "Ein Cron-Ausdruck hat fünf Felder: Minute Stunde Tag Monat Wochentag.",
+            "A cron expression requires five fields: minute, hour, day, month, weekday.",
         ));
     }
     Ok(CronExpr {
@@ -80,7 +80,7 @@ pub fn next_after(expression: &str, zone: &str, after_unix: i64) -> Result<i64, 
     let start = to_local(&zone, after_unix)?;
     let mut cursor = start
         .checked_add_signed(Duration::minutes(1))
-        .ok_or_else(|| schedule("Der nächste Zeitpunkt liegt außerhalb des Kalenders."))?;
+        .ok_or_else(|| schedule("The next occurrence is outside the supported calendar range."))?;
     cursor = cursor.with_second(0).unwrap_or(cursor);
     for _ in 0..(366 * 24 * 60) {
         match local_to_utc(&zone, cursor) {
@@ -92,10 +92,12 @@ pub fn next_after(expression: &str, zone: &str, after_unix: i64) -> Result<i64, 
         }
         cursor = cursor
             .checked_add_signed(Duration::minutes(1))
-            .ok_or_else(|| schedule("Der nächste Zeitpunkt liegt außerhalb des Kalenders."))?;
+            .ok_or_else(|| {
+                schedule("The next occurrence is outside the supported calendar range.")
+            })?;
     }
     Err(schedule(
-        "In den nächsten 366 Tagen gibt es keinen passenden Zeitpunkt.",
+        "No matching occurrence exists in the next 366 days.",
     ))
 }
 
@@ -126,13 +128,13 @@ enum LocalHit {
 fn unix_naive(unix: i64) -> Result<NaiveDateTime, JobError> {
     DateTime::<Utc>::from_timestamp(unix, 0)
         .map(|value| value.naive_utc())
-        .ok_or_else(|| schedule("Der Zeitpunkt liegt außerhalb des Kalenders."))
+        .ok_or_else(|| schedule("The occurrence is outside the supported calendar range."))
 }
 
 fn to_local(zone: &ScheduleZone, unix: i64) -> Result<NaiveDateTime, JobError> {
     let utc = unix_naive(unix)?;
     utc.checked_add_signed(Duration::seconds(i64::from(offset_at(zone, unix))))
-        .ok_or_else(|| schedule("Der Zeitpunkt liegt außerhalb des Kalenders."))
+        .ok_or_else(|| schedule("The occurrence is outside the supported calendar range."))
 }
 
 fn local_to_utc(zone: &ScheduleZone, civil: NaiveDateTime) -> LocalHit {
@@ -253,9 +255,9 @@ fn fill(slots: &mut [bool], value: &str, min: u32, max: u32) -> Result<(), JobEr
         let mut current = start;
         while current <= end {
             let index =
-                usize::try_from(current - min).map_err(|_| schedule("Feld ist ungültig."))?;
+                usize::try_from(current - min).map_err(|_| schedule("Invalid cron field."))?;
             if index >= slots.len() {
-                return Err(schedule("Feld liegt außerhalb des erlaubten Bereichs."));
+                return Err(schedule("Cron field is outside the allowed range."));
             }
             slots[index] = true;
             let next = current.saturating_add(step);
@@ -268,7 +270,7 @@ fn fill(slots: &mut [bool], value: &str, min: u32, max: u32) -> Result<(), JobEr
     if slots.iter().any(|slot| *slot) {
         Ok(())
     } else {
-        Err(schedule("Feld enthält keinen Wert."))
+        Err(schedule("Cron field contains no values."))
     }
 }
 
@@ -279,7 +281,7 @@ fn range(part: &str, min: u32, max: u32) -> Result<(u32, u32, u32), JobError> {
             .all(|char| char.is_ascii_digit() || char == '-' || char == '/' || char == '*')
     {
         return Err(schedule(
-            "Cron-Felder enthalten Zahlen, *, Komma, Bindestrich und Schrägstrich.",
+            "Cron fields allow numbers, *, commas, hyphens, and slashes.",
         ));
     }
     let (body, step) = match part.split_once('/') {
@@ -295,7 +297,7 @@ fn range(part: &str, min: u32, max: u32) -> Result<(u32, u32, u32), JobError> {
         (value, value)
     };
     if start > end {
-        return Err(schedule("Ein Bereich darf nicht rückwärts laufen."));
+        return Err(schedule("Cron ranges must not be descending."));
     }
     Ok((start, end, step))
 }
@@ -303,13 +305,11 @@ fn range(part: &str, min: u32, max: u32) -> Result<(u32, u32, u32), JobError> {
 fn number(value: &str, min: u32, max: u32) -> Result<u32, JobError> {
     let parsed: u32 = value
         .parse()
-        .map_err(|_| schedule("Ein Cron-Feld ist keine Zahl."))?;
+        .map_err(|_| schedule("Cron field is not a number."))?;
     if (min..=max).contains(&parsed) {
         Ok(parsed)
     } else {
-        Err(schedule(
-            "Ein Cron-Feld liegt außerhalb des erlaubten Bereichs.",
-        ))
+        Err(schedule("Cron field is outside the allowed range."))
     }
 }
 
@@ -319,21 +319,19 @@ fn parse_offset(value: &str) -> Result<i32, JobError> {
     } else if let Some(rest) = value.strip_prefix('-') {
         (-1, rest)
     } else {
-        return Err(schedule("fixed braucht +HH:MM oder -HH:MM."));
+        return Err(schedule("Fixed timezone offsets require +HH:MM or -HH:MM."));
     };
     let Some((hour, minute)) = rest.split_once(':') else {
-        return Err(schedule("fixed braucht +HH:MM oder -HH:MM."));
+        return Err(schedule("Fixed timezone offsets require +HH:MM or -HH:MM."));
     };
     let hour: i32 = hour
         .parse()
-        .map_err(|_| schedule("Die Stundenverschiebung ist ungültig."))?;
+        .map_err(|_| schedule("Invalid timezone hour offset."))?;
     let minute: i32 = minute
         .parse()
-        .map_err(|_| schedule("Die Minutenverschiebung ist ungültig."))?;
+        .map_err(|_| schedule("Invalid timezone minute offset."))?;
     if !(0..=14).contains(&hour) || !(0..=59).contains(&minute) || (hour == 14 && minute != 0) {
-        return Err(schedule(
-            "Die Verschiebung liegt zwischen -14:00 und +14:00.",
-        ));
+        return Err(schedule("The offset must be between -14:00 and +14:00."));
     }
     Ok(sign * (hour * 3600 + minute * 60))
 }

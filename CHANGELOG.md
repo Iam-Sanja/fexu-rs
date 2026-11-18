@@ -1,5 +1,12 @@
 # Changelog
 
+> **Release separation (2026-11-18):** `v0.1.2` is published. All entries headed **Unreleased** describe source changes on `main` made after that release and are **not available in the crates.io `0.1.2` packages**. The proposed `0.2.0` and `0.3.0` targets are specified in [docs/roadmap.md](docs/roadmap.md); no release has yet been cut for these changes. Historical internal `v0.x` feature milestones are not Cargo releases.
+
+## Unreleased — English-first diagnostics
+
+- Replace German-only runtime diagnostics in cron and job handling, SQLite migration operations, route/app validation, admin extension errors and unsupported-backend paths with English defaults; keep explicit German locale branches and translated catalogs intact.
+- Generated development servers announce `Fexu listening at http://...` in English. The CLI generator test checks the new output. Password-reset pages now include an English not-found title and an English unconfigured-auth fallback.
+
 ## Unreleased — MyShop contact language
 
 - The MyShop contact and thank-you pages use English with an explicit English browser language and otherwise retain the previous German default. The new `render_page_in` supports the appropriate HTML document language while the existing `render_page` API remains backward compatible.

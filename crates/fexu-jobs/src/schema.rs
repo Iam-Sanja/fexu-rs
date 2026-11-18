@@ -77,7 +77,7 @@ pub async fn render_migration_status(db: &DatabaseConnection) -> Result<(String,
     let report = migration_status(db).await?;
     let current =
         report.conflicts.is_empty() && report.lines.iter().all(|line| line.state == "angewendet");
-    Ok((format!("Job-Migrationen:\n{}", report.render()), current))
+    Ok((format!("Job migrations:\n{}", report.render()), current))
 }
 
 pub async fn table_ready(db: &impl ConnectionTrait) -> Result<bool, JobError> {

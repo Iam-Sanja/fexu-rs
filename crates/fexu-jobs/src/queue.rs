@@ -217,7 +217,7 @@ impl Queue {
         } else {
             Err(JobError::message(
                 "job.migration.missing",
-                "Die Job-Migrationen 0001_jobs und 0002_job_schedule sind nicht vollständig angewendet. fexu migrate up legt sie an. Der Worker migriert nicht selbst.",
+                "Required job migrations 0001_jobs and 0002_job_schedule have not been fully applied. Run fexu migrate up; the worker does not apply migrations.",
             ))
         }
     }
@@ -594,7 +594,7 @@ impl Queue {
         } else {
             Err(JobError::message(
                 "job.terminal",
-                "Nur fehlgeschlagene oder abgebrochene Jobs können erneut gestartet werden.",
+                "Only failed or cancelled jobs can be retried.",
             ))
         }
     }
@@ -632,7 +632,7 @@ impl Queue {
         } else {
             Err(JobError::message(
                 "job.terminal",
-                "Nur wartende Jobs können abgebrochen werden.",
+                "Only queued jobs can be cancelled.",
             ))
         }
     }
@@ -732,7 +732,7 @@ impl Queue {
         if !crate::schema::table_ready(db).await? {
             return Err(JobError::message(
                 "job.migration.missing",
-                "Die Job-Migrationen 0001_jobs und 0002_job_schedule sind nicht vollständig angewendet. fexu migrate up legt sie an. Der Worker migriert nicht selbst.",
+                "Required job migrations 0001_jobs and 0002_job_schedule have not been fully applied. Run fexu migrate up; the worker does not apply migrations.",
             ));
         }
         let planned = plan_enqueue(
@@ -960,7 +960,7 @@ async fn insert_job(db: &impl ConnectionTrait, job: &NewJob<'_>) -> Result<(), J
         Ok(_) => Ok(()),
         Err(error) if error.code() == "job.conflict" => Err(JobError::message(
             "job.conflict",
-            "Der Job ist bereits eingetragen.",
+            "The job is already registered.",
         )),
         Err(error) => Err(error),
     }
@@ -974,7 +974,7 @@ async fn find_by_column(
     if column != "idempotency_key" && column != "schedule_key" {
         return Err(JobError::message(
             "job.database",
-            "Die Spalte ist nicht für eine Suche freigegeben.",
+            "The column is not allowed for searching.",
         ));
     }
     let mut query = Query::select();
@@ -1208,7 +1208,7 @@ fn normalize_interval(
         (Some(seconds), Some(_)) if (1..=2_592_000).contains(&seconds) => Ok(Some(seconds)),
         _ => Err(JobError::message(
             "job.schedule",
-            "Ein Intervall braucht einen Schlüssel und liegt zwischen 1 und 2592000 Sekunden.",
+            "An interval requires a key and must be between 1 and 2592000 seconds.",
         )),
     }
 }
@@ -1249,7 +1249,7 @@ fn validate_key_len(value: &str, max: usize) -> Result<String, JobError> {
     } else {
         Err(JobError::message(
             "job.handler",
-            "Schlüssel bestehen aus Buchstaben, Ziffern, Doppelpunkt, Unterstrich und Bindestrich.",
+            "Keys may contain letters, digits, colons, underscores, and hyphens.",
         ))
     }
 }
@@ -1300,17 +1300,14 @@ fn owned_error(code: &str) -> String {
 fn database(error: impl ToString) -> JobError {
     let text = error.to_string().to_ascii_lowercase();
     if text.contains("unique") || text.contains("duplicate") {
-        JobError::message("job.conflict", "Der Job ist bereits eingetragen.")
+        JobError::message("job.conflict", "The job is already registered.")
     } else if text.contains("locked") || text.contains("busy") {
         JobError::message(
             "job.locked",
-            "Die Datenbank ist gerade gesperrt. Der Vorgang wurde nicht als Erfolg gewertet.",
+            "The database is currently locked. The operation was not considered successful.",
         )
     } else {
-        JobError::message(
-            "job.database",
-            "Die Job-Tabelle konnte nicht geändert werden.",
-        )
+        JobError::message("job.database", "The job table could not be updated.")
     }
 }
 
@@ -1375,10 +1372,7 @@ fn statement(
         DatabaseBackend::Postgres => query.build(PostgresQueryBuilder),
         DatabaseBackend::Sqlite => query.build(SqliteQueryBuilder),
         DatabaseBackend::MySql => {
-            return Err(JobError::message(
-                "job.database",
-                "MySQL wird nicht unterstützt.",
-            ))
+            return Err(JobError::message("job.database", "MySQL is not supported."))
         }
     };
     Ok(Statement::from_sql_and_values(backend, sql, values))
