@@ -54,6 +54,7 @@ pub struct DeclaredField {
     pub kind: InputKind,
     pub force_required: bool,
     pub read_only: bool,
+    pub disabled: bool,
     pub readonly_unless: Option<&'static str>,
     pub required_when: Option<&'static str>,
     pub min_length: Option<usize>,
@@ -74,6 +75,7 @@ impl DeclaredField {
             kind,
             force_required: false,
             read_only: false,
+            disabled: false,
             readonly_unless: None,
             required_when: None,
             min_length: None,
@@ -261,7 +263,9 @@ fn clean_one(
     values: &FormValues,
     context: &FormContext<'_>,
 ) -> Result<CleanValue, &'static str> {
-    let locked = field.read_only || field.readonly_unless.is_some_and(|flag| !context.has(flag));
+    let locked = field.disabled
+        || field.read_only
+        || field.readonly_unless.is_some_and(|flag| !context.has(flag));
     let present = values.get(field.name).is_some();
     if locked {
         return if present {

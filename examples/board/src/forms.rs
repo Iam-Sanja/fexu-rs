@@ -101,3 +101,35 @@ pub struct TaskLineForm {
     #[form(label = "Task")]
     pub title: String,
 }
+
+/// Standalone form. `owner` and `channel` are not successful controls.
+#[derive(Debug, fexu::FexuForm)]
+pub struct NoteStampForm {
+    #[form(label = "Title", min_length = 1, max_length = 80)]
+    pub title: String,
+    #[form(disabled, label = "Owner")]
+    pub owner: Option<String>,
+    #[form(readonly, label = "Channel")]
+    pub channel: Option<String>,
+}
+
+/// Required file field. Bytes stay in the request until `bind_media` accepts them.
+pub fn note_cover_field<'a>(upload: Option<(&'a str, &'a [u8])>) -> fexu::forms::MediaField<'a> {
+    let field = fexu::forms::MediaField::file("cover").required();
+    match upload {
+        Some((name, bytes)) => field.upload(name, Some("text/plain"), bytes),
+        None => field,
+    }
+}
+
+pub fn note_cover_html(error: Option<&str>, current: Option<&str>) -> String {
+    fexu::forms::render_media_field(fexu::forms::MediaView {
+        name: "cover",
+        label: "Cover",
+        image: false,
+        required: true,
+        readonly: false,
+        current_name: current,
+        error,
+    })
+}

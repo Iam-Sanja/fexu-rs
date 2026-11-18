@@ -22,7 +22,8 @@ use fexu_core::{ColumnKind, ColumnSpec, FexuError};
 use fexu_db::driver::{TransactionTrait, Value as DbValue};
 use fexu_db::{date_buckets, delete_record, get_record, query_labels, update_record};
 use fexu_forms::{
-    reject_unknown, require_confirmation, required_bool, required_text, FormValues, TextSpec,
+    bind_posted_contracts, reject_unknown, require_confirmation, required_bool, required_text,
+    FormValues, TextSpec,
 };
 use serde_json::{json, Map, Value};
 use std::collections::HashMap;
@@ -7236,6 +7237,42 @@ async fn save_form(
         .and_then(|()| crate::widgets::enforce(registry.widgets(), model.meta().key, &object))
     {
         let text = validation_text(&locale, &message);
+        return form_page(
+            state,
+            headers,
+            registry,
+            model_key,
+            id,
+            raw,
+            FormFeedback {
+                notice: "",
+                alert: &text,
+            },
+        )
+        .await;
+    }
+    let mut posted = FormValues::default();
+    for (key, value) in &form {
+        posted.insert(key, value);
+    }
+    if let Err(errors) = bind_posted_contracts(
+        id.is_none(),
+        model.columns(),
+        model.field_contracts(),
+        model.numeric_bounds(),
+        &posted,
+    ) {
+        let failure = errors.fields.first();
+        let message = match failure {
+            Some(item) if item.field.is_empty() => item.code.to_owned(),
+            Some(item) => format!("field:{}: {}", item.field, item.code),
+            None => "validation.invalid_type".to_owned(),
+        };
+        let text = validation_text(&locale, &message);
+        raw.insert(
+            "__error".into(),
+            json!({ "field": validation_field(registry.field_slice(model.meta()), &message), "text": text }),
+        );
         return form_page(
             state,
             headers,

@@ -28,6 +28,7 @@ fn classify(detail: &str) -> (&'static str, Option<String>, String) {
         "validation.min_value" => "validation.min_value",
         "validation.max_value" => "validation.max_value",
         "validation.email" => "validation.email",
+        "validation.url" => "validation.url",
         "validation.slug" => "validation.slug",
         "validation.null" => "validation.null",
         "validation.choice" => "validation.choice",

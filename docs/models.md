@@ -60,6 +60,6 @@ Changing precision, scale, or the set of stored choice values is refused. Existi
 
 `examples/myshop` keeps `price_cents` and adds `price` plus `ProductStatus`. `Order.status` stays a free string; `Order.state` is `Option<OrderStatus>`. Migration `0006_prices_and_status` adds those columns. `price` and product `status` are backfilled with `0.00` and `draft`. `state` is nullable.
 
-`#[field(format = "slug")]` and `#[field(format = "email")]` check the value on the server side when creating and PATCH. An unknown `format` or `managed` value is a compile error. `#[field(min = 1)]` remains the rule for positive numbers. `#[field(required)]` rejects empty strings.
+`#[field(format = "slug")]`, `#[field(format = "email")]` and `#[field(format = "url")]` check the value on the server side when creating and PATCH. `url` accepts only `http://` or `https://` through `is_http_url`. An unknown `format` or `managed` value is a compile error. `#[field(min = 1)]` remains the rule for positive numbers. `#[field(required)]` rejects empty strings.
 
 JSON is flat. A reused field in JSON is called the column, not the field group.
