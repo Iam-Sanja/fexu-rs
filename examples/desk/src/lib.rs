@@ -33,11 +33,17 @@ pub fn routes() -> Result<UrlSet, UrlError> {
 }
 
 pub fn stock_markup(name: &str, stock: i64) -> Result<String, tera::Error> {
+    stock_markup_in(name, stock, "de")
+}
+
+/// Render the demo in German or English. Unsupported locales use English.
+pub fn stock_markup_in(name: &str, stock: i64, locale: &str) -> Result<String, tera::Error> {
     let mut templates = tera::Tera::default();
     templates.add_raw_template("stock.html", include_str!("../templates/stock.html"))?;
     let mut context = tera::Context::new();
     context.insert("name", name);
     context.insert("stock", &stock);
+    context.insert("locale", if locale == "de" { "de" } else { "en" });
     templates.render("stock.html", &context)
 }
 
