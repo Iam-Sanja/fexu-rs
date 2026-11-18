@@ -19,7 +19,7 @@
 <label for="{{ field.name }}">{{ field.label }} {% if field.required %}<span aria-hidden="true">*</span> <span class="hint">{{ i18n.required }}</span>{% else %}<span class="hint">{{ i18n.optional }}</span>{% endif %}</label>
 {% if field.hint %}<p class="hint" id="{{ field.name }}-hint">{{ field.hint }}</p>{% endif %}
 <div class="related-control" {% if field.related %}data-related-root data-related-key="{{ field.related.key }}"{% endif %}>
-<select id="{{ field.name }}" name="{{ field.name }}" {% if field.required %}required{% endif %} {% if field.invalid %}aria-invalid="true"{% endif %} {% if field.hint and field.error %}aria-describedby="{{ field.name }}-hint {{ field.name }}-error"{% elif field.error %}aria-describedby="{{ field.name }}-error"{% elif field.hint %}aria-describedby="{{ field.name }}-hint"{% endif %}>
+<select id="{{ field.name }}" name="{{ field.name }}" {% if field.relation_shape %}data-relation="{{ field.relation_shape }}"{% endif %} {% if field.required %}required{% endif %} {% if field.invalid %}aria-invalid="true"{% endif %} {% if field.hint and field.error %}aria-describedby="{{ field.name }}-hint {{ field.name }}-error"{% elif field.error %}aria-describedby="{{ field.name }}-error"{% elif field.hint %}aria-describedby="{{ field.name }}-hint"{% endif %}>
 {% if not field.required %}<option value="">{{ i18n.none }}</option>{% endif %}
 {% for option in field.options %}
 <option value="{{ option.id }}" {% if option.selected %}selected{% endif %}>{{ option.label }}</option>

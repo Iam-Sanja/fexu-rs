@@ -35,8 +35,8 @@ pub use filters::{AdminFilter, FilterKind, FilterOption};
 pub use form_bridge::{options_from_lookup, render_scoped_page};
 pub use registry::{AdminBranding, AdminRegistry};
 pub use relations::{
-    bulk_targets, current_members, lookup_page, posted_members, replace_links, scoped_membership,
-    shape_of, LookupPage, RelationShape,
+    bulk_targets, current_members, lookup_page, page_membership, posted_members, replace_links,
+    scoped_membership, shape_of, LookupPage, RelationShape,
 };
 pub use views::{
     AdminView, ExtensionError, UploadedFile, ViewHandler, ViewOutcome, ViewPage, ViewQuery,

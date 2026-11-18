@@ -11,7 +11,7 @@ The selection page is GET:
 - `/admin/models/{modell}/pick/{feld}`
 - `/admin/models/{modell}/{id}/pick/{feld}`
 
-The selection page requires staff access, write permission on the source model and read permission on the target. Search uses visible `searchable` target columns. Page size comes from the target's `admin_per_page`, capped at 100, and the normal list query scope applies. An unknown field, hidden or read-only field, or target without a display field returns 404. Missing read permission returns 403.
+The selection page requires staff access, write permission on the source model and read permission on the target. Search and each page call `lookup_page` on the display label with the target read scope. Page size is the target `admin_per_page`, capped at 100. The reported total is that scoped count. An unknown field, hidden or read-only field, or target without a display field returns 404. Missing read permission returns 403. A unique foreign key is a one-to-one field (`data-relation="one_to_one"`). A target registered in another app is used when its table matches. Two models on the same table leave the picker empty.
 
 A result links back to the source form with the field set to its database UUID. Other form values are not retained unless a draft is used. Requests cannot provide an arbitrary `next` destination; JavaScript is not required.
 

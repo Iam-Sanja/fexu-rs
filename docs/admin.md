@@ -41,7 +41,7 @@ App::new(db).with_auth(auth).with_admin(admin)
 
 The surface is below `http://127.0.0.1:3000/admin`. The API is under `/admin/api`.
 
-`ModelAdmin::many_to_many` adds one checkbox group to the existing record form. The browser posts `m2m_present` and repeated `m2m.{name}` values. The server accepts only UUIDs that the current user can read on the child model, keeps links outside that scope, and writes the join rows with `replace_links` after the parent row is saved. An empty posted selection clears the visible links. A missing `m2m_present` marker leaves the join table unchanged. Invalid or hidden ids are rejected before `replace_links`. The parent write and the join write stay two existing calls: the join write is one transaction, and a failed join write redisplays the form instead of reporting success. The checkbox list shows the first 100 visible children plus already selected visible rows. `render_scoped_page` renders one `lookup_page` with the form relation widget and refuses a page larger than 100. It does not replace the existing picker route.
+`ModelAdmin::many_to_many` adds one checkbox group to the existing record form. The browser posts `m2m_present` and repeated `m2m.{name}` values. The server accepts only UUIDs that the current user can read on the child model, keeps links outside that scope, and writes the join rows with `replace_links` after the parent row is saved. An empty posted selection clears the visible links. A missing `m2m_present` marker leaves the join table unchanged. Invalid or hidden ids are rejected before `replace_links`. The parent write and the join write stay two existing calls: the join write is one transaction, and a failed join write redisplays the form instead of reporting success. The checkbox list shows one `lookup_page` of at most 100 visible children. Search and next/previous submit `save=members` and do not write rows. Selected ids outside that page stay in hidden fields. The posted page ids are `m2m_shown.{name}`: only those visible ids can be cleared. `render_scoped_page` renders one `lookup_page` with the form relation widget and refuses a page larger than 100. The native picker route calls the same `lookup_page`.
 
 ## Typed configuration
 
@@ -83,7 +83,9 @@ Admin model and directory requests require a valid session and `is_staff = true`
 
 General plugin hooks, OIDC/OAuth sign-in and multi-tenancy are not implemented. TOTP MFA with recovery codes and login challenges is implemented for local accounts; see [auth providers](auth-providers.md). The admin supports German and English. It cannot grant superuser access or physically delete users. Directory management requires a staff superuser and uses dedicated create, edit and password routes rather than generic model CRUD. Deactivation is the supported alternative to deletion.
 
-The HTML admin aims at clearer labels, focus, and validation text. That is not a WCAG 2.2 AA conformance claim. A screen reader was not run. Contrast was not measured. Table-row clicks remain a mouse enhancement; the record link is the keyboard path. The many-to-many widget does not page inside the checkbox list. Login rate limits use the error page.
+The HTML admin aims at clearer labels, focus, and validation text. That is not a WCAG 2.2 AA conformance claim. A screen reader was not run; automated browser checks cover the login form labels, keyboard focus, a narrow viewport, and the anonymous picker redirect. Contrast was not measured. Table-row clicks remain a mouse enhancement; the record link is the keyboard path. Many-to-many pages use the existing offset lookup of 100 rows. Login rate limits use the error page.
+
+`examples/board` saves a project, its lead, and its tasks in one transaction and rejects a foreign child id. The native admin order form in `examples/myshop` remains the inline example and was not changed here.
 
 ## Later
 

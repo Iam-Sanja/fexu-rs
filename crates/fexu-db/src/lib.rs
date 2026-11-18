@@ -45,9 +45,9 @@ use fexu_core::{FexuError, FexuModel};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 pub use sql::{
     date_buckets, delete_record, find_by_column, get_record, insert_record, kind_of, list_records,
-    query_admin_page, query_labels, render_add_column, render_add_column_referencing,
-    render_create_index, render_create_table, render_drop_column, render_drop_index,
-    render_drop_table, render_rename_column, render_rename_table, render_schema,
+    query_admin_page, query_labels, query_scoped_ids, render_add_column,
+    render_add_column_referencing, render_create_index, render_create_table, render_drop_column,
+    render_drop_index, render_drop_table, render_rename_column, render_rename_table, render_schema,
     render_table_bundle, update_record, with_checks, AdminPage, AdminPageRequest, ForeignKeyClause,
     PhysicalColumn, ValuePage,
 };

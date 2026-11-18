@@ -188,6 +188,47 @@ pub async fn current_members(
     Ok(ids)
 }
 
+/// Keeps links the user did not see on this page and applies only the posted page.
+///
+/// `shown` is the option list that was rendered, at most 100 ids. A selected id
+/// outside that list stays. An id on the list is kept only when it is also in
+/// `requested`. Ids outside `visible` cannot be added, and a hidden current id
+/// is not removed by a forged page id.
+pub fn page_membership(
+    current: &[Uuid],
+    visible: &[Uuid],
+    shown: &[Uuid],
+    requested: &[Uuid],
+) -> Result<Vec<Uuid>, &'static str> {
+    if shown.len() > 100 || requested.len() > 1000 {
+        return Err("admin.relation.size");
+    }
+    let chosen = bulk_targets(visible, requested).map_err(|code| {
+        if code == "admin.bulk.size" {
+            "admin.relation.size"
+        } else {
+            "admin.relation"
+        }
+    })?;
+    let mut next = Vec::new();
+    for id in current {
+        let on_page = shown.contains(id) && visible.contains(id);
+        if on_page || next.contains(id) {
+            continue;
+        }
+        next.push(*id);
+    }
+    for id in chosen {
+        if !next.contains(&id) {
+            next.push(id);
+        }
+    }
+    if next.len() > 1000 {
+        return Err("admin.relation.size");
+    }
+    Ok(next)
+}
+
 /// Rejects a bulk selection if any ID falls outside the visible set.
 pub fn bulk_targets(visible: &[Uuid], requested: &[Uuid]) -> Result<Vec<Uuid>, &'static str> {
     if requested.len() > 1000 {
@@ -291,7 +332,7 @@ fn safe_ident(value: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{
-        bulk_targets, current_members, lookup_page, posted_members, replace_links,
+        bulk_targets, current_members, lookup_page, page_membership, posted_members, replace_links,
         scoped_membership, shape_of, RelationShape,
     };
     use fexu_core::{ColumnKind, ColumnSpec, QueryScope, ReferentialAction, ScopeValue};
@@ -454,6 +495,33 @@ mod tests {
         .unwrap();
         assert_eq!(none.total, 0);
         assert!(none.rows.is_empty());
+        let alpha = Uuid::from_u128(1);
+        let scoped = fexu_db::query_scoped_ids(
+            db,
+            "lookup_targets",
+            &cols,
+            &[alpha, Uuid::from_u128(9_999)],
+            &QueryScope::Equals {
+                column: "owner",
+                value: ScopeValue::Text("alpha".into()),
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(scoped, vec![alpha]);
+        let foreign = fexu_db::query_scoped_ids(
+            db,
+            "lookup_targets",
+            &cols,
+            &[alpha],
+            &QueryScope::Equals {
+                column: "owner",
+                value: ScopeValue::Text("beta".into()),
+            },
+        )
+        .await
+        .unwrap();
+        assert!(foreign.is_empty());
         let empty_html = crate::render_scoped_page(
             "lead_id",
             "Lead",
@@ -589,6 +657,27 @@ mod tests {
             scoped_membership(&[], &visible, &[hidden]).unwrap_err(),
             "admin.relation"
         );
+        let page = [visible[0]];
+        assert_eq!(
+            page_membership(&[visible[0], hidden], &visible, &page, &[]).unwrap(),
+            vec![hidden]
+        );
+        assert_eq!(
+            page_membership(&visible, &visible, &page, &page).unwrap(),
+            vec![visible[1], visible[0]]
+        );
+        assert_eq!(
+            page_membership(&visible, &visible, &page, &[hidden]).unwrap_err(),
+            "admin.relation"
+        );
+        let mut many = Vec::new();
+        for index in 0_u32..1000 {
+            many.push(Uuid::from_u128(u128::from(index) + 1));
+        }
+        let kept = page_membership(&many, &many[..100], &many[..100], &[]).unwrap();
+        assert_eq!(kept.len(), 900);
+        assert!(!kept.contains(&many[0]));
+        assert!(kept.contains(&many[100]));
     }
 
     async fn exercise_links(db: &DatabaseConnection) {
