@@ -206,7 +206,7 @@ async fn ensure_table(db: &DatabaseConnection) -> Result<(), FexuError> {
         DatabaseBackend::Sqlite => "BLOB",
         DatabaseBackend::MySql => {
             return Err(FexuError::Validation(
-                "MySQL wird nicht unterstützt.".into(),
+                "MySQL is not supported.".into(),
             ))
         }
     };
@@ -259,7 +259,7 @@ fn build(
         DatabaseBackend::Sqlite => query.build(SqliteQueryBuilder),
         DatabaseBackend::MySql => {
             return Err(FexuError::Validation(
-                "MySQL wird nicht unterstützt.".into(),
+                "MySQL is not supported.".into(),
             ))
         }
     };
