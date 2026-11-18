@@ -964,14 +964,16 @@ pub(crate) fn render_control(
             value = escape(value)
         ),
         Widget::Select | Widget::Relation => select_control(
-            &name,
             field,
-            value,
-            &class,
-            required,
-            &described,
-            invalid,
-            locale,
+            SelectMarkup {
+                name: &name,
+                value,
+                class: &class,
+                required,
+                described: &described,
+                invalid,
+                locale,
+            },
         ),
         Widget::SelectMultiple => {
             select_multiple(&name, field, values, &class, required, &described, invalid)
@@ -1026,16 +1028,26 @@ fn class_attr(class_name: &str) -> String {
     }
 }
 
-fn select_control(
-    name: &str,
-    field: &Field,
-    value: &str,
-    class: &str,
-    required: &str,
-    described: &str,
-    invalid: &str,
-    locale: &str,
-) -> String {
+struct SelectMarkup<'a> {
+    name: &'a str,
+    value: &'a str,
+    class: &'a str,
+    required: &'a str,
+    described: &'a str,
+    invalid: &'a str,
+    locale: &'a str,
+}
+
+fn select_control(field: &Field, markup: SelectMarkup<'_>) -> String {
+    let SelectMarkup {
+        name,
+        value,
+        class,
+        required,
+        described,
+        invalid,
+        locale,
+    } = markup;
     let relation = if field.widget == Widget::Relation {
         " data-fexu-relation=\"true\""
     } else {
