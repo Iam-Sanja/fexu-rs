@@ -789,6 +789,10 @@ fn collect_templates(
                     .map_err(|error| AppError::new("app.template", error.to_string()))?;
                 files.push(("base.html".to_owned(), body));
             }
+            let partials = root.join("partials");
+            if partials.is_dir() {
+                walk_templates("partials", &root, &partials, &mut files)?;
+            }
         }
     }
     Ok(files)
@@ -1240,6 +1244,46 @@ mod tests {
             Some(&settings)
         )
         .is_err());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn app_catalog_includes_project_partials_used_by_base() {
+        let root = std::env::temp_dir().join(format!("fexu-partial-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(root.join("templates/partials")).unwrap();
+        std::fs::create_dir_all(root.join("local/shop")).unwrap();
+        std::fs::write(root.join("fexu.toml"), "migrations_dir = \"migrations\"\n").unwrap();
+        std::fs::write(
+            root.join("templates/partials/header.html"),
+            "<header>{{ app_name }}</header>\n",
+        )
+        .unwrap();
+        std::fs::write(
+            root.join("templates/base.html"),
+            "{% include \"partials/header.html\" %}<main>{% block content %}{% endblock %}</main>",
+        )
+        .unwrap();
+        std::fs::write(
+            root.join("local/shop/index.html"),
+            "{% extends \"base.html\" %}{% block content %}shop{% endblock %}",
+        )
+        .unwrap();
+        let settings = fexu_migrations::discover_project(&root).unwrap();
+        let files = super::collect_templates(
+            "shop",
+            &root.join("local"),
+            TemplateMode::Isolated,
+            Some(&settings),
+        )
+        .unwrap();
+        assert!(files.iter().any(|(name, _)| name == "partials/header.html"));
+        let site =
+            crate::pages::Site::from_named(&files, &crate::urls::RouteMap::default()).unwrap();
+        let mut context = tera::Context::new();
+        context.insert("app_name", "Demo");
+        let html = site.render("shop/index.html", &context).unwrap();
+        assert!(html.contains("<header>Demo</header>"));
+        assert!(html.contains("shop"));
         std::fs::remove_dir_all(root).unwrap();
     }
 
