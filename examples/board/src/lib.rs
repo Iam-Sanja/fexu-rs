@@ -22,7 +22,11 @@ use fexu::views::{
 };
 
 mod forms;
-pub use forms::{NotePublishForm, NoteReviseForm, NoteSearchForm};
+mod project;
+pub use forms::{NotePublishForm, NoteReviseForm, NoteSearchForm, ProjectForm, TaskLineForm};
+pub use project::{
+    create_tables, save_project_with_tasks, Member, MemberCreate, Project, Task, TaskCreate,
+};
 
 const ORIGIN: &str = "http://127.0.0.1:3000";
 
@@ -128,6 +132,7 @@ pub async fn prepare_database(db: &DatabaseConnection) -> Result<(), String> {
     db.execute(fexu::db::driver::Statement::from_string(backend, sql))
         .await
         .map_err(|error| error.to_string())?;
+    create_tables(db).await?;
     fexu::auth::apply_migrations(db)
         .await
         .map_err(|error| error.to_string())?;

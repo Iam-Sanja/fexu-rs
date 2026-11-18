@@ -5,7 +5,7 @@
 
 use fexu::forms::FormErrors;
 
-use crate::Note;
+use crate::{Note, Project, Task};
 
 #[derive(Debug, fexu::FexuForm)]
 #[form(model = Note)]
@@ -36,4 +36,18 @@ pub struct NoteSearchForm {
     pub title: Option<String>,
     #[form(widget = "select_multiple", choices = "open,done", label = "Tags")]
     pub tags: Vec<String>,
+}
+
+#[derive(Debug, fexu::FexuForm)]
+#[form(model = Project)]
+pub struct ProjectForm {
+    #[form(label = "Project")]
+    pub title: String,
+}
+
+#[derive(Debug, fexu::FexuForm)]
+#[form(model = Task)]
+pub struct TaskLineForm {
+    #[form(label = "Task")]
+    pub title: String,
 }

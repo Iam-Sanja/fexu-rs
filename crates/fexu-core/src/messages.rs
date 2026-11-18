@@ -92,6 +92,11 @@ fn known_code(message: &str) -> Option<&'static str> {
         "validation.upload_type" => "validation.upload_type",
         "validation.upload" => "validation.upload",
         "validation.formset_size" => "validation.formset_size",
+        "validation.formset_order" => "validation.formset_order",
+        "validation.relation" => "validation.relation",
+        "validation.relation_missing" => "validation.relation_missing",
+        "validation.relation_denied" => "validation.relation_denied",
+        "form.relation_page" => "form.relation_page",
         "validation.date" => "validation.date",
         "validation.time" => "validation.time",
         "validation.json" => "validation.json",
@@ -315,8 +320,8 @@ mod bundled_catalog_tests {
     #[test]
     fn core_messages_are_complete_and_preserve_legacy_text() {
         let (english, german) = validation_catalogs();
-        assert_eq!(english.len(), 35);
-        assert_eq!(german.len(), 35);
+        assert_eq!(english.len(), 40);
+        assert_eq!(german.len(), 40);
         german.check_keys(english).unwrap();
         assert_eq!(
             message_text("en", "validation.required"),

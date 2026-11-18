@@ -454,6 +454,65 @@ mod tests {
         .unwrap();
         assert_eq!(none.total, 0);
         assert!(none.rows.is_empty());
+        let empty_html = crate::render_scoped_page(
+            "lead_id",
+            "Lead",
+            "label",
+            fexu_forms::RelationPresentation::Select,
+            &empty,
+            &[],
+            "",
+        )
+        .unwrap();
+        assert_eq!(empty_html.matches("<option value=\"").count(), 1);
+        let one_html = crate::render_scoped_page(
+            "lead_id",
+            "Lead",
+            "label",
+            fexu_forms::RelationPresentation::Search,
+            &one,
+            &[],
+            "row",
+        )
+        .unwrap();
+        assert!(one_html.contains("row-0000"));
+        assert!(one_html.contains("type=\"search\""));
+        let hundred_html = crate::render_scoped_page(
+            "lead_id",
+            "Lead",
+            "label",
+            fexu_forms::RelationPresentation::Picker,
+            &hundred,
+            &[],
+            "",
+        )
+        .unwrap();
+        assert_eq!(hundred_html.matches("<option value=\"").count(), 101);
+        let last_html = crate::render_scoped_page(
+            "lead_id",
+            "Lead",
+            "label",
+            fexu_forms::RelationPresentation::Select,
+            &last,
+            &[],
+            "",
+        )
+        .unwrap();
+        assert_eq!(last_html.matches("<option value=\"").count(), 101);
+        assert!(!last_html.contains("row-0000"));
+        let hidden_html = crate::render_scoped_page(
+            "lead_id",
+            "Lead",
+            "label",
+            fexu_forms::RelationPresentation::Select,
+            &hidden,
+            &[],
+            "",
+        )
+        .unwrap();
+        assert!(!hidden_html.contains("row-"));
+        let allowed = crate::options_from_lookup(&hidden, "label").unwrap();
+        assert!(allowed.is_empty());
     }
 
     #[tokio::test]

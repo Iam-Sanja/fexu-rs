@@ -144,3 +144,23 @@ msgctxt "request.rejected"
 msgid "The request was rejected."
 msgstr "Die Anfrage wurde abgelehnt."
 
+msgctxt "validation.formset_order"
+msgid "The row order is already used."
+msgstr "Diese Reihenfolge ist bereits vergeben."
+
+msgctxt "validation.relation"
+msgid "The relation value is not a valid id."
+msgstr "Der Beziehungswert ist keine gültige Id."
+
+msgctxt "validation.relation_missing"
+msgid "The selected record does not exist."
+msgstr "Der ausgewählte Datensatz existiert nicht."
+
+msgctxt "validation.relation_denied"
+msgid "The selected record is not available."
+msgstr "Der ausgewählte Datensatz ist nicht verfügbar."
+
+msgctxt "form.relation_page"
+msgid "The relation page is too large to render."
+msgstr "Die Beziehungsseite ist zu groß für die Ausgabe."
+

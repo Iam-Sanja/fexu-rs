@@ -107,6 +107,10 @@ There are no additional routes for relationships. `GET /categories/{id}/products
 
 Existing product lines remain valid because the new column is nullable and does not need a default.
 
+## Forms
+
+`bind_relation` and `render_relation_widget` live in [forms.md](forms.md). They do not query. The handler passes ids from `list_scoped`, `get_scoped` or `lookup_page`. A many-to-many write still uses `replace_links` inside one transaction. An inline formset assigns the parent id on the server and rejects a posted parent id that differs.
+
 ## Not implemented
 
 - Automatic eager loading when a lazy relation method is called in a loop
