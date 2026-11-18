@@ -1,4 +1,4 @@
 <article>
   <h1>{{ name }}</h1>
-  <p>Bestand: {{ stock }}</p>
+  <p>{% if locale == "en" %}Stock{% else %}Bestand{% endif %}: {{ stock }}</p>
 </article>
