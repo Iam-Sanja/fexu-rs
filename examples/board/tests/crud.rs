@@ -610,8 +610,14 @@ async fn read_only_parts_hide_writes_and_other_owners() {
         .expect("detail html")
         .to_owned();
     assert!(page.contains("Visible"), "{page}");
-    assert!(!page.contains(">Edit<") && !page.contains(">Bearbeiten<"), "{page}");
-    assert!(!page.contains(">Delete<") && !page.contains(">Löschen<"), "{page}");
+    assert!(
+        !page.contains(">Edit<") && !page.contains(">Bearbeiten<"),
+        "{page}"
+    );
+    assert!(
+        !page.contains(">Delete<") && !page.contains(">Löschen<"),
+        "{page}"
+    );
     other_client
         .get(&detail)
         .await
