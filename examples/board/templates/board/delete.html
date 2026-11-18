@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="{{ locale }}">
 <head>
   <meta charset="utf-8">
-  <title>Delete</title>
+  <title>{% if locale == "de" %}Löschen{% else %}Delete{% endif %}</title>
   {% if canonical %}<link rel="canonical" href="{{ canonical | safe }}">{% endif %}
 </head>
 <body>
@@ -13,9 +13,9 @@
   </ul>
   <form method="post" action="{{ action | safe }}">
     <input type="hidden" name="csrf_token" value="{{ csrf }}">
-    <p>Delete {{ label }}?</p>
-    <button type="submit">Delete</button>
+    <p>{% if locale == "de" %}{{ label }} löschen?{% else %}Delete {{ label }}?{% endif %}</p>
+    <button type="submit">{% if locale == "de" %}Löschen{% else %}Delete{% endif %}</button>
   </form>
-  <a href="{{ list_url | safe }}">Back</a>
+  <a href="{{ list_url | safe }}">{% if locale == "de" %}Zurück{% else %}Back{% endif %}</a>
 </body>
 </html>

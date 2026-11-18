@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use desk::models::{Address, Cart, Category, Line, Owner, Product};
 use desk::shop::{self, ADDRESS_LIMIT};
-use desk::{routes, stock_markup};
+use desk::{routes, stock_markup, stock_markup_in};
 use fexu::core::{DatabaseKind, FexuError, FexuModel};
 use fexu::db::{any_of, col, connect, kind_of, Direction, ModelQuery};
 use fexu::migrations::{apply_directory, make_migration, RegisteredModel, SchemaSnapshot};
@@ -438,4 +438,18 @@ async fn postgres_same_operations() {
         .drop_database()
         .await
         .expect("drop isolated database");
+}
+
+#[test]
+fn stock_demo_renders_both_languages_without_escaping_regressions() {
+    assert!(stock_markup("Demo", 3).unwrap().contains("Bestand: 3"));
+    assert!(stock_markup_in("Demo", 3, "en")
+        .unwrap()
+        .contains("Stock: 3"));
+    assert!(stock_markup_in("Demo", 3, "fr")
+        .unwrap()
+        .contains("Stock: 3"));
+    assert!(stock_markup_in("<script>", 3, "de")
+        .unwrap()
+        .contains("&lt;script&gt;"));
 }

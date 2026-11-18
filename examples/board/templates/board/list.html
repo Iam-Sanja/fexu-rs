@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="{{ locale }}">
 <head>
   <meta charset="utf-8">
-  <title>Notes</title>
+  <title>{% if locale == "de" %}Notizen{% else %}Notes{% endif %}</title>
   {% if canonical %}<link rel="canonical" href="{{ canonical | safe }}">{% endif %}
 </head>
 <body>
@@ -11,14 +11,14 @@
     <li data-level="{{ flash.level }}">{{ flash.text }}</li>
   {% endfor %}
   </ul>
-  <p>{{ total }} notes</p>
+  <p>{{ total }} {% if locale == "de" %}Notizen{% else %}notes{% endif %}</p>
   <ul>
   {% for row in rows %}
     <li><a href="{{ row.href | safe }}">{{ row.title }}</a></li>
   {% endfor %}
   </ul>
-  {% if prev_url %}<a href="{{ prev_url | safe }}">Previous</a>{% endif %}
-  {% if next_url %}<a href="{{ next_url | safe }}">Next</a>{% endif %}
-  {% if create_url %}<a href="{{ create_url | safe }}">New</a>{% endif %}
+  {% if prev_url %}<a href="{{ prev_url | safe }}">{% if locale == "de" %}Zurück{% else %}Previous{% endif %}</a>{% endif %}
+  {% if next_url %}<a href="{{ next_url | safe }}">{% if locale == "de" %}Weiter{% else %}Next{% endif %}</a>{% endif %}
+  {% if create_url %}<a href="{{ create_url | safe }}">{% if locale == "de" %}Neu{% else %}New{% endif %}</a>{% endif %}
 </body>
 </html>
