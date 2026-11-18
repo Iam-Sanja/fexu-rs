@@ -222,6 +222,27 @@ fn summary(
             text = escape(&message_for(locale, field.name, code, &[], overrides))
         ));
     }
+    for failure in errors.field_errors() {
+        if fields.iter().any(|field| field.name == failure.field) {
+            continue;
+        }
+        let label = escape(&failure.field);
+        let text = escape(&message_for(
+            locale,
+            &failure.field,
+            failure.code,
+            &[],
+            overrides,
+        ));
+        if let Some(id) = input_name(prefix, &failure.field) {
+            items.push_str(&format!(
+                "<li><a href=\"#{id}\">{label}: {text}</a></li>",
+                id = escape(&id)
+            ));
+        } else {
+            items.push_str(&format!("<li>{label}: {text}</li>"));
+        }
+    }
     if !items.is_empty() {
         html.push_str("<ul>");
         html.push_str(&items);
@@ -347,6 +368,7 @@ mod tests {
         posted.insert("csrf_token", "token&");
         let mut errors = FormErrors::default();
         errors.push("note", "validation.required");
+        errors.push("role", "validation.unknown_field");
         errors.push_form("validation.mismatch");
         let overrides = [FieldOverride {
             field: "note",
@@ -373,6 +395,7 @@ mod tests {
         assert!(html.contains("value=\"&lt;script&gt;\""));
         assert!(html.contains("class=\"wide\""));
         assert!(html.contains("Required &lt;i&gt;"));
+        assert!(html.contains("role: This field is not allowed."));
         assert!(html.contains("href=\"#edit_note\""));
         assert!(html.contains("&lt;b&gt;Note&lt;/b&gt;"));
         assert!(html.contains("Keep &lt;b&gt;"));
