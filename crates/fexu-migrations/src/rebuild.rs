@@ -437,9 +437,7 @@ async fn reconstruct_sqlite(
             "PRAGMA foreign_key_check",
         ))
         .await
-        .map_err(|error| {
-            MigrationError::new(format!("foreign_key_check failed: {error}"))
-        })?;
+        .map_err(|error| MigrationError::new(format!("foreign_key_check failed: {error}")))?;
     if !violations.is_empty() {
         return Err(MigrationError::new(
             "foreign_key_check reported violations. The transaction is rolled back and no rows were changed."
@@ -796,10 +794,7 @@ async fn validate_changed_column(
         ))
         .await
         .map_err(|error| {
-            MigrationError::new(format!(
-                "Reading `{table}.{}` failed: {error}",
-                from.name
-            ))
+            MigrationError::new(format!("Reading `{table}.{}` failed: {error}", from.name))
         })?;
     let total = count_where(db, table, "1 = 1").await?;
     if rows.len() as i64 != total {
