@@ -224,15 +224,18 @@ async fn contact_get_and_thanks_follow_english_and_german_browser_language() {
         let response = myshop::contact::show(State(app.clone()), headers.clone()).await;
         assert_eq!(response.status(), StatusCode::OK);
         let html = String::from_utf8(
-            response.into_body().collect().await.unwrap().to_bytes().to_vec(),
+            response
+                .into_body()
+                .collect()
+                .await
+                .unwrap()
+                .to_bytes()
+                .to_vec(),
         )
         .unwrap();
         assert!(html.contains(&format!("<title>{title}</title>")), "{html}");
         let lang = if title == "Kontakt" { "de" } else { "en" };
-        assert!(
-            html.contains(&format!(r#"<html lang="{lang}">"#)),
-            "{html}"
-        );
+        assert!(html.contains(&format!(r#"<html lang="{lang}">"#)), "{html}");
 
         let thanks = myshop::contact::thanks(headers).await;
         assert!(
