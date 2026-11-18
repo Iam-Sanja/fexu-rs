@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased — English-first diagnostics
+
+- Replace German-only runtime diagnostics in cron and job handling, SQLite migration operations, route/app validation, admin extension errors and unsupported-backend paths with English defaults; keep explicit German locale branches and translated catalogs intact.
+- Generated development servers announce `Fexu listening at http://...` in English. The CLI generator test checks the new output. Password-reset pages now include an English not-found title and an English unconfigured-auth fallback.
+
 ## Unreleased — forms acceptance
 
 - A board note uses `permissions = "notes"`, so the HTML form and the JSON route share one permission check.
