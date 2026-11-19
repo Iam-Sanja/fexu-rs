@@ -1222,6 +1222,48 @@ async fn https_configuration(address: &SocketAddr, password: &str) -> Result<(),
         )
         .await?;
     expect_status(&host_only, 403, "https host header is not an origin")?;
+    // A proxy-provided Host or Forwarded claim must not manufacture a
+    // browser Origin when secure cookies are enabled. This is a full-stack
+    // HTTP check, not merely a unit test of the origin parser.
+    let proxy_claim = client
+        .post_login(
+            None,
+            None,
+            &login_body(&token, password),
+            &[
+                ("host", "shop.example"),
+                ("forwarded", "for=203.0.113.5;proto=https;host=shop.example"),
+                ("x-forwarded-host", "shop.example"),
+                ("x-forwarded-proto", "https"),
+            ],
+        )
+        .await?;
+    expect_status(
+        &proxy_claim,
+        403,
+        "https forwarded headers are not an origin",
+    )?;
+    if sets_live_session(&proxy_claim) {
+        return Err("forged forwarded headers issued a live session".into());
+    }
+
+    // The narrowly allowed null/same-origin case never bypasses CSRF.
+    let null_bad_csrf = client
+        .post_login(
+            Some("null"),
+            Some("same-origin"),
+            &login_body("not-the-token", password),
+            &[],
+        )
+        .await?;
+    expect_status(
+        &null_bad_csrf,
+        403,
+        "https null same-origin still needs CSRF",
+    )?;
+    if sets_live_session(&null_bad_csrf) {
+        return Err("invalid CSRF issued a live session".into());
+    }
     succeed(
         &mut client,
         Some("null"),
