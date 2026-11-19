@@ -232,6 +232,7 @@ pub fn schedule_migration_file() -> Result<MigrationFile, JobError> {
 #[cfg(test)]
 mod tests {
     use super::{ensure_test_migration, migration_file, migrations_dir};
+    use fexu_db::driver::{ConnectionTrait, Statement};
 
     #[tokio::test]
     async fn migration_status_is_read_only_before_and_after_apply() {
@@ -254,6 +255,31 @@ mod tests {
         assert_eq!(after.lines.len(), 2);
         assert!(after.lines.iter().all(|line| line.state == "angewendet"));
         assert!(super::apply_migrations(&db).await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn applied_jobs_missing_table_is_reported_without_repair() {
+        let db = fexu_db::connect("sqlite::memory:").await.unwrap();
+        assert_eq!(super::apply_migrations(&db).await.unwrap().len(), 2);
+        db.execute(Statement::from_string(
+            db.get_database_backend(),
+            format!("DROP TABLE {}", super::JOBS),
+        ))
+        .await
+        .unwrap();
+
+        let report = super::migration_status(&db).await.unwrap();
+        assert!(report.lines.iter().all(|line| line.state == "angewendet"));
+        assert!(
+            report.conflicts.iter().any(|conflict| {
+                conflict.contains(super::JOBS) && conflict.contains("missing")
+            }),
+            "{:?}",
+            report.conflicts
+        );
+        assert!(!fexu_migrations::table_exists(&db, super::JOBS)
+            .await
+            .unwrap());
     }
 
     #[test]
