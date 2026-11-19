@@ -1238,7 +1238,11 @@ async fn https_configuration(address: &SocketAddr, password: &str) -> Result<(),
             ],
         )
         .await?;
-    expect_status(&proxy_claim, 403, "https forwarded headers are not an origin")?;
+    expect_status(
+        &proxy_claim,
+        403,
+        "https forwarded headers are not an origin",
+    )?;
     if sets_live_session(&proxy_claim) {
         return Err("forged forwarded headers issued a live session".into());
     }
@@ -1252,7 +1256,11 @@ async fn https_configuration(address: &SocketAddr, password: &str) -> Result<(),
             &[],
         )
         .await?;
-    expect_status(&null_bad_csrf, 403, "https null same-origin still needs CSRF")?;
+    expect_status(
+        &null_bad_csrf,
+        403,
+        "https null same-origin still needs CSRF",
+    )?;
     if sets_live_session(&null_bad_csrf) {
         return Err("invalid CSRF issued a live session".into());
     }
