@@ -271,9 +271,10 @@ mod tests {
         let report = super::migration_status(&db).await.unwrap();
         assert!(report.lines.iter().all(|line| line.state == "angewendet"));
         assert!(
-            report.conflicts.iter().any(|conflict| {
-                conflict.contains(super::JOBS) && conflict.contains("missing")
-            }),
+            report
+                .conflicts
+                .iter()
+                .any(|conflict| { conflict.contains(super::JOBS) && conflict.contains("missing") }),
             "{:?}",
             report.conflicts
         );
