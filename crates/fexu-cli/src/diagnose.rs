@@ -958,6 +958,12 @@ mod tests {
     };
 
     #[test]
+    fn jobs_readiness_distinguishes_pending_from_inspection_errors() {
+        assert_eq!(super::jobs_pending("sqlite::memory:"), Ok(true));
+        assert!(super::jobs_pending("not-a-database-url").is_err());
+    }
+
+    #[test]
     fn a_bound_port_is_reported_as_busy_and_released() {
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let port = listener.local_addr().unwrap().port();
