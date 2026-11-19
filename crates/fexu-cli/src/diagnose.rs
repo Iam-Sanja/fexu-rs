@@ -679,11 +679,21 @@ fn migration_lines(project: &ProjectConfig, compare_schema: bool, deploy: bool) 
         Ok(report_value) => {
             let mut errors = 0;
             let mut warnings = 0;
-            let jobs_pending = jobs_pending(&readonly);
+            let jobs_pending = match jobs_pending(&readonly) {
+                Ok(pending) => Some(pending),
+                Err(error) => {
+                    errors += 1;
+                    report(
+                        "ERROR",
+                        &format!("job.migration.unavailable {}", public_detail(&error)),
+                    );
+                    None
+                }
+            };
             if report_value.pending_auth() == 0
                 && report_value.pending_app() == 0
                 && report_value.pending_packages() == 0
-                && !jobs_pending
+                && jobs_pending == Some(false)
                 && !report_value.has_error()
             {
                 report(
@@ -691,7 +701,7 @@ fn migration_lines(project: &ProjectConfig, compare_schema: bool, deploy: bool) 
                     "migration.current Authentication, job, and app migrations are applied.",
                 );
             }
-            if jobs_pending {
+            if jobs_pending == Some(true) {
                 if deploy {
                     errors += 1;
                     report(
@@ -754,17 +764,17 @@ fn migration_lines(project: &ProjectConfig, compare_schema: bool, deploy: bool) 
     }
 }
 
-fn jobs_pending(url: &str) -> bool {
-    let Ok(runtime) = tokio::runtime::Runtime::new() else {
-        return false;
-    };
-    runtime
-        .block_on(async {
-            let db = fexu_db::connect(url).await.ok()?;
-            let (_text, current) = fexu_jobs::render_migration_status(&db).await.ok()?;
-            Some(!current)
-        })
-        .unwrap_or(false)
+fn jobs_pending(url: &str) -> Result<bool, String> {
+    let runtime = tokio::runtime::Runtime::new().map_err(|error| error.to_string())?;
+    runtime.block_on(async {
+        let db = fexu_db::connect(url)
+            .await
+            .map_err(|error| error.to_string())?;
+        let (_text, current) = fexu_jobs::render_migration_status(&db)
+            .await
+            .map_err(|error| format!("{} {}", error.code(), error.detail()))?;
+        Ok(!current)
+    })
 }
 
 fn load_check_schema(project: &ProjectConfig) -> Result<Option<SchemaSnapshot>, String> {
