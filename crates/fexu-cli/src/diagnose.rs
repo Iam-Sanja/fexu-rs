@@ -1011,8 +1011,9 @@ mod tests {
         };
         assert!(super::migration_scope_readiness("app", &optional, true)
             .contains("state=optional-empty"));
-        assert!(super::migration_scope_readiness("auth", &optional, false)
-            .contains("state=missing"));
+        assert!(
+            super::migration_scope_readiness("auth", &optional, false).contains("state=missing")
+        );
         let pending = fexu_jobs::migration_status(&db).await.unwrap();
         assert!(super::migration_scope_readiness("jobs", &pending, false)
             .contains("state=pending pending=2 conflicts=0"));
