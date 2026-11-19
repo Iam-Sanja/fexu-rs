@@ -41,6 +41,30 @@ SQLite diagnoses open an existing file with `mode=ro`. A missing file does not l
 
 The URL is `--database-url` on commands that accept it, otherwise `DATABASE_URL`, otherwise `database.url` from `fexu.toml`. `check` and `doctor` have no database override flag. The generated program uses the same environment and file resolution. A relative SQLite path from `fexu.toml` is resolved from the project root. A URL that is calculated only in the application code does not see the CLI. The selected target is printed redacted; `check` and `doctor` do not apply migrations.
 
+## Component readiness in `fexu check`
+
+`fexu check` and `fexu check --deploy` print separate `INFO` summaries after inspecting the existing database. The summaries are read-only and do not create migration history tables, apply migrations, or repair missing tables:
+
+```text
+[INFO] migration.readiness.auth state=current pending=0 conflicts=0
+[INFO] migration.readiness.jobs state=pending pending=2 conflicts=0
+[INFO] migration.readiness.app state=optional-empty pending=0 conflicts=0
+```
+
+Each declared application package also has a separate `migration.readiness.<package-name>` line. Counts belong to that component, rather than mixing auth, jobs and app migration histories.
+
+| State | Interpretation |
+|---|---|
+| `current` | All listed migrations for the component are applied and no conflicts were reported. |
+| `pending` | One or more migrations have not been applied. |
+| `conflict` | The read-only inspection found an inconsistency, such as missing tables, changed checksums or an invalid history. |
+| `missing` | A required component has no migration entries. This must not be confused with a valid optional application directory. |
+| `optional-empty` | The application migration set is intentionally empty; this does **not** mean framework auth or jobs migrations have succeeded. |
+
+The readiness lines describe the already validated migration reports. A missing or corrupt embedded framework resource makes inspection fail explicitly instead of producing a successful readiness line. A separate job-status inspection error is reported as `job.migration.unavailable` with an error exit, never as `current`. Other existing diagnostic codes and warnings remain authoritative; an informational readiness line is not a replacement for the final command exit code.
+
+For deployment, run `fexu check --deploy` with access to the **existing** database before bringing the application online. Any pending required migrations or inspection errors block the deploy check. Run `fexu migrate up` separately and explicitly if migrations are needed, then re-run the check. For SQLite, diagnostics use `mode=ro` and do not create the database file; PostgreSQL diagnostics issue read-only queries. A read-only status must never be used as an implicit schema initializer.
+
 ## Read-only plan
 
 `fexu migrate plan` keeps the application-directory comparison and, unless `--migrations-dir` selects another directory, also reports:
