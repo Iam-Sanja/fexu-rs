@@ -679,6 +679,19 @@ fn migration_lines(project: &ProjectConfig, compare_schema: bool, deploy: bool) 
         Ok(report_value) => {
             let mut errors = 0;
             let mut warnings = 0;
+            for (scope, status, optional) in [
+                ("auth", &report_value.auth, false),
+                ("jobs", &report_value.jobs, false),
+                ("app", &report_value.app, true),
+            ] {
+                report("INFO", &migration_scope_readiness(scope, status, optional));
+            }
+            for package in &report_value.packages {
+                report(
+                    "INFO",
+                    &migration_scope_readiness(&package.name, &package.status, false),
+                );
+            }
             let jobs_pending = match jobs_pending(&readonly) {
                 Ok(pending) => Some(pending),
                 Err(error) => {
@@ -762,6 +775,36 @@ fn migration_lines(project: &ProjectConfig, compare_schema: bool, deploy: bool) 
             }
         }
     }
+}
+
+/// A separate, read-only migration summary for each framework/app component.
+fn migration_scope_readiness(
+    scope: &str,
+    status: &fexu_migrations::StatusReport,
+    optional: bool,
+) -> String {
+    let pending = status
+        .lines
+        .iter()
+        .filter(|line| line.state == "ausstehend")
+        .count();
+    let state = if !status.conflicts.is_empty() {
+        "conflict"
+    } else if pending > 0 {
+        "pending"
+    } else if status.lines.is_empty() {
+        if optional {
+            "optional-empty"
+        } else {
+            "missing"
+        }
+    } else {
+        "current"
+    };
+    format!(
+        "migration.readiness.{scope} state={state} pending={pending} conflicts={}",
+        status.conflicts.len()
+    )
 }
 
 fn jobs_pending(url: &str) -> Result<bool, String> {
@@ -956,6 +999,28 @@ mod tests {
         binds_local_port, configured_proxy_peers, csrf_secret_shape_ok, origins_are_https,
         port_available, port_probe, public_detail,
     };
+
+    #[tokio::test]
+    async fn migration_readiness_distinguishes_optional_pending_and_current() {
+        let db = fexu_db::connect("sqlite::memory:").await.unwrap();
+        let optional = fexu_migrations::StatusReport {
+            backend: "SQLite".to_owned(),
+            lines: Vec::new(),
+            conflicts: Vec::new(),
+            schema_note: String::new(),
+        };
+        assert!(super::migration_scope_readiness("app", &optional, true)
+            .contains("state=optional-empty"));
+        assert!(super::migration_scope_readiness("auth", &optional, false)
+            .contains("state=missing"));
+        let pending = fexu_jobs::migration_status(&db).await.unwrap();
+        assert!(super::migration_scope_readiness("jobs", &pending, false)
+            .contains("state=pending pending=2 conflicts=0"));
+        fexu_jobs::apply_migrations(&db).await.unwrap();
+        let current = fexu_jobs::migration_status(&db).await.unwrap();
+        assert!(super::migration_scope_readiness("jobs", &current, false)
+            .contains("state=current pending=0 conflicts=0"));
+    }
 
     #[test]
     fn jobs_readiness_distinguishes_pending_from_inspection_errors() {
