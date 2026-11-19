@@ -475,7 +475,7 @@ async fn postgres_schema_evolution_keeps_rows_on_a_disposable_database() {
             name: unique_index_name("products", &["sku"]),
             columns: vec!["sku".to_owned()],
         });
-        written(&migrations, "unique_sku", &unique);
+        let unique_path = written(&migrations, "unique_sku", &unique);
         if apply_directory(&db, &migrations, false).await.is_ok() {
             return Err("duplicate sku was accepted".to_owned());
         }
@@ -489,6 +489,36 @@ async fn postgres_schema_evolution_keeps_rows_on_a_disposable_database() {
         .await;
         if duplicates != "2" {
             return Err(format!("duplicate rows changed: {duplicates}"));
+        }
+        // Remove only the disposable test's failed, unapplied migration file.
+        std::fs::remove_file(unique_path).map_err(|error| error.to_string())?;
+        let mut indexed = renamed.clone();
+        indexed.tables[0].indexes.push(IndexSnapshot {
+            name: secondary_index_name("products", &["sku"]),
+            columns: vec!["sku".to_owned()],
+        });
+        written(&migrations, "index_sku", &indexed);
+        let applied = apply_directory(&db, &migrations, false)
+            .await
+            .map_err(|error| error.0)?;
+        if applied.applied.len() != 1 || history_count(&db).await != history_before + 1 {
+            return Err("recovery did not apply exactly one valid migration".to_owned());
+        }
+        if !apply_directory(&db, &migrations, false)
+            .await
+            .map_err(|error| error.0)?
+            .applied
+            .is_empty()
+        {
+            return Err("recovered migration was applied twice".to_owned());
+        }
+        let recovered_rows = cell(
+            &db,
+            "SELECT COUNT(*) AS value FROM \"products\"",
+        )
+        .await;
+        if recovered_rows != "3" {
+            return Err(format!("recovery lost rows: {recovered_rows}"));
         }
         Ok(())
     }
