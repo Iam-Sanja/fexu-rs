@@ -32,9 +32,28 @@ async fn initialize(db: &DatabaseConnection) -> BTreeSet<String> {
         tables(db).await.is_empty(),
         "Use an empty disposable database"
     );
+    let migrations = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("migrations");
+    let auth_files = fexu::auth::embedded_migrations().unwrap();
+    let jobs_files = fexu::jobs::embedded_migrations().unwrap();
+    let before = fexu::migrations::inspect_framework(
+        db,
+        &auth_files,
+        &jobs_files,
+        fexu::jobs::JOB_HISTORY,
+        &migrations,
+        None,
+        &[],
+    )
+    .await
+    .unwrap();
+    assert_eq!(before.pending_auth(), 6);
+    assert_eq!(before.pending_jobs(), 2);
+    assert_eq!(before.pending_app(), 6);
+    assert!(!before.has_error());
+    assert!(tables(db).await.is_empty(), "readiness must not write");
+
     assert_eq!(fexu::auth::apply_migrations(db).await.unwrap().len(), 6);
     assert_eq!(fexu::jobs::apply_migrations(db).await.unwrap().len(), 2);
-    let migrations = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("migrations");
     assert_eq!(
         fexu::migrations::apply_directory(db, &migrations, false)
             .await
@@ -43,6 +62,25 @@ async fn initialize(db: &DatabaseConnection) -> BTreeSet<String> {
             .len(),
         6
     );
+    let after = fexu::migrations::inspect_framework(
+        db,
+        &auth_files,
+        &jobs_files,
+        fexu::jobs::JOB_HISTORY,
+        &migrations,
+        None,
+        &[],
+    )
+    .await
+    .unwrap();
+    assert_eq!(after.pending_auth(), 0);
+    assert_eq!(after.pending_jobs(), 0);
+    assert_eq!(after.pending_app(), 0);
+    assert!(!after.has_error());
+    assert_eq!(after.auth.lines.len(), 6);
+    assert_eq!(after.jobs.lines.len(), 2);
+    assert_eq!(after.app.lines.len(), 6);
+
     let names = tables(db).await;
     for name in [
         "_fexu_users",
