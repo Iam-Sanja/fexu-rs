@@ -263,6 +263,14 @@ pub fn require_embedded_migrations(
             "Required framework migration resources for `{component}` are missing. The embedded package is empty, so those migrations were not applied."
         )));
     }
+    let mut expected_seen = std::collections::BTreeSet::new();
+    for id in expected_ids {
+        if !expected_seen.insert(*id) {
+            return Err(MigrationError::new(format!(
+                "Required framework migration `{id}` for `{component}` is duplicated in the expected package. Those migrations were not applied."
+            )));
+        }
+    }
     let mut seen = std::collections::BTreeSet::new();
     for (id, _) in sources {
         if !seen.insert(*id) {
@@ -861,6 +869,29 @@ mod tests {
         assert!(duplicate.contains("fexu-auth"), "{duplicate}");
         assert!(duplicate.contains("0001_alpha"), "{duplicate}");
         assert!(duplicate.contains("duplicated"), "{duplicate}");
+        let repeated_expected = super::require_embedded_migrations(
+            "fexu-auth",
+            &["0001_alpha", "0001_alpha"],
+            &[("0001_alpha", text.as_str())],
+        )
+        .unwrap_err()
+        .0;
+        assert!(repeated_expected.contains("fexu-auth"), "{repeated_expected}");
+        assert!(repeated_expected.contains("0001_alpha"), "{repeated_expected}");
+        assert!(
+            repeated_expected.contains("duplicated in the expected package"),
+            "{repeated_expected}"
+        );
+        let mislabeled = super::require_embedded_migrations(
+            "fexu-jobs",
+            &["0001_beta"],
+            &[("0001_beta", text.as_str())],
+        )
+        .unwrap_err()
+        .0;
+        assert!(mislabeled.contains("fexu-jobs"), "{mislabeled}");
+        assert!(mislabeled.contains("0001_beta"), "{mislabeled}");
+        assert!(mislabeled.contains("0001_alpha"), "{mislabeled}");
         let unexpected = super::require_embedded_migrations(
             "fexu-jobs",
             &["0001_alpha"],
