@@ -233,6 +233,29 @@ pub fn schedule_migration_file() -> Result<MigrationFile, JobError> {
 mod tests {
     use super::{ensure_test_migration, migration_file, migrations_dir};
 
+    #[tokio::test]
+    async fn migration_status_is_read_only_before_and_after_apply() {
+        let db = fexu_db::connect("sqlite::memory:").await.unwrap();
+        let before = super::migration_status(&db).await.unwrap();
+        assert!(before.conflicts.is_empty());
+        assert_eq!(before.lines.len(), 2);
+        assert!(before.lines.iter().all(|line| line.state == "ausstehend"));
+        assert!(!fexu_migrations::table_exists(&db, super::JOBS)
+            .await
+            .unwrap());
+        assert!(!fexu_migrations::table_exists(&db, super::JOB_HISTORY)
+            .await
+            .unwrap());
+
+        let applied = super::apply_migrations(&db).await.unwrap();
+        assert_eq!(applied.len(), 2);
+        let after = super::migration_status(&db).await.unwrap();
+        assert!(after.conflicts.is_empty());
+        assert_eq!(after.lines.len(), 2);
+        assert!(after.lines.iter().all(|line| line.state == "angewendet"));
+        assert!(super::apply_migrations(&db).await.unwrap().is_empty());
+    }
+
     #[test]
     fn jobs_migration_is_sealed() {
         ensure_test_migration();
