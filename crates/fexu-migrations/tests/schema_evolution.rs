@@ -469,6 +469,41 @@ async fn postgres_schema_evolution_keeps_rows_on_a_disposable_database() {
         if title != "Laptop" {
             return Err(format!("rename lost the row value: {title}"));
         }
+        let history_with_rename = history_count(&db).await;
+        let preview = revert_latest(&db, &migrations, false, true)
+            .await
+            .map_err(|error| error.0)?;
+        if preview.executed || preview.destructive || history_count(&db).await != history_with_rename {
+            return Err("rename rollback preview changed PostgreSQL history".to_owned());
+        }
+        let reverted = revert_latest(&db, &migrations, false, false)
+            .await
+            .map_err(|error| error.0)?;
+        if !reverted.executed || history_count(&db).await != history_with_rename - 1 {
+            return Err("rename rollback did not remove exactly one history entry".to_owned());
+        }
+        let restored = cell(
+            &db,
+            "SELECT \"name\" AS value FROM \"products\" WHERE \"id\" = '11111111-1111-4111-8111-111111111111'",
+        )
+        .await;
+        if restored != "Laptop" {
+            return Err(format!("rename rollback lost data: {restored}"));
+        }
+        apply_directory(&db, &migrations, false)
+            .await
+            .map_err(|error| error.0)?;
+        if history_count(&db).await != history_with_rename {
+            return Err("reapplying rename did not restore migration history".to_owned());
+        }
+        let reapplied = cell(
+            &db,
+            "SELECT \"title\" AS value FROM \"products\" WHERE \"id\" = '11111111-1111-4111-8111-111111111111'",
+        )
+        .await;
+        if reapplied != "Laptop" {
+            return Err(format!("reapplying rename lost data: {reapplied}"));
+        }
         let history_before = history_count(&db).await;
         let mut unique = renamed.clone();
         unique.tables[0].unique_constraints.push(UniqueConstraintSnapshot {
