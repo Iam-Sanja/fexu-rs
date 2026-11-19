@@ -512,11 +512,7 @@ async fn postgres_schema_evolution_keeps_rows_on_a_disposable_database() {
         {
             return Err("recovered migration was applied twice".to_owned());
         }
-        let recovered_rows = cell(
-            &db,
-            "SELECT COUNT(*) AS value FROM \"products\"",
-        )
-        .await;
+        let recovered_rows = cell(&db, "SELECT COUNT(*) AS value FROM \"products\"").await;
         if recovered_rows != "3" {
             return Err(format!("recovery lost rows: {recovered_rows}"));
         }
