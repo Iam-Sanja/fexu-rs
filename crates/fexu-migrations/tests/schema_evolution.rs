@@ -6,7 +6,8 @@
 use fexu_core::{secondary_index_name, unique_index_name};
 use fexu_db::driver::{ConnectionTrait, DatabaseBackend, DatabaseConnection, Statement};
 use fexu_migrations::{
-    apply_directory, make_migration, plan_database, revert_latest, write_explicit_migration,
+    apply_directory, make_migration, migration_status, plan_database, revert_latest,
+    write_explicit_migration,
     ColumnSnapshot, IndexSnapshot, LogicalType, MakeOutcome, MigrationOperation, SchemaSnapshot,
     TableSnapshot, UniqueConstraintSnapshot,
 };
@@ -186,6 +187,13 @@ async fn populated_sqlite_evolution_keeps_rows_and_rejects_unsafe_changes() {
     let mut default_off = initial.clone();
     default_off.tables[0].columns[2].default = Some(false);
     written(&migrations, "default_off", &default_off);
+    let old_history = history_count(&db).await;
+    let pending = migration_status(&db, &migrations, None).await.unwrap();
+    assert!(pending.conflicts.is_empty());
+    assert_eq!(pending.lines.len(), 2);
+    assert_eq!(pending.lines[0].state, "angewendet");
+    assert_eq!(pending.lines[1].state, "ausstehend");
+    assert_eq!(history_count(&db).await, old_history);
     apply_directory(&db, &migrations, false).await.unwrap();
     assert_eq!(
         cell(
@@ -401,6 +409,18 @@ async fn postgres_schema_evolution_keeps_rows_on_a_disposable_database() {
         let mut default_off = initial.clone();
         default_off.tables[0].columns[2].default = Some(false);
         written(&migrations, "default_off", &default_off);
+        let old_history = history_count(&db).await;
+        let pending = migration_status(&db, &migrations, None)
+            .await
+            .map_err(|error| error.0)?;
+        if !pending.conflicts.is_empty()
+            || pending.lines.len() != 2
+            || pending.lines[0].state != "angewendet"
+            || pending.lines[1].state != "ausstehend"
+            || history_count(&db).await != old_history
+        {
+            return Err("read-only status changed or misreported the older schema".to_owned());
+        }
         apply_directory(&db, &migrations, false)
             .await
             .map_err(|error| error.0)?;
