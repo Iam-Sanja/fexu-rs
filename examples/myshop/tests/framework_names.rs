@@ -141,9 +141,11 @@ async fn initialize(db: &DatabaseConnection) -> BTreeSet<String> {
     .unwrap();
     assert_eq!(damaged.pending_jobs(), 0);
     assert!(damaged.has_error());
-    assert!(damaged.jobs.conflicts.iter().any(|conflict| {
-        conflict.contains("_fexu_jobs") && conflict.contains("missing")
-    }));
+    assert!(damaged
+        .jobs
+        .conflicts
+        .iter()
+        .any(|conflict| { conflict.contains("_fexu_jobs") && conflict.contains("missing") }));
     assert!(!tables(db).await.contains("_fexu_jobs"));
     names
 }
