@@ -876,8 +876,14 @@ mod tests {
         )
         .unwrap_err()
         .0;
-        assert!(repeated_expected.contains("fexu-auth"), "{repeated_expected}");
-        assert!(repeated_expected.contains("0001_alpha"), "{repeated_expected}");
+        assert!(
+            repeated_expected.contains("fexu-auth"),
+            "{repeated_expected}"
+        );
+        assert!(
+            repeated_expected.contains("0001_alpha"),
+            "{repeated_expected}"
+        );
         assert!(
             repeated_expected.contains("duplicated in the expected package"),
             "{repeated_expected}"
