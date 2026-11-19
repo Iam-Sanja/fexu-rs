@@ -551,6 +551,38 @@ async fn postgres_schema_evolution_keeps_rows_on_a_disposable_database() {
         if recovered_rows != "3" {
             return Err(format!("recovery lost rows: {recovered_rows}"));
         }
+        let mut with_note = indexed.clone();
+        with_note.tables[0]
+            .columns
+            .push(column("note", LogicalType::String, false, true, None));
+        written(&migrations, "add_note", &with_note);
+        apply_directory(&db, &migrations, false)
+            .await
+            .map_err(|error| error.0)?;
+        db.execute(Statement::from_string(
+            DatabaseBackend::Postgres,
+            "UPDATE \"products\" SET \"note\" = 'keep' WHERE \"id\" = '11111111-1111-4111-8111-111111111111'",
+        ))
+        .await
+        .map_err(|error| error.to_string())?;
+        let before_refusal = history_count(&db).await;
+        let refusal = revert_latest(&db, &migrations, false, false)
+            .await
+            .expect_err("dropping a populated column must require approval");
+        if !refusal.0.contains("not executed")
+            || !refusal.0.contains("data loss")
+            || history_count(&db).await != before_refusal
+        {
+            return Err("unsafe revert did not fail closed without changing history".to_owned());
+        }
+        let preserved = cell(
+            &db,
+            "SELECT \"note\" AS value FROM \"products\" WHERE \"id\" = '11111111-1111-4111-8111-111111111111'",
+        )
+        .await;
+        if preserved != "keep" {
+            return Err(format!("rejected revert changed data: {preserved}"));
+        }
         Ok(())
     }
     .await;
