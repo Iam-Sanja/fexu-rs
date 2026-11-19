@@ -7,9 +7,8 @@ use fexu_core::{secondary_index_name, unique_index_name};
 use fexu_db::driver::{ConnectionTrait, DatabaseBackend, DatabaseConnection, Statement};
 use fexu_migrations::{
     apply_directory, make_migration, migration_status, plan_database, revert_latest,
-    write_explicit_migration,
-    ColumnSnapshot, IndexSnapshot, LogicalType, MakeOutcome, MigrationOperation, SchemaSnapshot,
-    TableSnapshot, UniqueConstraintSnapshot,
+    write_explicit_migration, ColumnSnapshot, IndexSnapshot, LogicalType, MakeOutcome,
+    MigrationOperation, SchemaSnapshot, TableSnapshot, UniqueConstraintSnapshot,
 };
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
