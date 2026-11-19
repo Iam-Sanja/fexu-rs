@@ -120,6 +120,31 @@ async fn initialize(db: &DatabaseConnection) -> BTreeSet<String> {
         .unwrap()
         .applied
         .is_empty());
+
+    // A broken already-migrated database must not be reported as ready or repaired.
+    db.execute(Statement::from_string(
+        db.get_database_backend(),
+        "DROP TABLE \"_fexu_jobs\"".to_owned(),
+    ))
+    .await
+    .unwrap();
+    let damaged = fexu::migrations::inspect_framework(
+        db,
+        &auth_files,
+        &jobs_files,
+        fexu::jobs::JOB_HISTORY,
+        &migrations,
+        None,
+        &[],
+    )
+    .await
+    .unwrap();
+    assert_eq!(damaged.pending_jobs(), 0);
+    assert!(damaged.has_error());
+    assert!(damaged.jobs.conflicts.iter().any(|conflict| {
+        conflict.contains("_fexu_jobs") && conflict.contains("missing")
+    }));
+    assert!(!tables(db).await.contains("_fexu_jobs"));
     names
 }
 
