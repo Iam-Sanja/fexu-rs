@@ -64,6 +64,103 @@ pub async fn plan_database(
     plan_database_in(db, directory, history::HISTORY_TABLE, current).await
 }
 
+/// Read-only migration plan for one project with root and namespaced apps.
+///
+/// Every app shares the root history table but has its own on-disk migration
+/// chain and snapshots. Validates each chain independently, reports unowned
+/// history IDs rather than treating them as root migrations, and compares only
+/// the live tables owned by the latest applied snapshot of each component.
+/// Nothing is created or migrated.
+pub async fn plan_project(
+    db: &DatabaseConnection,
+    root: &Path,
+    current: Option<&SchemaSnapshot>,
+    packages: &[crate::packages::PackageMigration],
+) -> Result<PlanReport, MigrationError> {
+    let mut report =
+        plan_database_internal(db, root, history::HISTORY_TABLE, current, true).await?;
+    let order = match crate::packages::package_order(packages) {
+        Ok(order) => order,
+        Err(error) => {
+            report.findings.push(finding(PlanLevel::Error, error.0));
+            return Ok(report);
+        }
+    };
+    // Keep the known app namespace set separate from the root history.
+    // Orphaned namespaced rows must not silently disappear from the plan.
+    let existing = history::read_history_in(db, history::HISTORY_TABLE).await?;
+    for entry in &existing {
+        if let Some((namespace, local_id)) = entry.id.split_once(':') {
+            if local_id.is_empty()
+                || local_id.contains(':')
+                || !packages.iter().any(|package| package.name == namespace)
+            {
+                report.findings.push(finding(
+                    PlanLevel::Error,
+                    format!(
+                        "Applied namespaced migration {} has no declared app or has an invalid namespace.",
+                        entry.id
+                    ),
+                ));
+            }
+        }
+    }
+    for index in order {
+        let package = &packages[index];
+        if !package.directory.is_dir() {
+            report.findings.push(finding(
+                PlanLevel::Error,
+                format!(
+                    "The migrations directory for app `{}` is missing.",
+                    package.name
+                ),
+            ));
+            continue;
+        }
+        let state = inspect_directory(&package.directory);
+        for conflict in state.conflicts {
+            report.findings.push(finding(
+                PlanLevel::Error,
+                format!("App {}: {conflict}", package.name),
+            ));
+        }
+        let status =
+            crate::runner::namespaced_status(db, &package.directory, &package.name).await?;
+        for conflict in &status.conflicts {
+            report.findings.push(finding(
+                PlanLevel::Error,
+                format!("App {}: {conflict}", package.name),
+            ));
+        }
+        report.pending.extend(
+            status
+                .lines
+                .iter()
+                .filter(|line| line.state == "ausstehend")
+                .map(|line| line.id.clone()),
+        );
+        if !status.conflicts.is_empty()
+            || report.findings.iter().any(|item| {
+                item.level == PlanLevel::Error
+                    && item.message.starts_with(&format!("App {}:", package.name))
+            })
+        {
+            continue;
+        }
+        if let Some(file) = latest_applied(&inspect_directory(&package.directory).files, &status) {
+            let live = introspect_live(db).await?;
+            let owned = live_tables_owned_by(&file.to_snapshot, &live);
+            for difference in compare_snapshot(&file.to_snapshot, &owned) {
+                report.findings.push(finding(
+                    PlanLevel::Drift,
+                    format!("App {}: {}", package.name, drift_text(&difference)),
+                ));
+            }
+        }
+    }
+    Ok(report)
+}
+
 /// Read-only status and live drift for an embedded framework package.
 ///
 /// History tables and schema objects are not created or altered. A checksum or
@@ -178,6 +275,16 @@ pub async fn plan_database_in(
     history_table: &str,
     current: Option<&SchemaSnapshot>,
 ) -> Result<PlanReport, MigrationError> {
+    plan_database_internal(db, directory, history_table, current, false).await
+}
+
+async fn plan_database_internal(
+    db: &DatabaseConnection,
+    directory: &Path,
+    history_table: &str,
+    current: Option<&SchemaSnapshot>,
+    scoped_live: bool,
+) -> Result<PlanReport, MigrationError> {
     let state = inspect_directory(directory);
     let backend = kind_of(db.get_database_backend())
         .map_err(|error| MigrationError::new(error.to_string()))?;
@@ -188,7 +295,13 @@ pub async fn plan_database_in(
         .collect::<Vec<_>>();
     let history_present = history::history_exists_in(db, history_table).await?;
     let applied = if history_present {
-        history::read_history_in(db, history_table).await?
+        history::read_history_in(db, history_table)
+            .await?
+            .into_iter()
+            // Root migrations and namespaced app migrations share the same
+            // history table. Each namespace is validated independently below.
+            .filter(|entry| history_table != history::HISTORY_TABLE || !entry.id.contains(':'))
+            .collect::<Vec<_>>()
     } else {
         Vec::new()
     };
@@ -219,7 +332,12 @@ pub async fn plan_database_in(
     if trusted {
         if let Some(file) = last_applied(&state.files, &applied) {
             let live = introspect_live(db).await?;
-            for difference in compare_snapshot(&file.to_snapshot, &live) {
+            let owned = if scoped_live {
+                live_tables_owned_by(&file.to_snapshot, &live)
+            } else {
+                live
+            };
+            for difference in compare_snapshot(&file.to_snapshot, &owned) {
                 findings.push(finding(PlanLevel::Drift, drift_text(&difference)));
             }
         } else if !state.files.is_empty() {
