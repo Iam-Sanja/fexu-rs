@@ -724,7 +724,7 @@ mod tests {
             let barrier = barrier.clone();
             tasks.push(tokio::spawn(async move {
                 if slot < 4 {
-                    let database = super::DisposablePostgres::create(&admin).await;
+                    let database = tracked_create(&admin, &names).await;
                     barrier.wait().await;
                     let database = database?;
                     database.drop_database().await?;
