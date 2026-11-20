@@ -610,7 +610,10 @@ mod tests {
         Ok(())
     }
 
-    async fn create_while_template1_is_open(admin: &str, names: &FixtureNames) -> Result<(), String> {
+    async fn create_while_template1_is_open(
+        admin: &str,
+        names: &FixtureNames,
+    ) -> Result<(), String> {
         let (prefix, _) = split_database_url(admin)?;
         let mut options = crate::driver::ConnectOptions::new(format!("{prefix}/template1"));
         options.max_connections(1);
