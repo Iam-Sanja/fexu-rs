@@ -2,7 +2,7 @@
 
 [Overview](index.md) · **Implemented file:** `crates/fexu-cli/src/main.rs`.
 
-`fexu-cli` 0.1.0, 0.1.1 and 0.1.2 are published. This checkout is 0.1.2 and writes `fexu = "=0.1.2"` unless `--fexu-path` is set. Install that published CLI from crates.io, or install it from a framework checkout as shown in the [README](../README.md) when changing this repository. Run project creation outside the framework workspace and subsequent commands inside the generated project.
+`fexu-cli` 0.1.0, 0.1.1 and 0.1.2 are published. This checkout is 0.1.2 and writes `fexu = "=0.1.2"` unless `--fexu-path` is set. Install that published CLI from crates.io, or install it from a framework checkout as shown in the [README](https://github.com/Iam-Sanja/fexu-rs/blob/main/README.md) when changing this repository. Run project creation outside the framework workspace and subsequent commands inside the generated project.
 
 ## Actual Functionality (Implemented)
 
