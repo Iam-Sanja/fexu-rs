@@ -682,3 +682,134 @@ async fn postgres_schema_evolution_keeps_rows_on_a_disposable_database() {
     dropped.expect("drop isolated database");
     let _ = std::fs::remove_dir_all(&root);
 }
+
+async fn verify_populated_type_conversion(
+    db: &DatabaseConnection,
+    migrations: &Path,
+) -> Result<(), String> {
+    let initial = products(vec![column(
+        "quantity",
+        LogicalType::String,
+        false,
+        false,
+        None,
+    )]);
+    written(migrations, "initial", &initial);
+    apply_directory(db, migrations, false)
+        .await
+        .map_err(|error| error.0)?;
+    db.execute(Statement::from_string(
+        db.get_database_backend(),
+        "INSERT INTO \"products\" (\"id\", \"name\", \"quantity\") VALUES ('11111111-1111-4111-8111-111111111111', 'Laptop', '42'), ('22222222-2222-4222-8222-222222222222', 'Phone', 'invalid')",
+    ))
+    .await
+    .map_err(|error| error.to_string())?;
+
+    let mut numeric = initial.clone();
+    numeric.tables[0].columns[3].logical_type = LogicalType::I64;
+    written(migrations, "numeric_quantity", &numeric);
+    let history_before = history_count(db).await;
+    let failed = apply_directory(db, migrations, false).await;
+    if failed.is_ok() {
+        return Err("non-numeric stored value was silently converted".to_owned());
+    }
+    if history_count(db).await != history_before {
+        return Err("failed type conversion wrote migration history".to_owned());
+    }
+    if cell(
+        db,
+        "SELECT CAST(\"quantity\" AS TEXT) AS value FROM \"products\" WHERE \"id\" = '22222222-2222-4222-8222-222222222222'",
+    )
+    .await != "invalid"
+    {
+        return Err("failed type conversion modified existing data".to_owned());
+    }
+
+    db.execute(Statement::from_string(
+        db.get_database_backend(),
+        "UPDATE \"products\" SET \"quantity\" = '7' WHERE \"id\" = '22222222-2222-4222-8222-222222222222'",
+    ))
+    .await
+    .map_err(|error| error.to_string())?;
+    let applied = apply_directory(db, migrations, false)
+        .await
+        .map_err(|error| error.0)?;
+    if applied.applied.len() != 1 || history_count(db).await != history_before + 1 {
+        return Err("corrected type conversion was not applied exactly once".to_owned());
+    }
+    let laptop = cell(
+        db,
+        "SELECT CAST(\"quantity\" AS TEXT) AS value FROM \"products\" WHERE \"id\" = '11111111-1111-4111-8111-111111111111'",
+    )
+    .await;
+    let phone = cell(
+        db,
+        "SELECT CAST(\"quantity\" AS TEXT) AS value FROM \"products\" WHERE \"id\" = '22222222-2222-4222-8222-222222222222'",
+    )
+    .await;
+    if laptop != "42" || phone != "7" {
+        return Err(format!(
+            "type conversion changed row values: {laptop}, {phone}"
+        ));
+    }
+    if !apply_directory(db, migrations, false)
+        .await
+        .map_err(|error| error.0)?
+        .applied
+        .is_empty()
+    {
+        return Err("corrected type conversion was applied twice".to_owned());
+    }
+    let reverted = revert_latest(db, migrations, false, false)
+        .await
+        .map_err(|error| error.0)?;
+    if !reverted.executed || history_count(db).await != history_before {
+        return Err("reversible conversion did not restore migration history".to_owned());
+    }
+    let restored = cell(
+        db,
+        "SELECT CAST(\"quantity\" AS TEXT) AS value FROM \"products\" WHERE \"id\" = '11111111-1111-4111-8111-111111111111'",
+    )
+    .await;
+    if restored != "42" {
+        return Err(format!(
+            "reverse conversion lost the original value: {restored}"
+        ));
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn sqlite_type_conversion_rolls_back_invalid_rows_and_roundtrips() {
+    let root = temp_dir();
+    let migrations = root.join("migrations");
+    let db = fexu_db::connect(&sqlite_url(&root.join("types.sqlite3")))
+        .await
+        .unwrap();
+    verify_populated_type_conversion(&db, &migrations)
+        .await
+        .expect("SQLite type conversion");
+    drop(db);
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[tokio::test]
+#[ignore = "requires DATABASE_URL pointing at an approved PostgreSQL admin database"]
+async fn postgres_type_conversion_rolls_back_invalid_rows_and_roundtrips() {
+    let admin = std::env::var("DATABASE_URL").expect("DATABASE_URL");
+    let isolated = fexu_db::DisposablePostgres::create(&admin)
+        .await
+        .expect("isolated database");
+    let root = temp_dir();
+    let result = async {
+        let db = fexu_db::connect(isolated.url())
+            .await
+            .map_err(|error| error.to_string())?;
+        verify_populated_type_conversion(&db, &root.join("migrations")).await
+    }
+    .await;
+    let dropped = isolated.drop_database().await;
+    result.expect("PostgreSQL type conversion");
+    dropped.expect("drop isolated database");
+    let _ = std::fs::remove_dir_all(&root);
+}
