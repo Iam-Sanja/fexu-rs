@@ -583,6 +583,43 @@ async fn postgres_schema_evolution_keeps_rows_on_a_disposable_database() {
         if preserved != "keep" {
             return Err(format!("rejected revert changed data: {preserved}"));
         }
+        let preview = revert_latest(&db, &migrations, false, true)
+            .await
+            .map_err(|error| error.0)?;
+        if preview.executed || !preview.destructive || history_count(&db).await != before_refusal {
+            return Err("destructive preview changed history or missed data loss".to_owned());
+        }
+        let approved = revert_latest(&db, &migrations, true, false)
+            .await
+            .map_err(|error| error.0)?;
+        if !approved.executed || !approved.destructive {
+            return Err("approved destructive revert did not execute".to_owned());
+        }
+        if history_count(&db).await != before_refusal - 1 {
+            return Err("approved destructive revert did not update history".to_owned());
+        }
+        let remaining = cell(&db, "SELECT COUNT(*) AS value FROM \"products\"").await;
+        if remaining != "3" {
+            return Err(format!("approved revert removed unrelated rows: {remaining}"));
+        }
+        let title = cell(
+            &db,
+            "SELECT \"title\" AS value FROM \"products\" WHERE \"id\" = '11111111-1111-4111-8111-111111111111'",
+        )
+        .await;
+        if title != "Laptop" {
+            return Err(format!("approved revert changed preserved data: {title}"));
+        }
+        if db
+            .query_one(Statement::from_string(
+                DatabaseBackend::Postgres,
+                "SELECT \"note\" FROM \"products\"",
+            ))
+            .await
+            .is_ok()
+        {
+            return Err("approved destructive revert did not drop note column".to_owned());
+        }
         Ok(())
     }
     .await;
