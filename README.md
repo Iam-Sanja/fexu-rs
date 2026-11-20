@@ -37,7 +37,7 @@ These features have **documented limitations**. In particular, public model rout
 Fexu is developed as a **16-crate Rust workspace**. Each version badge below reflects the latest version reported by crates.io. The `main` branch is the development version and can contain changes not yet released to the registry.
 
 | Crate | Purpose | Latest published on crates.io | Next coordinated release (planned) |
-|---|---|---|
+|---|---|---|---|
 | [`fexu`](crates/fexu/) | Framework entry point and application builder | [![fexu version](https://img.shields.io/crates/v/fexu.svg?label=version)](https://crates.io/crates/fexu) | `0.2.0` (candidate, not published) |
 | [`fexu-cli`](crates/fexu-cli/) | Command-line tools and project scaffolding | [![fexu-cli version](https://img.shields.io/crates/v/fexu-cli.svg?label=version)](https://crates.io/crates/fexu-cli) | `0.2.0` (candidate, not published) |
 | [`fexu-core`](crates/fexu-core/) | Core model types and framework primitives | [![fexu-core version](https://img.shields.io/crates/v/fexu-core.svg?label=version)](https://crates.io/crates/fexu-core) | `0.2.0` (candidate, not published) |
