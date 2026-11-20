@@ -118,7 +118,7 @@ pub async fn plan_project(
             continue;
         }
         let state = inspect_directory(&package.directory);
-        for conflict in state.conflicts {
+        for conflict in &state.conflicts {
             report.findings.push(finding(
                 PlanLevel::Error,
                 format!("App {}: {conflict}", package.name),
@@ -147,7 +147,18 @@ pub async fn plan_project(
         {
             continue;
         }
-        if let Some(file) = latest_applied(&inspect_directory(&package.directory).files, &status) {
+        let last_applied = state
+            .files
+            .iter()
+            .filter(|file| {
+                let history_id = format!("{}:{}", package.name, file.id);
+                status
+                    .lines
+                    .iter()
+                    .any(|line| line.id == history_id && line.state == "angewendet")
+            })
+            .max_by_key(|file| crate::store::migration_number(&file.id).unwrap_or(0));
+        if let Some(file) = last_applied {
             let live = introspect_live(db).await?;
             let owned = live_tables_owned_by(&file.to_snapshot, &live);
             for difference in compare_snapshot(&file.to_snapshot, &owned) {
