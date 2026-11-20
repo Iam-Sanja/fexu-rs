@@ -51,6 +51,12 @@ jobs:
       - name: Build the workspace
         run: cargo build --workspace
 
+      - name: Clean-room published v0.1.2 consumer upgrade
+        if: runner.os == 'Linux'
+        timeout-minutes: 35
+        shell: bash
+        run: bash scripts/test-published-v012-upgrade.sh
+
       - name: Relocated embedded migrations
         shell: bash
         run: |
