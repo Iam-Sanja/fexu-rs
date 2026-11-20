@@ -25,11 +25,11 @@ From the repository root:
 ```bash
 python -m pip install -r requirements-docs.txt
 python scripts/audit-documentation.py
-mkdocs build
+mkdocs build --strict
 mkdocs serve
 ```
 
-The first live build may show warnings for old Markdown anchors or links. Those warnings are a documentation backlog, **not** a green strict-link review. Fix them before turning on `mkdocs build --strict`. Static auditing cannot guarantee code examples compile or third-party links remain live.
+The CI build uses `mkdocs build --strict`: site warnings must fail the job instead of being reported as success. Structural validation still cannot prove that code examples compile, external links remain reachable, or framework claims match source. Record those reviews separately before release.
 
 ## Publish versioned docs — only after a signed-off release
 
