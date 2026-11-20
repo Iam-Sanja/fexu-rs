@@ -1,0 +1,5 @@
+# Documentation build dependencies. Site is built locally or by CI.
+# Review pinned versions together with the release candidate.
+mkdocs==1.6.1
+mkdocs-material==9.8.2
+mike==2.1.3
