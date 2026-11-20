@@ -149,7 +149,7 @@ For correctness-sensitive checks (for example a blocking reservation after the 1
 | Call | Window | Result |
 |---|---|---|
 | `all` | `limit` and `offset` | At most `limit` models. Default limit 100. |
-| `all_checked` | `limit` and `offset` | The complete window only, otherwise `Validation` (`query truncated`) instead of silently returning an incomplete result. |
+| `all_checked` | `limit`, offset must be zero | All matching rows if they fit in one window; otherwise `Validation` (`query truncated`) rather than silently returning an incomplete result. |
 | `page` | same window, plus a count | `QueryPage` with `data`, `limit`, `offset`, `total`, `has_more`. |
 | `count` | ignored | Filtered row count, including rows outside the page. |
 | `exists` | ignored | Whether the filter matches at least one row. |
