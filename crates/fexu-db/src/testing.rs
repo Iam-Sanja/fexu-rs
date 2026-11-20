@@ -520,40 +520,43 @@ mod tests {
             .map_err(|_| format!("PostgreSQL server_version_num was '{text}'."))
     }
 
-    async fn with_stable_catalog<F, Fut>(admin_url: &str, body: F) -> Result<(), String>
+    // Only track databases created by this test invocation. A global catalog
+    // difference is not proof of ownership: unrelated parallel tests can create
+    // fexu_test_* databases at any point.
+    type FixtureNames = std::sync::Arc<std::sync::Mutex<Vec<String>>>;
+
+    async fn tracked_create(admin: &str, names: &FixtureNames) -> Result<super::DisposablePostgres, String> {
+        let database = super::DisposablePostgres::create(admin).await?;
+        names.lock().expect("fixture name registry").push(database.name().to_owned());
+        Ok(database)
+    }
+
+    async fn with_owned_fixture_cleanup<F, Fut>(admin_url: &str, body: F) -> Result<(), String>
     where
-        F: FnOnce() -> Fut,
+        F: FnOnce(FixtureNames) -> Fut,
         Fut: Future<Output = Result<(), String>>,
     {
-        let before = catalog(admin_url).await?;
-        let result = body().await;
-        let mut after = catalog(admin_url).await?;
-        let created: Vec<String> = after
+        let names: FixtureNames = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let result = body(names.clone()).await;
+        let created = names.lock().expect("fixture name registry").clone();
+        let (prefix, admin_name) = split_database_url(admin_url)?;
+        let mut cleanup_errors = Vec::new();
+        for name in &created {
+            // A second drop is safe: absent is accepted, foreign ownership is not.
+            // Never infer what to drop from a cluster-wide pg_database diff.
+            if let Err(error) = drop_owned_database(&prefix, &admin_name, name).await {
+                cleanup_errors.push(error);
+            }
+        }
+        let after = catalog(admin_url).await?;
+        let remaining: Vec<_> = created
             .iter()
-            .filter(|name| !before.iter().any(|existing| existing == *name))
-            .filter(|name| is_disposable_name(name))
+            .filter(|name| after.contains(name))
             .cloned()
             .collect();
-        let (prefix, admin_name) = split_database_url(admin_url)?;
-        for name in &created {
-            drop_owned_database(&prefix, &admin_name, name).await?;
-        }
-        if !created.is_empty() {
-            after = catalog(admin_url).await?;
-        }
-        if before != after {
-            let missing: Vec<_> = before
-                .iter()
-                .filter(|name| !after.contains(name))
-                .cloned()
-                .collect();
-            let extra: Vec<_> = after
-                .iter()
-                .filter(|name| !before.contains(name))
-                .cloned()
-                .collect();
+        if !remaining.is_empty() || !cleanup_errors.is_empty() {
             return Err(format!(
-                "PostgreSQL catalog changed. missing={missing:?} extra={extra:?} body={result:?}"
+                "Owned fixture cleanup incomplete. remaining={remaining:?} cleanup_errors={cleanup_errors:?} body={result:?}"
             ));
         }
         result
@@ -601,7 +604,7 @@ mod tests {
         Ok(())
     }
 
-    async fn create_while_template1_is_open(admin: &str) -> Result<(), String> {
+    async fn create_while_template1_is_open(admin: &str, names: &FixtureNames) -> Result<(), String> {
         let (prefix, _) = split_database_url(admin)?;
         let mut options = crate::driver::ConnectOptions::new(format!("{prefix}/template1"));
         options.max_connections(1);
@@ -625,7 +628,7 @@ mod tests {
                 "expected to occupy template1, connected to {current}"
             ));
         }
-        let database = super::DisposablePostgres::create(admin).await?;
+        let database = tracked_create(admin, names).await?;
         let connection = open_one(database.url()).await?;
         probe(&connection, 5).await?;
         connection
@@ -638,12 +641,13 @@ mod tests {
         closed
     }
 
-    async fn parallel_creates(admin: &str) -> Result<(), String> {
+    async fn parallel_creates(admin: &str, names: &FixtureNames) -> Result<(), String> {
         let mut creates = Vec::new();
         for index in 0..8 {
             let admin = admin.to_owned();
+            let names = names.clone();
             creates.push(tokio::spawn(async move {
-                let database = super::DisposablePostgres::create(&admin).await?;
+                let database = tracked_create(&admin, &names).await?;
                 let name = database.name().to_owned();
                 let connection = open_one(database.url()).await?;
                 probe(&connection, index).await?;
@@ -672,9 +676,9 @@ mod tests {
         Ok(())
     }
 
-    async fn isolated_writes(admin: &str) -> Result<(), String> {
-        let left = super::DisposablePostgres::create(admin).await?;
-        let right = super::DisposablePostgres::create(admin).await?;
+    async fn isolated_writes(admin: &str, names: &FixtureNames) -> Result<(), String> {
+        let left = tracked_create(admin, names).await?;
+        let right = tracked_create(admin, names).await?;
         let left_db = open_one(left.url()).await?;
         let right_db = open_one(right.url()).await?;
         probe(&left_db, 11).await?;
@@ -693,11 +697,12 @@ mod tests {
         Ok(())
     }
 
-    async fn overlap_create_and_drop(admin: &str) -> Result<(), String> {
+    async fn overlap_create_and_drop(admin: &str, names: &FixtureNames) -> Result<(), String> {
         let barrier = std::sync::Arc::new(tokio::sync::Barrier::new(8));
         let mut tasks = Vec::new();
         for slot in 0..8 {
             let admin = admin.to_owned();
+            let names = names.clone();
             let barrier = barrier.clone();
             tasks.push(tokio::spawn(async move {
                 if slot < 4 {
@@ -707,7 +712,7 @@ mod tests {
                     database.drop_database().await?;
                 } else {
                     barrier.wait().await;
-                    let database = super::DisposablePostgres::create(&admin).await?;
+                    let database = tracked_create(&admin, &names).await?;
                     let connection = open_one(database.url()).await?;
                     probe(&connection, i64::from(slot)).await?;
                     connection
@@ -725,8 +730,8 @@ mod tests {
         Ok(())
     }
 
-    async fn abandoned_connection(admin: &str) -> Result<(), String> {
-        let database = super::DisposablePostgres::create(admin).await?;
+    async fn abandoned_connection(admin: &str, names: &FixtureNames) -> Result<(), String> {
+        let database = tracked_create(admin, names).await?;
         let name = database.name().to_owned();
         let url = database.url().to_owned();
         let connection = open_one(&url).await?;
@@ -742,8 +747,8 @@ mod tests {
         drop_owned_database(&prefix, &admin_name, &name).await
     }
 
-    async fn second_drop(admin: &str) -> Result<(), String> {
-        let database = super::DisposablePostgres::create(admin).await?;
+    async fn second_drop(admin: &str, names: &FixtureNames) -> Result<(), String> {
+        let database = tracked_create(admin, names).await?;
         let name = database.name().to_owned();
         let prefix = database.admin_prefix.clone();
         let session = database.admin_database.clone();
@@ -755,7 +760,7 @@ mod tests {
     #[ignore = "requires FEXU_POSTGRES_ADMIN or DATABASE_URL on 127.0.0.1, CREATEDB, and an approved admin database"]
     async fn postgres_fixture_parallel_create_isolate_and_cleanup() {
         let admin = loopback_admin_url().expect("loopback admin URL");
-        with_stable_catalog(&admin, || {
+        with_owned_fixture_cleanup(&admin, |names| {
             let admin = admin.clone();
             async move {
                 let version = server_version_num(&admin).await?;
@@ -764,17 +769,17 @@ mod tests {
                         "PostgreSQL server_version_num {version} is older than 16; fixture tests target 16, 17, and 18"
                     ));
                 }
-                create_while_template1_is_open(&admin).await?;
-                parallel_creates(&admin).await?;
-                isolated_writes(&admin).await?;
-                overlap_create_and_drop(&admin).await?;
-                abandoned_connection(&admin).await?;
-                second_drop(&admin).await?;
+                create_while_template1_is_open(&admin, &names).await?;
+                parallel_creates(&admin, &names).await?;
+                isolated_writes(&admin, &names).await?;
+                overlap_create_and_drop(&admin, &names).await?;
+                abandoned_connection(&admin, &names).await?;
+                second_drop(&admin, &names).await?;
                 Ok(())
             }
         })
         .await
-        .expect("parallel fixtures");
+        .expect("parallel fixtures and owned cleanup");
     }
 
     #[test]
