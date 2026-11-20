@@ -1,6 +1,6 @@
 # Deployment and operation
 
-[Overview](index.md) · Local SQLite remains the default. `compose.yaml` starts PostgreSQL on `127.0.0.1`. [deploy/README.md](../deploy/README.md) is a disposable app, proxy and database example. It was not started as part of writing the files when Docker is absent.
+[Overview](index.md) · Local SQLite remains the default. `compose.yaml` starts PostgreSQL on `127.0.0.1`. [deploy/README.md](https://github.com/Iam-Sanja/fexu-rs/blob/main/deploy/README.md) is a disposable app, proxy and database example. It was not started as part of writing the files when Docker is absent.
 
 ## Local Development (Implemented)
 
@@ -23,7 +23,7 @@ A different `BIND_ADDRESS`, in particular `0.0.0.0:3000`, can make the service a
 
 ## Optional PostgreSQL (Implemented)
 
-`compose.yaml` starts `postgres:16-alpine` with database, user, volume and `pg_isready`. The port is limited to `127.0.0.1:5432:5432`. That file does not build the API. The disposable image, proxy and unpublished database live in [deploy/README.md](../deploy/README.md).
+`compose.yaml` starts `postgres:16-alpine` with database, user, volume and `pg_isready`. The port is limited to `127.0.0.1:5432:5432`. That file does not build the API. The disposable image, proxy and unpublished database live in [deploy/README.md](https://github.com/Iam-Sanja/fexu-rs/blob/main/deploy/README.md).
 
 ```powershell
 docker compose up -d db
