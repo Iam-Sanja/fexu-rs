@@ -525,9 +525,15 @@ mod tests {
     // fexu_test_* databases at any point.
     type FixtureNames = std::sync::Arc<std::sync::Mutex<Vec<String>>>;
 
-    async fn tracked_create(admin: &str, names: &FixtureNames) -> Result<super::DisposablePostgres, String> {
+    async fn tracked_create(
+        admin: &str,
+        names: &FixtureNames,
+    ) -> Result<super::DisposablePostgres, String> {
         let database = super::DisposablePostgres::create(admin).await?;
-        names.lock().expect("fixture name registry").push(database.name().to_owned());
+        names
+            .lock()
+            .expect("fixture name registry")
+            .push(database.name().to_owned());
         Ok(database)
     }
 
@@ -659,16 +665,28 @@ mod tests {
                 Ok::<String, String>(name)
             }));
         }
-        let mut names = Vec::new();
+        let mut completed_names = Vec::new();
+        let mut failures = Vec::new();
+        // Join every task before cleanup, including when an earlier one fails:
+        // an unjoined task could still be creating a database after cleanup.
         for created in creates {
-            names.push(created.await.expect("parallel fixture task")?);
+            match created.await {
+                Ok(Ok(name)) => completed_names.push(name),
+                Ok(Err(error)) => failures.push(error),
+                Err(error) => failures.push(error.to_string()),
+            }
         }
-        names.sort();
-        names.dedup();
-        if names.len() != 8 {
-            return Err(format!("expected 8 distinct databases, got {names:?}"));
+        if !failures.is_empty() {
+            return Err(format!("parallel fixture tasks failed: {failures:?}"));
         }
-        for name in &names {
+        completed_names.sort();
+        completed_names.dedup();
+        if completed_names.len() != 8 {
+            return Err(format!(
+                "expected 8 distinct databases, got {completed_names:?}"
+            ));
+        }
+        for name in &completed_names {
             if !is_disposable_name(name) {
                 return Err(format!("fixture name {name} escaped the prefix check"));
             }
@@ -724,8 +742,16 @@ mod tests {
                 Ok::<(), String>(())
             }));
         }
+        let mut failures = Vec::new();
         for task in tasks {
-            task.await.expect("overlap task")?;
+            match task.await {
+                Ok(Ok(())) => {}
+                Ok(Err(error)) => failures.push(error),
+                Err(error) => failures.push(error.to_string()),
+            }
+        }
+        if !failures.is_empty() {
+            return Err(format!("overlap fixture tasks failed: {failures:?}"));
         }
         Ok(())
     }
