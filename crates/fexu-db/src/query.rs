@@ -796,6 +796,52 @@ impl<M> Select<M> {
         })
     }
 
+    /// Returns one bounded window only when it contains every matching row.
+    ///
+    /// Unlike [`Select::all`], this returns a validation error if another row
+    /// exists beyond the configured limit. Use [`Select::collect_bounded`] to
+    /// retrieve a larger complete result with keyset pagination.
+    pub async fn all_checked<C>(&self, db: &C) -> Result<Vec<M>, FexuError>
+    where
+        M: FexuModel + DeserializeOwned,
+        C: ConnectionTrait,
+    {
+        let window = self.window(db).await?;
+        if window.truncated {
+            return Err(FexuError::Validation(
+                "query truncated: use scan or collect_bounded to read every matching row".into(),
+            ));
+        }
+        Ok(window.rows)
+    }
+
+    /// Collects every matching row using bounded keyset batches.
+    ///
+    /// Requires an explicit total upper bound (1..=[`SCAN_COLLECT_LIMIT`]).
+    /// Returns an error, never a shortened vector, if another row matches.
+    /// `cancel` is called before each batch; cancellation returns an error.
+    /// Each batch is capped by [`PAGE_LIMIT`]. This requires a keyset-compatible
+    /// order and zero offset. For unbounded datasets, use [`Select::scan`]
+    /// with [`RowScan::next_batch`] instead of accumulating every row.
+    pub async fn collect_bounded<C, F>(
+        &self,
+        db: &C,
+        max_rows: u64,
+        cancel: F,
+    ) -> Result<Vec<M>, FexuError>
+    where
+        M: FexuModel + DeserializeOwned,
+        C: ConnectionTrait,
+        F: FnMut() -> bool,
+    {
+        if max_rows == 0 || max_rows > SCAN_COLLECT_LIMIT {
+            return Err(FexuError::Validation(format!(
+                "scan collect bound must be between 1 and {SCAN_COLLECT_LIMIT}"
+            )));
+        }
+        self.scan()?.collect_bounded(db, max_rows, cancel).await
+    }
+
     pub async fn count<C>(&self, db: &C) -> Result<i64, FexuError>
     where
         M: FexuModel,
@@ -5086,6 +5132,41 @@ mod tests {
             .unwrap();
         assert_eq!(window.len(), 100);
         assert!(window.iter().all(|row| row.name != "blocker"));
+
+        let window_error = Item::query()
+            .order_by("price_cents", Direction::Asc)
+            .all_checked(db)
+            .await
+            .unwrap_err();
+        assert!(window_error.to_string().contains("query truncated"));
+        let compact = Item::query()
+            .filter(col("name").eq("blocker"))
+            .all_checked(db)
+            .await
+            .unwrap();
+        assert_eq!(compact.len(), 1);
+        assert_eq!(compact[0].name, "blocker");
+
+        let complete_rows = Item::query()
+            .order_by("price_cents", Direction::Asc)
+            .collect_bounded(db, 1_001, || false)
+            .await
+            .unwrap();
+        assert_eq!(complete_rows.len(), 1_001);
+        assert_eq!(complete_rows[100].name, "blocker");
+        assert!(Item::query()
+            .collect_bounded(db, 1_000, || false)
+            .await
+            .unwrap_err()
+            .to_string()
+            .contains("scan truncated"));
+        assert!(Item::query()
+            .collect_bounded(db, 2_000, || true)
+            .await
+            .unwrap_err()
+            .to_string()
+            .contains("scan cancelled"));
+
 
         let mut scan = Item::query()
             .order_by("price_cents", Direction::Asc)
