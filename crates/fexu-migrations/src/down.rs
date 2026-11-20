@@ -299,20 +299,12 @@ mod tests {
         // The applied FK migration must enforce CASCADE, not merely report success.
         let cascade_parent = uuid::Uuid::from_u128(9);
         let cascade_child = uuid::Uuid::from_u128(10);
-        insert_id(
+        insert_id(&db, backend, "fexu_down_parent", &["id"], &[cascade_parent]).await;
+        execute(
             &db,
-            backend,
-            "fexu_down_parent",
-            &["id"],
-            &[cascade_parent],
-        )
-        .await;
-        insert_id(
-            &db,
-            backend,
-            "fexu_down_child",
-            &["id", "product_id"],
-            &[cascade_child, cascade_parent],
+            &format!(
+                "INSERT INTO fexu_down_child (id, product_id, quantity) VALUES ('{cascade_child}', '{cascade_parent}', 1)"
+            ),
         )
         .await;
         execute(
@@ -351,7 +343,10 @@ mod tests {
                 format!("DELETE FROM fexu_down_parent WHERE id = '{parent_id}'"),
             ))
             .await;
-        assert!(rejected_delete.is_err(), "restored FK did not restrict deletion");
+        assert!(
+            rejected_delete.is_err(),
+            "restored FK did not restrict deletion"
+        );
         assert_eq!(
             scalar(&db, "SELECT COUNT(*) AS total FROM fexu_down_child").await,
             1
