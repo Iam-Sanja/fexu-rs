@@ -718,7 +718,7 @@ async fn verify_populated_type_conversion(
     }
     if cell(
         db,
-        "SELECT \"quantity\" AS value FROM \"products\" WHERE \"id\" = '22222222-2222-4222-8222-222222222222'",
+        "SELECT CAST(\"quantity\" AS TEXT) AS value FROM \"products\" WHERE \"id\" = '22222222-2222-4222-8222-222222222222'",
     )
     .await != "invalid"
     {
@@ -739,16 +739,18 @@ async fn verify_populated_type_conversion(
     }
     let laptop = cell(
         db,
-        "SELECT \"quantity\" AS value FROM \"products\" WHERE \"id\" = '11111111-1111-4111-8111-111111111111'",
+        "SELECT CAST(\"quantity\" AS TEXT) AS value FROM \"products\" WHERE \"id\" = '11111111-1111-4111-8111-111111111111'",
     )
     .await;
     let phone = cell(
         db,
-        "SELECT \"quantity\" AS value FROM \"products\" WHERE \"id\" = '22222222-2222-4222-8222-222222222222'",
+        "SELECT CAST(\"quantity\" AS TEXT) AS value FROM \"products\" WHERE \"id\" = '22222222-2222-4222-8222-222222222222'",
     )
     .await;
     if laptop != "42" || phone != "7" {
-        return Err(format!("type conversion changed row values: {laptop}, {phone}"));
+        return Err(format!(
+            "type conversion changed row values: {laptop}, {phone}"
+        ));
     }
     if !apply_directory(db, migrations, false)
         .await
@@ -766,11 +768,13 @@ async fn verify_populated_type_conversion(
     }
     let restored = cell(
         db,
-        "SELECT \"quantity\" AS value FROM \"products\" WHERE \"id\" = '11111111-1111-4111-8111-111111111111'",
+        "SELECT CAST(\"quantity\" AS TEXT) AS value FROM \"products\" WHERE \"id\" = '11111111-1111-4111-8111-111111111111'",
     )
     .await;
     if restored != "42" {
-        return Err(format!("reverse conversion lost the original value: {restored}"));
+        return Err(format!(
+            "reverse conversion lost the original value: {restored}"
+        ));
     }
     Ok(())
 }
