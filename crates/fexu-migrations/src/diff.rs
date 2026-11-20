@@ -1020,6 +1020,129 @@ mod tests {
     }
 
     #[test]
+    fn index_generation_adds_changes_and_removes_without_data_loss_risks() {
+        let original = products(vec![]);
+        let mut indexed = original.clone();
+        indexed.tables[0].indexes.push(IndexSnapshot {
+            name: "idx_products_name".to_owned(),
+            columns: vec!["name".to_owned()],
+        });
+        let add = plan_change(&original, &indexed).unwrap();
+        assert!(matches!(
+            add.operations.as_slice(),
+            [MigrationOperation::AddIndex { .. }]
+        ));
+        assert!(add.refusal.is_none());
+        assert!(add.risks.is_empty());
+
+        let mut changed = indexed.clone();
+        changed.tables[0].indexes[0].columns = vec!["active".to_owned()];
+        let replace = plan_change(&indexed, &changed).unwrap();
+        assert!(replace
+            .operations
+            .iter()
+            .any(|operation| matches!(operation, MigrationOperation::DropIndex { .. })));
+        assert!(replace
+            .operations
+            .iter()
+            .any(|operation| matches!(operation, MigrationOperation::AddIndex { .. })));
+        assert!(replace.refusal.is_none());
+
+        let remove = plan_change(&indexed, &original).unwrap();
+        assert!(matches!(
+            remove.operations.as_slice(),
+            [MigrationOperation::DropIndex { .. }]
+        ));
+        assert!(remove.refusal.is_none());
+    }
+
+    #[test]
+    fn type_generation_reports_supported_rebuilds_and_blocks_unsafe_casts() {
+        let original = products(vec![]);
+        let mut numeric = original.clone();
+        numeric.tables[0].columns[1].logical_type = LogicalType::I64;
+        let supported = plan_change(&original, &numeric).unwrap();
+        assert!(supported.refusal.is_none());
+        assert!(supported
+            .risks
+            .iter()
+            .any(|risk| risk.code == "rebuild_column"));
+
+        let mut boolean = original.clone();
+        boolean.tables[0].columns[1].logical_type = LogicalType::Bool;
+        let unsafe_cast = plan_change(&original, &boolean).unwrap();
+        assert!(unsafe_cast.refusal.is_some());
+        assert!(unsafe_cast
+            .risks
+            .iter()
+            .any(|risk| risk.code == "alter_column"));
+
+        let mut required = original.clone();
+        required.tables[0]
+            .columns
+            .push(column("code", LogicalType::String, false, None));
+        let addition = plan_change(&original, &required).unwrap();
+        assert!(addition.refusal.is_some());
+        assert!(addition
+            .risks
+            .iter()
+            .any(|risk| risk.code == "unsafe_add_column"));
+    }
+
+    #[test]
+    fn foreign_key_generation_is_explicit_and_preserves_prior_definition() {
+        let parent = TableSnapshot {
+            name: "parents".to_owned(),
+            columns: vec![id_column()],
+            unique_constraints: Vec::new(),
+            indexes: Vec::new(),
+            foreign_keys: Vec::new(),
+        };
+        let child = TableSnapshot {
+            name: "children".to_owned(),
+            columns: vec![
+                id_column(),
+                column("parent_id", LogicalType::Uuid, true, None),
+            ],
+            unique_constraints: Vec::new(),
+            indexes: Vec::new(),
+            foreign_keys: Vec::new(),
+        };
+        let before = SchemaSnapshot::from_tables(vec![parent, child]);
+        let mut with_key = before.clone();
+        with_key
+            .tables
+            .iter_mut()
+            .find(|table| table.name == "children")
+            .unwrap()
+            .foreign_keys
+            .push(ForeignKeySnapshot {
+                name: "fk_children_parent".to_owned(),
+                columns: vec!["parent_id".to_owned()],
+                referenced_table: "parents".to_owned(),
+                referenced_columns: vec!["id".to_owned()],
+                on_delete: crate::snapshot::OnDelete::Restrict,
+                on_update: "no_action".to_owned(),
+            });
+        let add = plan_change(&before, &with_key).unwrap();
+        assert!(matches!(
+            add.operations.as_slice(),
+            [MigrationOperation::AddForeignKey { .. }]
+        ));
+        assert!(add.refusal.is_none());
+
+        let remove = plan_change(&with_key, &before).unwrap();
+        assert!(matches!(
+            remove.operations.as_slice(),
+            [MigrationOperation::DropForeignKey {
+                previous: Some(_),
+                ..
+            }]
+        ));
+        assert!(remove.refusal.is_none());
+    }
+
+    #[test]
     fn rename_like_changes_are_refused() {
         let before = products(vec![column("note", LogicalType::String, true, None)]);
         let after = products(vec![column("description", LogicalType::String, true, None)]);

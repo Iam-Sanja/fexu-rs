@@ -92,7 +92,8 @@ Additional acceptance evidence on current `main` (unreleased after 0.1.2):
 
 Still open under issue 83:
 
-- Complete the remaining rename, foreign-key, and supported type-change generation matrix and explicitly document unsupported transitions.
+- Generated migration operations have focused contract tests for index add/replace/drop, foreign-key add/drop with reversible metadata, supported column conversions, and refused unsafe conversions or new required fields. These are planning-contract tests, **not** proof that every type transition succeeds on both databases. Rename-like column changes are intentionally refused by automatic diffing: use the explicit `fexu migrate rename-column` workflow rather than treating drop + add as lossless.
+- Complete any remaining runtime matrix for foreign-key/type changes and verify each supported transition on both databases; unsupported transitions must remain explicit rather than guessed.
 - Add an independently generated, version-pinned v0.1.2-to-next-release upgrade fixture for an external consumer; current tests create versioned migrations within the source checkout rather than upgrading an already published application.
 - Keep historical issue acceptance criteria open until fresh Windows/Linux and SQLite/PostgreSQL results are verified against a release candidate. These checks do not move data between databases or silently baseline existing databases.
 
