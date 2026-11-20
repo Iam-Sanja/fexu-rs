@@ -32,3 +32,11 @@ A failed rollback drops that connection and opens a new one on the same file. Th
 `cargo publish --dry-run --allow-dirty` packaged these crates and then aborted the upload: `fexu-core`, `fexu-macros`, `fexu-cache`, `fexu-static`, and `fexu-middleware`. They do not depend on another Fexu crate.
 
 `fexu-mail` and `fexu-db` stop with `no matching package named fexu-core` because that crate is not on crates.io yet. The same stop applies to every other Fexu crate that depends on a sibling. The dry-run does not stop because a consumer would need `vendor/sqlx-sqlite`. Nothing in this change publishes a crate.
+
+## Parallele PostgreSQL-Testdatenbanken
+
+`DisposablePostgres` erzeugt ausschließlich zufällige `fexu_test_<32 hex>`-Datenbanken mit `TEMPLATE template0`. Administrative Verbindungen nutzen eine explizit freigegebene Datenbank bzw. `postgres`, nie `template1` oder das Klon-Template. Beim Löschen werden sowohl der Präfix als auch die Eigentümerschaft der Datenbank geprüft. Andere Anwendungsdatenbanken bleiben unangetastet.
+
+Der Regressionstest `testing::tests::postgres_fixture_parallel_create_isolate_and_cleanup` führt parallele Erzeugungen, isolierte Schreibzugriffe, überlappende Create/Drop-Vorgänge und das Aufräumen offener Verbindungen aus. **Die Test-Aufräumroutine erfasst nur Datenbanken, die dieser konkrete Test selbst angelegt hat.** Sie löscht keine fremden `fexu_test_*`-Datenbanken anhand eines globalen Vorher-/Nachher-Vergleichs. Vorhandene Fremd-Fixtures werden weder übernommen noch bereinigt.
+
+Die verpflichtende PostgreSQL-CI führt den Regressionstest auf PostgreSQL 16 sowie zusätzlich gegen isolierte Docker-Container mit PostgreSQL 17 und 18 aus. Die beiden zusätzlichen Versionen prüfen gezielt die Fixture-Infrastruktur und nicht die vollständige Framework-Integrationsmatrix. Lokal darf der ignorierte Test nur mit einem ausdrücklich freigegebenen, CREATEDB-fähigen PostgreSQL-Testserver über `FEXU_POSTGRES_ADMIN` oder `DATABASE_URL` (Loopback) ausgeführt werden. Ein erfolgreicher CI-Lauf ersetzt keinen eigenständigen TestShop-Lauf mit `--test-threads=2` auf einem autorisierten PostgreSQL-18-Server.

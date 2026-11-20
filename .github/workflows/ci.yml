@@ -228,6 +228,49 @@ jobs:
             -c 'DROP DATABASE IF EXISTS fexu_test_relocated WITH (FORCE);'
           exit "$status"
 
+      # Exercise the fixture isolation regression on additional server versions
+      # without multiplying the whole integration matrix or required check names.
+      - name: Verify parallel disposable fixtures on PostgreSQL 17 and 18
+        timeout-minutes: 12
+        run: |
+          set -euo pipefail
+          for version in 17 18; do
+            port=$((55400 + version))
+            container="fexu-fixture-pg-${version}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+            docker run -d --rm --name "$container" \
+              -e POSTGRES_USER=fexu \
+              -e POSTGRES_PASSWORD=fexu_dev_only \
+              -e POSTGRES_DB=fexu \
+              -p "127.0.0.1:${port}:5432" "postgres:${version}"
+            cleanup() { docker rm -f "$container" >/dev/null 2>&1 || true; }
+            trap cleanup EXIT
+            ready=0
+            for attempt in $(seq 1 90); do
+              if docker exec "$container" pg_isready -U fexu -d fexu >/dev/null 2>&1; then
+                ready=1
+                break
+              fi
+              sleep 1
+            done
+            if [ "$ready" -ne 1 ]; then
+              docker logs "$container" || true
+              echo "PostgreSQL $version fixture service failed to start" >&2
+              exit 1
+            fi
+            export FEXU_POSTGRES_ADMIN="postgres://fexu:fexu_dev_only@127.0.0.1:${port}/fexu"
+            output=$(cargo test -p fexu-db --lib testing::tests::postgres_fixture_parallel_create_isolate_and_cleanup -- --ignored --exact --test-threads=8 2>&1) || {
+              printf '%s\n' "$output"
+              exit 1
+            }
+            printf '%s\n' "$output"
+            if ! printf '%s\n' "$output" | grep -Fq 'test result: ok. 1 passed'; then
+              echo "PostgreSQL $version did not run exactly one passing fixture regression" >&2
+              exit 1
+            fi
+            cleanup
+            trap - EXIT
+          done
+
   browser:
     name: Browser
     runs-on: ubuntu-24.04
