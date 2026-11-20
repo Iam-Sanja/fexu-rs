@@ -877,14 +877,17 @@ fn run_migrate(action: MigrateCommand) -> Result<(), String> {
                 let db = fexu_db::connect(&readonly)
                     .await
                     .map_err(|error| format!("migration.database.unavailable: {error}"))?;
-                let mut report = plan_database(&db, &directory, schema.as_ref())
-                    .await
-                    .map_err(|error| error.0)?;
-                if use_project {
+                let mut report = if use_project {
                     let packages = declared_packages()?;
-                    report
-                        .findings
-                        .extend(fexu_migrations::package_dependency_findings(&packages));
+                    fexu_migrations::plan_project(&db, &directory, schema.as_ref(), &packages)
+                        .await
+                        .map_err(|error| error.0)?
+                } else {
+                    plan_database(&db, &directory, schema.as_ref())
+                        .await
+                        .map_err(|error| error.0)?
+                };
+                if use_project {
                     let auth =
                         fexu_auth::embedded_migrations().map_err(|error| error.to_string())?;
                     let jobs = fexu_jobs::embedded_migrations()
