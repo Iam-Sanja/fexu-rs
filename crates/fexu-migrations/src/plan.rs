@@ -215,7 +215,7 @@ pub async fn plan_embedded(
     let trusted = !findings.iter().any(|item| item.level == PlanLevel::Error);
     if trusted {
         if let Some(file) = latest_applied(files, &status) {
-            let live = crate::introspection::introspect_live(db).await?;
+            let live = crate::introspection::introspect_framework_live(db).await?;
             let owned = live_tables_owned_by(&file.to_snapshot, &live);
             for difference in crate::introspection::compare_snapshot(&file.to_snapshot, &owned) {
                 findings.push(finding(
