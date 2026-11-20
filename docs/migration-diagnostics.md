@@ -91,7 +91,7 @@ Additional acceptance evidence on current `main` (unreleased after 0.1.2):
 - Both backends verify that `plan_database` identifies an unapplied migration on an older populated schema without inserting history, and detects an unmanaged live column after migrations without repairing it. Read-only inspection does not change existing row counts or history counts.
 - A destructive down migration is rejected without `allow_destructive`; on PostgreSQL an explicitly approved rollback drops the selected column while preserving unrelated rows. This is **not** a promise that dropped column values can be recovered after approval.
 
-Still open under issue 83:
+Supported migration contract and documented limits (issue #83 completed):
 
 - Generated migration operations have focused contract tests for index add/replace/drop, foreign-key add/drop with reversible metadata, supported column conversions, and refused unsafe conversions or new required fields. These are planning-contract tests, **not** proof that every type transition succeeds on both databases. Rename-like column changes are intentionally refused by automatic diffing: use the explicit `fexu migrate rename-column` workflow rather than treating drop + add as lossless.
 - The dedicated SQLite and disposable PostgreSQL type-conversion integration tests start with populated string data, reject an invalid string-to-integer conversion without committing history or rewriting rows, then validate the corrected conversion, idempotent reapply and a reversible down migration. PostgreSQL CI explicitly runs its ignored test.
