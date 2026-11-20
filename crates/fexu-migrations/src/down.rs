@@ -296,6 +296,35 @@ mod tests {
         let quantity = scalar(&db, "SELECT quantity FROM fexu_down_child").await;
         assert_eq!(quantity, 1);
 
+        // The applied FK migration must enforce CASCADE, not merely report success.
+        let cascade_parent = uuid::Uuid::from_u128(9);
+        let cascade_child = uuid::Uuid::from_u128(10);
+        insert_id(
+            &db,
+            backend,
+            "fexu_down_parent",
+            &["id"],
+            &[cascade_parent],
+        )
+        .await;
+        insert_id(
+            &db,
+            backend,
+            "fexu_down_child",
+            &["id", "product_id"],
+            &[cascade_child, cascade_parent],
+        )
+        .await;
+        execute(
+            &db,
+            &format!("DELETE FROM fexu_down_parent WHERE id = '{cascade_parent}'"),
+        )
+        .await;
+        assert_eq!(
+            scalar(&db, "SELECT COUNT(*) AS total FROM fexu_down_child"),
+            1
+        );
+
         let refused = crate::revert_latest(&db, &directory, false, false).await;
         assert!(refused.is_err());
         assert_eq!(scalar(&db, "SELECT quantity FROM fexu_down_child").await, 1);
@@ -315,6 +344,18 @@ mod tests {
             .unwrap();
         assert!(fk.executed);
         assert!(!fk.destructive);
+        // Rolling back CASCADE must restore the original RESTRICT policy.
+        let rejected_delete = db
+            .execute(Statement::from_string(
+                backend,
+                format!("DELETE FROM fexu_down_parent WHERE id = '{parent_id}'"),
+            ))
+            .await;
+        assert!(rejected_delete.is_err(), "restored FK did not restrict deletion");
+        assert_eq!(
+            scalar(&db, "SELECT COUNT(*) AS total FROM fexu_down_child"),
+            1
+        );
         let preview = crate::revert_latest(&db, &directory, false, true)
             .await
             .unwrap();
