@@ -2,7 +2,7 @@
 
 [Documentation](index.md) · [Capability matrix](django-capability-matrix.md) · [Release checklist](release-readiness.md) · [GitHub issues](https://github.com/Iam-Sanja/fexu-rs/issues)
 
-**Reviewed:** 2026-11-18 against `main` at `d4e2fb2` (after PR #192). This is a proposed release plan, **not a promise of dates or that every listed feature is complete**. Update the verification baseline when implementation or release status changes.
+**Reviewed:** 2026-11-20 against `main` at `e5e140a6c70bbdf9c1f98f4f588119457b5ba910` (after PR #226). This is a proposed release plan, **not a promise of dates or that every listed feature is complete**. Update the verification baseline when implementation or release status changes.
 
 ## Version meanings and current status
 
@@ -14,7 +14,7 @@
 
 The implementation inventory below refers to **source on the reviewed commit**, not the published `0.1.2` packages. See the [capability matrix](django-capability-matrix.md) for partial coverage and backend restrictions.
 
-## On main since `a591b85`, still unreleased
+## Selected recent work on main (unreleased since v0.1.2)
 
 These commits are on `main` after the previous review and after the published `0.1.2` crates. They do not cut `0.2.0`.
 
@@ -24,12 +24,19 @@ These commits are on `main` after the previous review and after the published `0
 
 [#148](https://github.com/Iam-Sanja/fexu-rs/issues/148) stays the proposed catalog and record-content work under v0.3. The example pages above are not that work.
 
+### 2026-11-20 release-hardening update
+
+- PRs #198–#226 have been merged since the previous review, including [#222](https://github.com/Iam-Sanja/fexu-rs/pull/222) published v0.1.2 SQLite consumer test, [#223](https://github.com/Iam-Sanja/fexu-rs/pull/223) app-aware migration planning, [#224](https://github.com/Iam-Sanja/fexu-rs/pull/224) PostgreSQL regression and [#226](https://github.com/Iam-Sanja/fexu-rs/pull/226) the non-publishing preflight.
+- [#83](https://github.com/Iam-Sanja/fexu-rs/issues/83) and [#117](https://github.com/Iam-Sanja/fexu-rs/issues/117) are closed with documented acceptance; that is not release authorization.
+- [#92](https://github.com/Iam-Sanja/fexu-rs/issues/92) and [#93](https://github.com/Iam-Sanja/fexu-rs/issues/93) still require a published-to-candidate consumer upgrade including persisted accounts and sessions on SQLite/PostgreSQL, documentation/security sign-off and release approval.
+- All 16 crates target `0.2.0` together; Cargo manifests and crates.io remain at `0.1.2` until the coordinated, reviewed version bump.
+
 ## What is available in the development source
 
 | Area | Implemented source capabilities | Important limits |
 | --- | --- | --- |
 | Data | `FexuModel`, typed repositories, SeaQuery SQL, SQLite via bundled rusqlite 0.42, PostgreSQL via SQLx 0.8.6, explicit relationships and query scopes | Not unrestricted Django QuerySets; query result completeness and empty `IN` semantics remain tracked in [#144](https://github.com/Iam-Sanja/fexu-rs/issues/144) and [#143](https://github.com/Iam-Sanja/fexu-rs/issues/143) |
-| Migrations | Versioned app/framework migrations, guarded destructive operations, drift planning, SQLite rebuild protections | Upgrade and drift behavior still requires the complete acceptance evidence in [#83](https://github.com/Iam-Sanja/fexu-rs/issues/83) |
+| Migrations | Versioned app/framework migrations, guarded destructive operations, drift planning, SQLite rebuild protections | The original migration contract in [#83](https://github.com/Iam-Sanja/fexu-rs/issues/83) is complete; published v0.2.0 upgrade/sign-off belongs to #92/#93 |
 | HTTP/API | Axum routing, model CRUD, model-derived OpenAPI 3.1, cursor lists, HTML views | Explicit authentication and policy configuration is still required; not every Django-style view is implemented |
 | Auth | Argon2id, sessions, role/object permissions, CSRF for protected browser routes, TOTP and password reset | OIDC is still a documented design, not a shipped implementation; see [#85](https://github.com/Iam-Sanja/fexu-rs/issues/85) |
 | Native admin | Server-rendered Axum/Tera CRUD, filters, actions, bulk workflows, scoped paginated relation pickers, inlines | No React dependency for basic admin; full browser/accessibility acceptance is still tracked by [#80](https://github.com/Iam-Sanja/fexu-rs/issues/80) |
@@ -44,11 +51,12 @@ These commits are on `main` after the previous review and after the published `0
 
 - [ ] **Data safety:** resolve or document a deliberately safe API contract for empty `IN`/`NOT IN` ([#143](https://github.com/Iam-Sanja/fexu-rs/issues/143)) and explicit query truncation/full iteration ([#144](https://github.com/Iam-Sanja/fexu-rs/issues/144)), with SQLite/PostgreSQL and scope regression tests.
 - [ ] **Forms/admin acceptance:** independently verify [#84](https://github.com/Iam-Sanja/fexu-rs/issues/84) and [#80](https://github.com/Iam-Sanja/fexu-rs/issues/80), including real HTML/JSON, CSRF, uploads, rollback, auth-scoped relation editing and browser accessibility. Close only criteria actually proven.
-- [ ] **Migration safety:** verify drift, older-schema upgrade, rollback and populated-data contracts on both supported databases ([#83](https://github.com/Iam-Sanja/fexu-rs/issues/83)).
-- [ ] **Isolation and clean-room:** resolve PostgreSQL parallel-fixture evidence ([#117](https://github.com/Iam-Sanja/fexu-rs/issues/117)); generate and run an **independent** consumer with no workspace path dependencies on Windows/Linux ([#91](https://github.com/Iam-Sanja/fexu-rs/issues/91), [#93](https://github.com/Iam-Sanja/fexu-rs/issues/93)).
+- [x] **Migration contract:** original drift, older-schema artifact, rollback and populated-data criteria verified; [#83](https://github.com/Iam-Sanja/fexu-rs/issues/83) is closed. Published 0.1.2-to-candidate upgrades with live sessions remain open under #92/#93.
+- [x] **PostgreSQL fixture isolation:** [#117](https://github.com/Iam-Sanja/fexu-rs/issues/117) closed after PostgreSQL 17/18 CI and external TestShop PostgreSQL 18.6 evidence (five parallel runs, 70 successful tests).
+- [ ] **Independent clean-room consumer:** generate and run a candidate consumer on Windows/Linux and SQLite/PostgreSQL with no unintended local path dependencies ([#91](https://github.com/Iam-Sanja/fexu-rs/issues/91), [#93](https://github.com/Iam-Sanja/fexu-rs/issues/93)).
 - [ ] **Release regression:** exercise generated-project login, CSRF, forms, admin, ORM, migration and relevant failure paths in browsers and SQLite/PostgreSQL CI, including a tagged-to-next-version migration/upgrade test ([#92](https://github.com/Iam-Sanja/fexu-rs/issues/92), [#93](https://github.com/Iam-Sanja/fexu-rs/issues/93)).
-- [ ] **Documentation and policy:** reconcile [Django capability claims](django-capability-matrix.md) ([#70](https://github.com/Iam-Sanja/fexu-rs/issues/70)), installation examples, crate versions, safety limits, change log and the [public release security checklist](public-release-checklist.md). Complete the required release security/asset review; unresolved findings must be explicitly triaged.
-- [ ] **Publishing:** synchronize the 16 crate versions/dependency pins, confirm the Trusted Publishing workflow and release environment, require successful checks for the final commit, then smoke-test published artifacts from crates.io; no automated publish merely for merging a PR ([#92](https://github.com/Iam-Sanja/fexu-rs/issues/92)).
+- [ ] **Documentation and policy:** finish the [versioned manual](documentation-maintenance.md), source-check documentation and the [Django capability matrix](django-capability-matrix.md), reconcile installation commands, all 16 crate versions, security limits, changelog and [public checklist](public-release-checklist.md). A passing link audit is not a complete API review.
+- [ ] **Publishing:** coordinate all 16 crate versions/dependencies to planned `0.2.0` in a dedicated release-candidate PR, run the [non-publishing preflight](release-candidate-0.2.md), confirm Trusted Publishing/release environment and checks, and smoke-test *published* crates after explicit authorization (#92).
 
 **Important:** The checkboxes are **release gates**, not statements that no implementation exists. Several features already have extensive tests; gates stay unchecked until evidence is reviewed against the release candidate. Individual P1/P2 issues may be scoped down with explicit documented limitations rather than silently called complete.
 
