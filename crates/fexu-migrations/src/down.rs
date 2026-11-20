@@ -321,7 +321,7 @@ mod tests {
         )
         .await;
         assert_eq!(
-            scalar(&db, "SELECT COUNT(*) AS total FROM fexu_down_child"),
+            scalar(&db, "SELECT COUNT(*) AS total FROM fexu_down_child").await,
             1
         );
 
@@ -353,7 +353,7 @@ mod tests {
             .await;
         assert!(rejected_delete.is_err(), "restored FK did not restrict deletion");
         assert_eq!(
-            scalar(&db, "SELECT COUNT(*) AS total FROM fexu_down_child"),
+            scalar(&db, "SELECT COUNT(*) AS total FROM fexu_down_child").await,
             1
         );
         let preview = crate::revert_latest(&db, &directory, false, true)
