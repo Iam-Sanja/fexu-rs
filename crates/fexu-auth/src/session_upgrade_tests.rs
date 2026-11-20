@@ -7,7 +7,9 @@ use crate::{AuthConfig, AuthError, AuthService};
 use fexu_db::driver::DatabaseConnection;
 
 async fn assert_continuity(url: &str) -> Result<(), String> {
-    let db = fexu_db::connect(url).await.map_err(|error| error.to_string())?;
+    let db = fexu_db::connect(url)
+        .await
+        .map_err(|error| error.to_string())?;
     let applied = crate::apply_migrations(&db)
         .await
         .map_err(|error| error.to_string())?;
@@ -43,12 +45,16 @@ async fn assert_continuity(url: &str) -> Result<(), String> {
 
     // Simulates reopening the existing database with the new framework
     // checkout. No session rows, password hashes, roles or secrets are reset.
-    let db = fexu_db::connect(url).await.map_err(|error| error.to_string())?;
+    let db = fexu_db::connect(url)
+        .await
+        .map_err(|error| error.to_string())?;
     let reapplied = crate::apply_migrations(&db)
         .await
         .map_err(|error| error.to_string())?;
     if !reapplied.is_empty() {
-        return Err(format!("existing auth history was reapplied: {reapplied:?}"));
+        return Err(format!(
+            "existing auth history was reapplied: {reapplied:?}"
+        ));
     }
     let auth = AuthService::new(db.clone(), AuthConfig::development());
     let restored = auth
@@ -115,6 +121,9 @@ async fn postgres_persisted_auth_and_session_survive_migrations_and_reconnect() 
         .expect("create isolated database");
     let result = assert_continuity(fixture.url()).await;
     let cleanup = fixture.drop_database().await;
-    assert!(cleanup.is_ok(), "cleanup of isolated PostgreSQL test: {cleanup:?}");
+    assert!(
+        cleanup.is_ok(),
+        "cleanup of isolated PostgreSQL test: {cleanup:?}"
+    );
     result.expect("PostgreSQL persisted authentication continuity");
 }
