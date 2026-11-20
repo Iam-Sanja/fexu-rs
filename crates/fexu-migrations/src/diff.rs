@@ -1019,7 +1019,6 @@ mod tests {
         assert!(dropped.refusal.is_none());
     }
 
-
     #[test]
     fn index_generation_adds_changes_and_removes_without_data_loss_risks() {
         let original = products(vec![]);
@@ -1111,7 +1110,8 @@ mod tests {
         };
         let before = SchemaSnapshot::from_tables(vec![parent, child]);
         let mut with_key = before.clone();
-        with_key.tables
+        with_key
+            .tables
             .iter_mut()
             .find(|table| table.name == "children")
             .unwrap()
