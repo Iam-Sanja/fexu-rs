@@ -4,7 +4,6 @@
 //! execute the published v0.1.2 auth library or a v0.2.0 candidate.
 use crate::password::ephemeral_password;
 use crate::{AuthConfig, AuthError, AuthService};
-use fexu_db::driver::DatabaseConnection;
 
 async fn assert_continuity(url: &str) -> Result<(), String> {
     let db = fexu_db::connect(url)
