@@ -388,7 +388,10 @@ async fn populated_sqlite_evolution_keeps_rows_and_rejects_unsafe_changes() {
     .unwrap();
     let drift = plan_database(&db, &migrations, None).await.unwrap();
     assert!(drift.has_drift(), "{drift:?}");
-    assert!(drift.findings.iter().any(|finding| finding.message.contains("unmanaged")));
+    assert!(drift
+        .findings
+        .iter()
+        .any(|finding| finding.message.contains("unmanaged")));
     assert_eq!(history_count(&db).await, history_before_drift);
     assert_eq!(
         cell(&db, "SELECT COUNT(*) AS value FROM \"products\"").await,
