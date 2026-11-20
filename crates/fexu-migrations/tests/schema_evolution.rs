@@ -187,6 +187,13 @@ async fn populated_sqlite_evolution_keeps_rows_and_rejects_unsafe_changes() {
     default_off.tables[0].columns[2].default = Some(false);
     written(&migrations, "default_off", &default_off);
     let old_history = history_count(&db).await;
+    let upgrade_plan = plan_database(&db, &migrations, Some(&default_off))
+        .await
+        .unwrap();
+    assert!(!upgrade_plan.has_error(), "{upgrade_plan:?}");
+    assert!(!upgrade_plan.has_drift(), "{upgrade_plan:?}");
+    assert_eq!(upgrade_plan.pending, vec!["0002_default_off".to_owned()]);
+    assert_eq!(history_count(&db).await, old_history);
     let pending = migration_status(&db, &migrations, None).await.unwrap();
     assert!(pending.conflicts.is_empty());
     assert_eq!(pending.lines.len(), 2);
@@ -372,6 +379,24 @@ async fn populated_sqlite_evolution_keeps_rows_and_rejects_unsafe_changes() {
         .await,
         "keep"
     );
+    let history_before_drift = history_count(&db).await;
+    db.execute(Statement::from_string(
+        DatabaseBackend::Sqlite,
+        "ALTER TABLE products ADD COLUMN unmanaged integer",
+    ))
+    .await
+    .unwrap();
+    let drift = plan_database(&db, &migrations, None).await.unwrap();
+    assert!(drift.has_drift(), "{drift:?}");
+    assert!(drift
+        .findings
+        .iter()
+        .any(|finding| finding.message.contains("unmanaged")));
+    assert_eq!(history_count(&db).await, history_before_drift);
+    assert_eq!(
+        cell(&db, "SELECT COUNT(*) AS value FROM \"products\"").await,
+        "3"
+    );
     let _ = std::fs::remove_dir_all(&root);
 }
 
@@ -409,6 +434,16 @@ async fn postgres_schema_evolution_keeps_rows_on_a_disposable_database() {
         default_off.tables[0].columns[2].default = Some(false);
         written(&migrations, "default_off", &default_off);
         let old_history = history_count(&db).await;
+        let upgrade_plan = plan_database(&db, &migrations, Some(&default_off))
+            .await
+            .map_err(|error| error.0)?;
+        if upgrade_plan.has_error()
+            || upgrade_plan.has_drift()
+            || upgrade_plan.pending != ["0002_default_off".to_owned()]
+            || history_count(&db).await != old_history
+        {
+            return Err(format!("older PostgreSQL schema plan changed data or misreported pending upgrade: {upgrade_plan:?}"));
+        }
         let pending = migration_status(&db, &migrations, None)
             .await
             .map_err(|error| error.0)?;
@@ -619,6 +654,25 @@ async fn postgres_schema_evolution_keeps_rows_on_a_disposable_database() {
             .is_ok()
         {
             return Err("approved destructive revert did not drop note column".to_owned());
+        }
+        let history_before_drift = history_count(&db).await;
+        db.execute(Statement::from_string(
+            DatabaseBackend::Postgres,
+            "ALTER TABLE products ADD COLUMN unmanaged integer",
+        ))
+        .await
+        .map_err(|error| error.to_string())?;
+        let drift = plan_database(&db, &migrations, None)
+            .await
+            .map_err(|error| error.0)?;
+        if !drift.has_drift()
+            || !drift.findings.iter().any(|finding| finding.message.contains("unmanaged"))
+            || history_count(&db).await != history_before_drift
+        {
+            return Err(format!("PostgreSQL live drift was not read-only or was missed: {drift:?}"));
+        }
+        if cell(&db, "SELECT COUNT(*) AS value FROM \"products\"").await != "3" {
+            return Err("read-only drift plan changed existing PostgreSQL rows".to_owned());
         }
         Ok(())
     }

@@ -84,12 +84,17 @@ Fulfilled:
 - Fresh and already-migrated SQLite and disposable PostgreSQL databases are covered by library tests. PostgreSQL tests are ignored unless `DATABASE_URL` points at an admin connection that can create a `fexu_test_` database. They drop only that disposable database.
 - `migrate plan` is read-only for application files, embedded auth and jobs, and declared app dependencies. Drift is reported. Checksum conflicts are not rewritten as drift.
 
-Still open in issue 83, outside this read-only slice:
+Additional acceptance evidence on current `main` (unreleased after 0.1.2):
 
-- Generating rename, default, index, foreign-key, and type migrations is unchanged and is not newly specified here.
-- Destructive changes still require an explicit acknowledgement and are not planned into an automatic write.
-- `migrate down` still does not restore dropped rows, and this change does not add a populated-data round trip.
-- CI still does not boot an older snapshot, migrate it forward, and compare application data. The relocated-binary CI starts from an empty disposable database.
+- `crates/fexu-migrations/tests/schema_evolution.rs` exercises a populated initial schema, a read-only plan of the pending next migration, explicit application, schema rename, dry-run and actual down/up, failed unique constraint with unchanged history, recovery using a corrected index migration, and guarded destructive rollback. The SQLite test and the ignored PostgreSQL test use separate disposable databases; PostgreSQL CI explicitly runs the ignored test.
+- Both backends verify that `plan_database` identifies an unapplied migration on an older populated schema without inserting history, and detects an unmanaged live column after migrations without repairing it. Read-only inspection does not change existing row counts or history counts.
+- A destructive down migration is rejected without `allow_destructive`; on PostgreSQL an explicitly approved rollback drops the selected column while preserving unrelated rows. This is **not** a promise that dropped column values can be recovered after approval.
+
+Still open under issue 83:
+
+- Complete the remaining rename, foreign-key, and supported type-change generation matrix and explicitly document unsupported transitions.
+- Add an independently generated, version-pinned v0.1.2-to-next-release upgrade fixture for an external consumer; current tests create versioned migrations within the source checkout rather than upgrading an already published application.
+- Keep historical issue acceptance criteria open until fresh Windows/Linux and SQLite/PostgreSQL results are verified against a release candidate. These checks do not move data between databases or silently baseline existing databases.
 
 ## Schema
 
