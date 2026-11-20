@@ -830,7 +830,10 @@ async fn verify_v012_migration_artifact_upgrade(
         serde_json::from_str(V012_MYSHOP_INITIAL).map_err(|error| error.to_string())?;
     let mut current: SchemaSnapshot = serde_json::from_value(old["to_snapshot"].clone())
         .map_err(|error| error.to_string())?;
-    if old["id"] != "0001_initial" || current.tables.len() != 1 {
+    if old["id"] != "0001_initial"
+        || old["checksum"] != "06393cd03c3d2afb2e4fbe111d0cf8430caf2ef0eaeda3c503d21edaf3f7a026"
+        || current.tables.len() != 1
+    {
         return Err("unexpected v0.1.2 MyShop migration artifact".to_owned());
     }
     let initial = apply_directory(db, migrations, false)
@@ -885,10 +888,9 @@ async fn verify_v012_migration_artifact_upgrade(
     let reverted = revert_latest(db, migrations, false, false)
         .await
         .map_err(|error| error.0)?;
-    if !reverted.executed || reverted.destructive
-        || history_count(db).await != initial_history
-        || cell(db, "SELECT COUNT(*) AS value FROM \"products\"").await != "2"
-    {
+    let history_restored = history_count(db).await == initial_history;
+    let products_preserved = cell(db, "SELECT COUNT(*) AS value FROM \"products\"").await == "2";
+    if !reverted.executed || reverted.destructive || !history_restored || !products_preserved {
         return Err("historical index rollback altered product rows or history".to_owned());
     }
     Ok(())
