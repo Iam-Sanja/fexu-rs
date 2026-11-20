@@ -28,6 +28,8 @@ mod lifecycle_tests;
 #[cfg(test)]
 mod reset_tests;
 #[cfg(test)]
+mod session_upgrade_tests;
+#[cfg(test)]
 mod security_tests;
 #[cfg(test)]
 mod sqlite_tests;
