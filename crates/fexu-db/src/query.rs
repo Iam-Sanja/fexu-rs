@@ -5188,7 +5188,6 @@ mod tests {
             .to_string()
             .contains("scan cancelled"));
 
-
         let mut scan = Item::query()
             .order_by("price_cents", Direction::Asc)
             .scan()
