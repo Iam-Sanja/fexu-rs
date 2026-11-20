@@ -5230,6 +5230,19 @@ mod tests {
         assert_eq!(scoped_rows.len(), 1_000);
         assert!(scoped_rows.iter().all(|row| row.id != Uuid::from_u128(500)));
         assert!(scoped.is_complete());
+        let scoped_shortcut = Item::query()
+            .order_by("price_cents", Direction::Asc)
+            .scope(QueryScope::Equals {
+                column: "owner_id",
+                value: ScopeValue::Uuid(Uuid::from_u128(7)),
+            })
+            .collect_bounded(db, 1_000, || false)
+            .await
+            .unwrap();
+        assert_eq!(scoped_shortcut.len(), 1_000);
+        assert!(scoped_shortcut
+            .iter()
+            .all(|row| row.id != Uuid::from_u128(500)));
 
         let mut hidden = Item::query().scope(QueryScope::None).scan().unwrap();
         assert!(hidden
@@ -5352,6 +5365,17 @@ mod tests {
             .unwrap_err();
         assert!(matches!(error, FexuError::Database(_)));
         assert_eq!(scan.next_batch(&db).await.unwrap(), second);
+
+        let fails_before_completion = FailAfter {
+            inner: &db,
+            budget: std::sync::atomic::AtomicUsize::new(1),
+        };
+        let failed_collection = Item::query()
+            .limit(80)
+            .collect_bounded(&fails_before_completion, 5_000, || false)
+            .await
+            .unwrap_err();
+        assert!(matches!(failed_collection, FexuError::Database(_)));
     }
 
     #[tokio::test]
@@ -5393,6 +5417,12 @@ mod tests {
             .await
             .unwrap_err();
         assert!(matches!(error, FexuError::Database(_)));
+        let failed_collection = Item::query()
+            .limit(80)
+            .collect_bounded(&failing, 5_000, || false)
+            .await
+            .unwrap_err();
+        assert!(matches!(failed_collection, FexuError::Database(_)));
         db.close().await.expect("close");
         disposable
             .drop_database()
