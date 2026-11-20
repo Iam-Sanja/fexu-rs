@@ -83,6 +83,7 @@ Fulfilled:
 - Missing, corrupt, incomplete, duplicate, and unexpected required framework resources fail before success. Optional application directories stay empty without that error.
 - Fresh and already-migrated SQLite and disposable PostgreSQL databases are covered by library tests. PostgreSQL tests are ignored unless `DATABASE_URL` points at an admin connection that can create a `fexu_test_` database. They drop only that disposable database.
 - `migrate plan` is read-only for application files, embedded auth and jobs, and declared app dependencies. Drift is reported. Checksum conflicts are not rewritten as drift.
+- The PostgreSQL CI exercises an additional **disposable, isolated PostgreSQL** regression for the project-aware migration plan: two dependent, namespaced apps must initially plan without false missing-file or drift findings, a real additional column must produce app-specific drift, an orphaned namespace must fail closed, and running the plan must not rewrite migration history. This complements the same SQLite coverage; the test uses the approved `DATABASE_URL` admin fixture and drops its own database.
 
 Additional acceptance evidence on current `main` (unreleased after 0.1.2):
 
