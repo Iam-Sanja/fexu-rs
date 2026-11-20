@@ -683,7 +683,6 @@ async fn postgres_schema_evolution_keeps_rows_on_a_disposable_database() {
     let _ = std::fs::remove_dir_all(&root);
 }
 
-
 async fn verify_populated_type_conversion(
     db: &DatabaseConnection,
     migrations: &Path,
