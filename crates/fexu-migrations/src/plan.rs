@@ -764,13 +764,17 @@ mod tests {
                 .await
                 .map_err(|error| error.0)?;
             if history_before.len() != 2 {
-                return Err(format!("expected 2 applied app migrations: {history_before:?}"));
+                return Err(format!(
+                    "expected 2 applied app migrations: {history_before:?}"
+                ));
             }
             let clean = plan_project(&db, &global, None, &packages)
                 .await
                 .map_err(|error| error.0)?;
             if clean.has_error() || clean.has_drift() || !clean.pending.is_empty() {
-                return Err(format!("clean PostgreSQL app plan reported a failure: {clean:?}"));
+                return Err(format!(
+                    "clean PostgreSQL app plan reported a failure: {clean:?}"
+                ));
             }
             if history::read_history_in(&db, history::HISTORY_TABLE)
                 .await
@@ -791,14 +795,16 @@ mod tests {
                 .map_err(|error| error.0)?;
             if !drift.has_drift()
                 || !drift.findings.iter().any(|item| {
-                    item.message.contains("App catalog:")
-                        && item.message.contains("unexpected")
+                    item.message.contains("App catalog:") && item.message.contains("unexpected")
                 })
-                || drift.findings.iter().any(|item| {
-                    item.message.contains("no longer has a readable file")
-                })
+                || drift
+                    .findings
+                    .iter()
+                    .any(|item| item.message.contains("no longer has a readable file"))
             {
-                return Err(format!("PostgreSQL namespaced drift was misclassified: {drift:?}"));
+                return Err(format!(
+                    "PostgreSQL namespaced drift was misclassified: {drift:?}"
+                ));
             }
 
             history::insert_history(&db, "retired:0001_old", "old", "test", 1)
@@ -813,7 +819,9 @@ mod tests {
                         && item.message.contains("no declared app")
                 })
             {
-                return Err(format!("orphaned PostgreSQL app history was ignored: {orphan:?}"));
+                return Err(format!(
+                    "orphaned PostgreSQL app history was ignored: {orphan:?}"
+                ));
             }
             if history::read_history_in(&db, history::HISTORY_TABLE)
                 .await
@@ -829,8 +837,14 @@ mod tests {
         .await;
         let cleanup = isolated.drop_database().await;
         let _ = std::fs::remove_dir_all(&root);
-        assert!(cleanup.is_ok(), "PostgreSQL fixture cleanup failed: {cleanup:?}");
-        assert!(outcome.is_ok(), "PostgreSQL app plan regression: {outcome:?}");
+        assert!(
+            cleanup.is_ok(),
+            "PostgreSQL fixture cleanup failed: {cleanup:?}"
+        );
+        assert!(
+            outcome.is_ok(),
+            "PostgreSQL app plan regression: {outcome:?}"
+        );
     }
 
     #[tokio::test]
