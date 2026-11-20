@@ -192,7 +192,7 @@ async fn populated_sqlite_evolution_keeps_rows_and_rejects_unsafe_changes() {
         .unwrap();
     assert!(!upgrade_plan.has_error(), "{upgrade_plan:?}");
     assert!(!upgrade_plan.has_drift(), "{upgrade_plan:?}");
-    assert_eq!(upgrade_plan.pending, ["0002_default_off"]);
+    assert_eq!(upgrade_plan.pending, vec!["0002_default_off".to_owned()]);
     assert_eq!(history_count(&db).await, old_history);
     let pending = migration_status(&db, &migrations, None).await.unwrap();
     assert!(pending.conflicts.is_empty());
@@ -436,7 +436,7 @@ async fn postgres_schema_evolution_keeps_rows_on_a_disposable_database() {
             .map_err(|error| error.0)?;
         if upgrade_plan.has_error()
             || upgrade_plan.has_drift()
-            || upgrade_plan.pending != ["0002_default_off"]
+            || upgrade_plan.pending != ["0002_default_off".to_owned()]
             || history_count(&db).await != old_history
         {
             return Err(format!("older PostgreSQL schema plan changed data or misreported pending upgrade: {upgrade_plan:?}"));
