@@ -729,6 +729,112 @@ mod tests {
 
     #[tokio::test]
     #[ignore = "requires DATABASE_URL pointing at an approved PostgreSQL admin database"]
+    async fn postgres_project_plan_checks_namespaced_apps_and_orphans_read_only() {
+        let admin = std::env::var("DATABASE_URL").expect("DATABASE_URL");
+        let isolated = fexu_db::DisposablePostgres::create(&admin)
+            .await
+            .expect("isolated postgres database");
+        let root = scratch("postgres-project");
+        let global = root.join("migrations");
+        let catalog = root.join("catalog");
+        let reports = root.join("reports");
+        std::fs::create_dir_all(&global).unwrap();
+        make_migration(&catalog, "initial", &products()).unwrap();
+        make_migration(&reports, "initial", &probe_table()).unwrap();
+        let packages = vec![
+            crate::packages::PackageMigration {
+                name: "catalog".into(),
+                directory: catalog,
+                depends_on: vec![],
+            },
+            crate::packages::PackageMigration {
+                name: "reports".into(),
+                directory: reports,
+                depends_on: vec!["catalog".into()],
+            },
+        ];
+        let outcome = async {
+            let db = fexu_db::connect(isolated.url())
+                .await
+                .map_err(|error| error.to_string())?;
+            crate::apply_packages(&db, &packages, false)
+                .await
+                .map_err(|error| error.0)?;
+            let history_before = history::read_history_in(&db, history::HISTORY_TABLE)
+                .await
+                .map_err(|error| error.0)?;
+            if history_before.len() != 2 {
+                return Err(format!("expected 2 applied app migrations: {history_before:?}"));
+            }
+            let clean = plan_project(&db, &global, None, &packages)
+                .await
+                .map_err(|error| error.0)?;
+            if clean.has_error() || clean.has_drift() || !clean.pending.is_empty() {
+                return Err(format!("clean PostgreSQL app plan reported a failure: {clean:?}"));
+            }
+            if history::read_history_in(&db, history::HISTORY_TABLE)
+                .await
+                .map_err(|error| error.0)?
+                != history_before
+            {
+                return Err("read-only plan modified PostgreSQL migration history".to_owned());
+            }
+
+            db.execute(Statement::from_string(
+                DatabaseBackend::Postgres,
+                "ALTER TABLE products ADD COLUMN unexpected integer",
+            ))
+            .await
+            .map_err(|error| error.to_string())?;
+            let drift = plan_project(&db, &global, None, &packages)
+                .await
+                .map_err(|error| error.0)?;
+            if !drift.has_drift()
+                || !drift.findings.iter().any(|item| {
+                    item.message.contains("App catalog:")
+                        && item.message.contains("unexpected")
+                })
+                || drift.findings.iter().any(|item| {
+                    item.message.contains("no longer has a readable file")
+                })
+            {
+                return Err(format!("PostgreSQL namespaced drift was misclassified: {drift:?}"));
+            }
+
+            history::insert_history(&db, "retired:0001_old", "old", "test", 1)
+                .await
+                .map_err(|error| error.0)?;
+            let orphan = plan_project(&db, &global, None, &packages)
+                .await
+                .map_err(|error| error.0)?;
+            if !orphan.has_error()
+                || !orphan.findings.iter().any(|item| {
+                    item.message.contains("retired:0001_old")
+                        && item.message.contains("no declared app")
+                })
+            {
+                return Err(format!("orphaned PostgreSQL app history was ignored: {orphan:?}"));
+            }
+            if history::read_history_in(&db, history::HISTORY_TABLE)
+                .await
+                .map_err(|error| error.0)?
+                .len()
+                != 3
+            {
+                return Err("PostgreSQL plan wrote unexpected migration history".to_owned());
+            }
+            db.close().await.map_err(|error| error.to_string())?;
+            Ok::<(), String>(())
+        }
+        .await;
+        let cleanup = isolated.drop_database().await;
+        let _ = std::fs::remove_dir_all(&root);
+        assert!(cleanup.is_ok(), "PostgreSQL fixture cleanup failed: {cleanup:?}");
+        assert!(outcome.is_ok(), "PostgreSQL app plan regression: {outcome:?}");
+    }
+
+    #[tokio::test]
+    #[ignore = "requires DATABASE_URL pointing at an approved PostgreSQL admin database"]
     async fn postgres_plan_detects_live_drift_on_a_disposable_database() {
         let admin = std::env::var("DATABASE_URL").expect("DATABASE_URL");
         let isolated = fexu_db::DisposablePostgres::create(&admin)
