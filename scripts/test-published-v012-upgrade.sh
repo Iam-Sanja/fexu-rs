@@ -123,21 +123,21 @@ if [[ "$before" != "$after" ]]; then
   echo "upgrade --check wrote to tracked project files" >&2
   exit 1
 fi
-# The global 'migrate plan' currently examines root migrations and embedded
-# auth/jobs, not declared app packages. Against this historical database it
-# reports the namespaced catalog migration as missing and framework drift.
-# Preserve that fail-closed behavior and verify it is read-only rather than
-# incorrectly treating the global plan as a successful per-app migration check.
+# The project plan now resolves declared namespaced apps and embedded auth/jobs.
+# The previously missing catalog:0001_initial must not be misclassified.
+# The planning command is read-only, including when it reports real drift.
 before_db=$(sha256sum "$db")
-set +e
-plan_output=$("$new_cli" migrate plan 2>&1)
-plan_status=$?
-set -e
+plan_output=$("$new_cli" migrate plan 2>&1) || {
+  printf '%s\n' "$plan_output"
+  echo "App-aware migration plan rejected a populated 0.1.2 project" >&2
+  exit 1
+}
 printf '%s\n' "$plan_output"
-if [[ "$plan_status" -ne 1 ]] ||
-   ! grep -Fq 'catalog:0001_initial no longer has a readable file' <<<"$plan_output" ||
-   ! grep -Fq 'Migration plan found conflicts or live schema drift.' <<<"$plan_output"; then
-  echo "Unexpected historical global migration plan result (status=$plan_status)" >&2
+if ! grep -Fq 'Migration plan is read-only.' <<<"$plan_output" ||
+   ! grep -Fq 'pending: none' <<<"$plan_output" ||
+   grep -Fq 'no longer has a readable file' <<<"$plan_output" ||
+   grep -Fq 'drift:' <<<"$plan_output"; then
+  echo "App-aware plan returned unexpected diagnostics" >&2
   exit 1
 fi
 after_db=$(sha256sum "$db")
@@ -151,8 +151,7 @@ fi
 "$new_cli" generate model Customer --app catalog
 "$new_cli" migrate make add_customer --app catalog
 "$new_cli" migrate up
-# 'check' understands the declared app packages and reports whether the
-# migration chain is current, unlike the root-only global 'migrate plan'.
+"$new_cli" migrate plan
 "$new_cli" check
 
 python3 - "$db" "$project/apps/catalog/migrations" <<'PY'
