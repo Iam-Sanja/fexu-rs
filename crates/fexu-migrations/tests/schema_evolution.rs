@@ -814,7 +814,6 @@ async fn postgres_type_conversion_rolls_back_invalid_rows_and_roundtrips() {
     let _ = std::fs::remove_dir_all(&root);
 }
 
-
 const V012_MYSHOP_INITIAL: &str =
     include_str!("../../../examples/myshop/migrations/0001_initial.json");
 
@@ -824,12 +823,11 @@ async fn verify_v012_migration_artifact_upgrade(
 ) -> Result<(), String> {
     std::fs::create_dir_all(migrations).map_err(|error| error.to_string())?;
     let legacy_path = migrations.join("0001_initial.json");
-    std::fs::write(&legacy_path, V012_MYSHOP_INITIAL)
-        .map_err(|error| error.to_string())?;
+    std::fs::write(&legacy_path, V012_MYSHOP_INITIAL).map_err(|error| error.to_string())?;
     let old: serde_json::Value =
         serde_json::from_str(V012_MYSHOP_INITIAL).map_err(|error| error.to_string())?;
-    let mut current: SchemaSnapshot = serde_json::from_value(old["to_snapshot"].clone())
-        .map_err(|error| error.to_string())?;
+    let mut current: SchemaSnapshot =
+        serde_json::from_value(old["to_snapshot"].clone()).map_err(|error| error.to_string())?;
     if old["id"] != "0001_initial"
         || old["checksum"] != "06393cd03c3d2afb2e4fbe111d0cf8430caf2ef0eaeda3c503d21edaf3f7a026"
         || current.tables.len() != 1
