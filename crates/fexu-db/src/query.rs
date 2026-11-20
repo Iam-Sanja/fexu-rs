@@ -806,6 +806,11 @@ impl<M> Select<M> {
         M: FexuModel + DeserializeOwned,
         C: ConnectionTrait,
     {
+        if self.offset != 0 {
+            return Err(FexuError::Validation(
+                "checked complete results cannot start at a nonzero offset".into(),
+            ));
+        }
         let window = self.window(db).await?;
         if window.truncated {
             return Err(FexuError::Validation(
@@ -5146,6 +5151,13 @@ mod tests {
             .unwrap();
         assert_eq!(compact.len(), 1);
         assert_eq!(compact[0].name, "blocker");
+        assert!(Item::query()
+            .offset(1)
+            .all_checked(db)
+            .await
+            .unwrap_err()
+            .to_string()
+            .contains("nonzero offset"));
 
         let complete_rows = Item::query()
             .order_by("price_cents", Direction::Asc)
