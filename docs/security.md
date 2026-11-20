@@ -46,7 +46,7 @@ TOTP MFA and recovery codes are implemented for local accounts; OIDC/OAuth and J
 - Auth context must not be created via client fields or headers with an unchecked trust chain.
 - Before each productive release security review, dependency audit and documented threat model assumptions.
 
-**Security reporting:** [SECURITY.md](../SECURITY.md) includes guidance to use GitHub Private Vulnerability Reporting where enabled. The availability of that GitHub repository setting must be checked separately; do not post exploitable vulnerabilities in public issues.
+**Security reporting:** [SECURITY.md](https://github.com/Iam-Sanja/fexu-rs/blob/main/SECURITY.md) includes guidance to use GitHub Private Vulnerability Reporting where enabled. The availability of that GitHub repository setting must be checked separately; do not post exploitable vulnerabilities in public issues.
 
 `FexuError::Database` displays `database operation failed`. `fexu_core::diagnostic_chain` joins the source chain for server logs and redacts values after `password=`, `secret=`, `token=`, `csrf_token=`, `fexu_session=` and `fexu_anonymous=`. Do not send that string to the browser.
 
