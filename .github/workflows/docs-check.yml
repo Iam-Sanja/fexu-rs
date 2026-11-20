@@ -33,7 +33,7 @@ jobs:
       - name: Audit documentation
         run: python scripts/audit-documentation.py
       - name: Build documentation site
-        run: mkdocs build
+        run: mkdocs build --strict
       - name: Report publication boundary
         run: |
           echo "This check builds documentation only." >> "$GITHUB_STEP_SUMMARY"
