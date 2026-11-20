@@ -72,8 +72,26 @@ path = Path(sys.argv[2]).as_posix()
 manifest.write_text(current.replace(old, f'fexu = {{ path = "{path}" }}'))
 PY
 
-# Check that a real source-generated 0.1.2 application still builds using
-# the current workspace code. All writes happen inside the temporary project.
+# The published 0.1.2 generator emitted a call that assumed a String.
+# Current Fexu returns Result<String, MigrationError>; migrate the generated
+# source explicitly (fail if the upstream historical source ever changes).
+python3 - "$project/src/project/mod.rs" <<'PY'
+from pathlib import Path
+import sys
+
+source = Path(sys.argv[1])
+original = source.read_text()
+old = '    let db = fexu::db::connect(&settings.resolved_database_url()).await?;'
+new = (
+    '    let database_url = settings.resolved_database_url()?;\n'
+    '    let db = fexu::db::connect(&database_url).await?;'
+)
+assert original.count(old) == 1, "published 0.1.2 source no longer matches its pinned API"
+source.write_text(original.replace(old, new))
+PY
+
+# Check the migrated old project against the current checkout. This is a
+# documented source edit, NOT an automatic fexu upgrade rewriting source.
 cargo check
 "$new_cli" upgrade --check
 "$new_cli" migrate plan
