@@ -1,0 +1,120 @@
+name: Release candidate preflight (no publishing)
+
+# A deliberate, tokenless preflight. This workflow neither tags nor publishes.
+# Run on a reviewed candidate branch after updating every workspace package and
+# internal dependency requirement to the proposed version.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Candidate Cargo version (for example 0.2.0)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-preflight-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: Candidate metadata, packaging and Linux build
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      RELEASE_VERSION: ${{ inputs.version }}
+    steps:
+      - name: Checkout selected candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8
+        with:
+          toolchain: stable
+          components: rustfmt, clippy
+
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+
+      - name: Verify version graph and planned publish order
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! "$RELEASE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Version must have the form N.N.N"
+            exit 1
+          fi
+          python3 scripts/publish-workspace.py --version "$RELEASE_VERSION" --plan
+
+      - name: Verify source formatting
+        run: cargo fmt --all -- --check
+
+      - name: Verify workspace lint
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+
+      - name: Verify workspace tests
+        run: cargo test --workspace --locked
+
+      - name: Verify Linux release binaries
+        run: cargo build --workspace --release --locked
+
+      - name: Inspect all publishable package file manifests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          import subprocess
+
+          metadata = json.loads(subprocess.check_output(
+              ["cargo", "metadata", "--no-deps", "--format-version", "1"],
+              text=True,
+          ))
+          members = set(metadata["workspace_members"])
+          packages = [
+              package for package in metadata["packages"]
+              if package["id"] in members and (
+                  package["publish"] is None
+                  or "crates-io" in package["publish"]
+              )
+          ]
+          assert len(packages) == 16, (
+              f"Expected 16 publishable Fexu crates; found {len(packages)}"
+          )
+          for package in sorted(packages, key=lambda item: item["name"]):
+              for key in ("description", "license", "repository"):
+                  assert package.get(key), f"{package['name']}: missing {key}"
+              listing = subprocess.check_output(
+                  ["cargo", "package", "--list", "--locked",
+                   "--package", package["name"]],
+                  text=True,
+              )
+              entries = listing.splitlines()
+              assert "Cargo.toml" in entries, package["name"]
+              assert any(entry.endswith(".rs") for entry in entries), (
+                  f"{package['name']}: package contains no Rust sources"
+              )
+              print(f"{package['name']}: {len(entries)} packaged entries")
+          PY
+
+      - name: Record non-publishing sign-off boundary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "## Release candidate preflight"
+            echo "Ref: \`$GITHUB_REF\`"
+            echo "SHA: \`$GITHUB_SHA\`"
+            echo "Candidate Cargo version: \`$RELEASE_VERSION\`"
+            echo ""
+            echo "This run did **not** create a tag, GitHub Release, or crates.io upload."
+            echo ""
+            echo "Still required before a release: main CI (including PostgreSQL),"
+            echo "cross-version external consumer upgrades on SQLite **and** PostgreSQL"
+            echo "with persisted auth/session continuity, a security/advisory review,"
+            echo "release notes, packaging and rollback review, and explicit maintainer approval."
+          } >> "$GITHUB_STEP_SUMMARY"
