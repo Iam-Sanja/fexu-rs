@@ -123,14 +123,37 @@ if [[ "$before" != "$after" ]]; then
   echo "upgrade --check wrote to tracked project files" >&2
   exit 1
 fi
-"$new_cli" migrate plan
+# The global 'migrate plan' currently examines root migrations and embedded
+# auth/jobs, not declared app packages. Against this historical database it
+# reports the namespaced catalog migration as missing and framework drift.
+# Preserve that fail-closed behavior and verify it is read-only rather than
+# incorrectly treating the global plan as a successful per-app migration check.
+before_db=$(sha256sum "$db")
+set +e
+plan_output=$("$new_cli" migrate plan 2>&1)
+plan_status=$?
+set -e
+printf '%s\n' "$plan_output"
+if [[ "$plan_status" -ne 1 ]] ||
+   ! grep -Fq 'catalog:0001_initial no longer has a readable file' <<<"$plan_output" ||
+   ! grep -Fq 'Migration plan found conflicts or live schema drift.' <<<"$plan_output"; then
+  echo "Unexpected historical global migration plan result (status=$plan_status)" >&2
+  exit 1
+fi
+after_db=$(sha256sum "$db")
+if [[ "$before_db" != "$after_db" ]]; then
+  echo "migrate plan wrote to the SQLite database" >&2
+  exit 1
+fi
 
 # Current CLI must extend the old migration chain without rewriting the old
 # history or removing the previously inserted business record.
 "$new_cli" generate model Customer --app catalog
 "$new_cli" migrate make add_customer --app catalog
 "$new_cli" migrate up
-"$new_cli" migrate plan
+# 'check' understands the declared app packages and reports whether the
+# migration chain is current, unlike the root-only global 'migrate plan'.
+"$new_cli" check
 
 python3 - "$db" "$project/apps/catalog/migrations" <<'PY'
 from pathlib import Path
