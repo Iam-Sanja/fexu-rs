@@ -39,6 +39,7 @@ pub struct LiveTable {
 
 pub async fn introspect_sqlite(
     db: &impl ConnectionTrait,
+    include_framework: bool,
 ) -> Result<Vec<LiveTable>, MigrationError> {
     if db.get_database_backend() != DatabaseBackend::Sqlite {
         return Err(MigrationError::new(
@@ -57,7 +58,7 @@ pub async fn introspect_sqlite(
         let name: String = row
             .try_get("", "name")
             .map_err(|error| MigrationError::new(format!("Could not read table name: {error}")))?;
-        if name.starts_with("_fexu_") {
+        if !include_framework && name.starts_with("_fexu_") {
             continue;
         }
         tables.push(LiveTable {
@@ -210,14 +211,32 @@ fn read_i64(row: &fexu_db::driver::QueryResult, column: &str) -> Result<i64, Mig
 }
 
 pub async fn introspect_live(db: &impl ConnectionTrait) -> Result<Vec<LiveTable>, MigrationError> {
+    introspect_live_with_framework(db, false).await
+}
+
+/// Live metadata including internal auth/job tables, exclusively for a scoped
+/// framework drift comparison. Application baseline checks still omit them.
+pub(crate) async fn introspect_framework_live(
+    db: &impl ConnectionTrait,
+) -> Result<Vec<LiveTable>, MigrationError> {
+    introspect_live_with_framework(db, true).await
+}
+
+async fn introspect_live_with_framework(
+    db: &impl ConnectionTrait,
+    include_framework: bool,
+) -> Result<Vec<LiveTable>, MigrationError> {
     match db.get_database_backend() {
-        DatabaseBackend::Sqlite => introspect_sqlite(db).await,
-        DatabaseBackend::Postgres => introspect_postgres(db).await,
+        DatabaseBackend::Sqlite => introspect_sqlite(db, include_framework).await,
+        DatabaseBackend::Postgres => introspect_postgres(db, include_framework).await,
         DatabaseBackend::MySql => Err(MigrationError::new("MySQL is not supported.".to_owned())),
     }
 }
 
-async fn introspect_postgres(db: &impl ConnectionTrait) -> Result<Vec<LiveTable>, MigrationError> {
+async fn introspect_postgres(
+    db: &impl ConnectionTrait,
+    include_framework: bool,
+) -> Result<Vec<LiveTable>, MigrationError> {
     let columns = db
         .query_all(Statement::from_string(
             DatabaseBackend::Postgres,
@@ -233,7 +252,7 @@ async fn introspect_postgres(db: &impl ConnectionTrait) -> Result<Vec<LiveTable>
     let mut tables: Vec<LiveTable> = Vec::new();
     for row in columns {
         let table_name: String = text(&row, "table_name")?;
-        if table_name.starts_with("_fexu_") {
+        if !include_framework && table_name.starts_with("_fexu_") {
             continue;
         }
         let column_name: String = text(&row, "column_name")?;
