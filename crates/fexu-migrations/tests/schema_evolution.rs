@@ -813,3 +813,117 @@ async fn postgres_type_conversion_rolls_back_invalid_rows_and_roundtrips() {
     dropped.expect("drop isolated database");
     let _ = std::fs::remove_dir_all(&root);
 }
+
+
+const V012_MYSHOP_INITIAL: &str =
+    include_str!("../../../examples/myshop/migrations/0001_initial.json");
+
+async fn verify_v012_migration_artifact_upgrade(
+    db: &DatabaseConnection,
+    migrations: &Path,
+) -> Result<(), String> {
+    std::fs::create_dir_all(migrations).map_err(|error| error.to_string())?;
+    let legacy_path = migrations.join("0001_initial.json");
+    std::fs::write(&legacy_path, V012_MYSHOP_INITIAL)
+        .map_err(|error| error.to_string())?;
+    let old: serde_json::Value =
+        serde_json::from_str(V012_MYSHOP_INITIAL).map_err(|error| error.to_string())?;
+    let mut current: SchemaSnapshot = serde_json::from_value(old["to_snapshot"].clone())
+        .map_err(|error| error.to_string())?;
+    if old["id"] != "0001_initial" || current.tables.len() != 1 {
+        return Err("unexpected v0.1.2 MyShop migration artifact".to_owned());
+    }
+    let initial = apply_directory(db, migrations, false)
+        .await
+        .map_err(|error| error.0)?;
+    if initial.applied.len() != 1 {
+        return Err("historical migration was not applied exactly once".to_owned());
+    }
+    db.execute(Statement::from_string(
+        db.get_database_backend(),
+        "INSERT INTO \"products\" (\"id\", \"name\", \"price_cents\", \"active\") VALUES ('11111111-1111-4111-8111-111111111111', 'Laptop', 129900, TRUE), ('22222222-2222-4222-8222-222222222222', 'Phone', 49900, FALSE)",
+    ))
+    .await
+    .map_err(|error| error.to_string())?;
+    let initial_history = history_count(db).await;
+    current.tables[0].indexes.push(IndexSnapshot {
+        name: secondary_index_name("products", &["name"]),
+        columns: vec!["name".to_owned()],
+    });
+    written(migrations, "add_name_index", &current);
+    let plan = plan_database(db, migrations, Some(&current))
+        .await
+        .map_err(|error| error.0)?;
+    if plan.has_error() || plan.has_drift() || plan.pending.len() != 1 {
+        return Err(format!("historical upgrade plan is inconsistent: {plan:?}"));
+    }
+    if history_count(db).await != initial_history {
+        return Err("read-only historical upgrade plan changed history".to_owned());
+    }
+    let applied = apply_directory(db, migrations, false)
+        .await
+        .map_err(|error| error.0)?;
+    if applied.applied.len() != 1 || history_count(db).await != initial_history + 1 {
+        return Err("new migration did not apply exactly once".to_owned());
+    }
+    let clean = plan_database(db, migrations, Some(&current))
+        .await
+        .map_err(|error| error.0)?;
+    if clean.has_error() || clean.has_drift() || !clean.pending.is_empty() {
+        return Err(format!("upgraded v0.1.2 migration drifted: {clean:?}"));
+    }
+    if cell(db, "SELECT COUNT(*) AS value FROM \"products\"").await != "2"
+        || cell(
+            db,
+            "SELECT \"price_cents\" AS value FROM \"products\" WHERE \"id\" = '11111111-1111-4111-8111-111111111111'",
+        )
+        .await
+            != "129900"
+    {
+        return Err("historical upgrade changed existing product data".to_owned());
+    }
+    let reverted = revert_latest(db, migrations, false, false)
+        .await
+        .map_err(|error| error.0)?;
+    if !reverted.executed || reverted.destructive
+        || history_count(db).await != initial_history
+        || cell(db, "SELECT COUNT(*) AS value FROM \"products\"").await != "2"
+    {
+        return Err("historical index rollback altered product rows or history".to_owned());
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn sqlite_v012_migration_artifact_upgrades_populated_data() {
+    let root = temp_dir();
+    let db = fexu_db::connect(&sqlite_url(&root.join("v012.sqlite3")))
+        .await
+        .unwrap();
+    verify_v012_migration_artifact_upgrade(&db, &root.join("migrations"))
+        .await
+        .expect("v0.1.2 SQLite artifact upgrade");
+    drop(db);
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[tokio::test]
+#[ignore = "requires DATABASE_URL pointing at an approved PostgreSQL admin database"]
+async fn postgres_v012_migration_artifact_upgrades_populated_data() {
+    let admin = std::env::var("DATABASE_URL").expect("DATABASE_URL");
+    let isolated = fexu_db::DisposablePostgres::create(&admin)
+        .await
+        .expect("isolated database");
+    let root = temp_dir();
+    let result = async {
+        let db = fexu_db::connect(isolated.url())
+            .await
+            .map_err(|error| error.to_string())?;
+        verify_v012_migration_artifact_upgrade(&db, &root.join("migrations")).await
+    }
+    .await;
+    let dropped = isolated.drop_database().await;
+    result.expect("v0.1.2 PostgreSQL artifact upgrade");
+    dropped.expect("drop isolated database");
+    let _ = std::fs::remove_dir_all(&root);
+}
