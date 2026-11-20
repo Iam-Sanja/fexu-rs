@@ -571,9 +571,10 @@ mod tests {
         assert!(drift.findings.iter().any(|item| {
             item.message.contains("App catalog:") && item.message.contains("unexpected")
         }));
-        assert!(!drift.findings.iter().any(|item| {
-            item.message.contains("no longer has a readable file")
-        }));
+        assert!(!drift
+            .findings
+            .iter()
+            .any(|item| { item.message.contains("no longer has a readable file") }));
         assert_eq!(std::fs::read(&file).unwrap(), changed);
         let _ = std::fs::remove_dir_all(&root);
     }
@@ -616,22 +617,12 @@ mod tests {
         let state = inspect_directory(&migrations);
         assert!(state.conflicts.is_empty());
         let db = fexu_db::connect("sqlite::memory:").await.unwrap();
-        crate::apply_files_with_history(
-            &db,
-            &state.files,
-            false,
-            "_fexu_internal_probe_history",
-        )
-        .await
-        .unwrap();
-        let plan = plan_embedded(
-            &db,
-            &state.files,
-            "_fexu_internal_probe_history",
-            "Auth",
-        )
-        .await
-        .unwrap();
+        crate::apply_files_with_history(&db, &state.files, false, "_fexu_internal_probe_history")
+            .await
+            .unwrap();
+        let plan = plan_embedded(&db, &state.files, "_fexu_internal_probe_history", "Auth")
+            .await
+            .unwrap();
         assert!(!plan.has_drift(), "{plan:?}");
         assert!(!plan.has_error(), "{plan:?}");
         let _ = std::fs::remove_dir_all(&root);
