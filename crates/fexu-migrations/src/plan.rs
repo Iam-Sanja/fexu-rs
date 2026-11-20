@@ -79,6 +79,10 @@ pub async fn plan_project(
 ) -> Result<PlanReport, MigrationError> {
     let mut report =
         plan_database_internal(db, root, history::HISTORY_TABLE, current, true).await?;
+    if let Err(error) = crate::packages::validate_package_graph(packages) {
+        report.findings.push(finding(PlanLevel::Error, error.0));
+        return Ok(report);
+    }
     let order = match crate::packages::package_order(packages) {
         Ok(order) => order,
         Err(error) => {
@@ -512,6 +516,125 @@ mod tests {
         rows.into_iter()
             .map(|row| row.try_get::<String>("", "name").unwrap())
             .collect()
+    }
+
+    #[tokio::test]
+    async fn project_plan_handles_applied_namespaced_apps_and_is_read_only() {
+        let root = scratch("namespaced");
+        let global = root.join("migrations");
+        let catalog = root.join("catalog");
+        let reports = root.join("reports");
+        std::fs::create_dir_all(&global).unwrap();
+        make_migration(&catalog, "initial", &products()).unwrap();
+        make_migration(&reports, "initial", &probe_table()).unwrap();
+        let packages = vec![
+            crate::packages::PackageMigration {
+                name: "catalog".into(),
+                directory: catalog,
+                depends_on: vec![],
+            },
+            crate::packages::PackageMigration {
+                name: "reports".into(),
+                directory: reports,
+                depends_on: vec!["catalog".into()],
+            },
+        ];
+        let file = root.join("db.sqlite");
+        let url = sqlite_url(&file);
+        let db = fexu_db::connect(&url).await.unwrap();
+        crate::apply_packages(&db, &packages, false).await.unwrap();
+        drop(db);
+
+        let before = std::fs::read(&file).unwrap();
+        let readonly = crate::readonly_database_url(&url).unwrap();
+        let db = fexu_db::connect(&readonly).await.unwrap();
+        let plan = plan_project(&db, &global, None, &packages).await.unwrap();
+        drop(db);
+        assert!(!plan.has_error(), "{plan:?}");
+        assert!(!plan.has_drift(), "{plan:?}");
+        assert!(plan.pending.is_empty(), "{plan:?}");
+        assert_eq!(std::fs::read(&file).unwrap(), before);
+
+        let db = fexu_db::connect(&url).await.unwrap();
+        db.execute(Statement::from_string(
+            DatabaseBackend::Sqlite,
+            "ALTER TABLE products ADD COLUMN unexpected integer",
+        ))
+        .await
+        .unwrap();
+        drop(db);
+        let changed = std::fs::read(&file).unwrap();
+        let db = fexu_db::connect(&readonly).await.unwrap();
+        let drift = plan_project(&db, &global, None, &packages).await.unwrap();
+        drop(db);
+        assert!(drift.has_drift(), "{drift:?}");
+        assert!(drift.findings.iter().any(|item| {
+            item.message.contains("App catalog:") && item.message.contains("unexpected")
+        }));
+        assert!(!drift.findings.iter().any(|item| {
+            item.message.contains("no longer has a readable file")
+        }));
+        assert_eq!(std::fs::read(&file).unwrap(), changed);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn project_plan_reports_orphaned_namespaced_history_without_writing() {
+        let root = scratch("orphan-namespace");
+        let global = root.join("migrations");
+        std::fs::create_dir_all(&global).unwrap();
+        let file = root.join("db.sqlite");
+        let url = sqlite_url(&file);
+        let db = fexu_db::connect(&url).await.unwrap();
+        history::ensure_history(&db).await.unwrap();
+        history::insert_history(&db, "retired:0001_initial", "initial", "a", 1)
+            .await
+            .unwrap();
+        drop(db);
+        let before = std::fs::read(&file).unwrap();
+        let db = fexu_db::connect(&crate::readonly_database_url(&url).unwrap())
+            .await
+            .unwrap();
+        let plan = plan_project(&db, &global, None, &[]).await.unwrap();
+        drop(db);
+        assert!(plan.has_error(), "{plan:?}");
+        assert!(plan.findings.iter().any(|item| {
+            item.message.contains("retired:0001_initial")
+                && item.message.contains("no declared app")
+        }));
+        assert_eq!(std::fs::read(&file).unwrap(), before);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn embedded_plan_can_see_its_own_internal_tables() {
+        let root = scratch("embedded-internal");
+        let migrations = root.join("migrations");
+        let mut internal = probe_table();
+        internal.tables[0].name = "_fexu_internal_probe".into();
+        make_migration(&migrations, "initial", &internal).unwrap();
+        let state = inspect_directory(&migrations);
+        assert!(state.conflicts.is_empty());
+        let db = fexu_db::connect("sqlite::memory:").await.unwrap();
+        crate::apply_files_with_history(
+            &db,
+            &state.files,
+            false,
+            "_fexu_internal_probe_history",
+        )
+        .await
+        .unwrap();
+        let plan = plan_embedded(
+            &db,
+            &state.files,
+            "_fexu_internal_probe_history",
+            "Auth",
+        )
+        .await
+        .unwrap();
+        assert!(!plan.has_drift(), "{plan:?}");
+        assert!(!plan.has_error(), "{plan:?}");
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[tokio::test]
