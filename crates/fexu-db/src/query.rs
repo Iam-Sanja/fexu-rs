@@ -5166,6 +5166,15 @@ mod tests {
             .unwrap();
         assert_eq!(complete_rows.len(), 1_001);
         assert_eq!(complete_rows[100].name, "blocker");
+        let descending = Item::query()
+            .order_by("price_cents", Direction::Desc)
+            .collect_bounded(db, 1_001, || false)
+            .await
+            .unwrap();
+        assert_eq!(descending.len(), 1_001);
+        assert_eq!(descending[0].price_cents, 500);
+        assert_eq!(descending[1_000].price_cents, 0);
+        assert_eq!(descending[901].name, "blocker");
         assert!(Item::query()
             .collect_bounded(db, 1_000, || false)
             .await
