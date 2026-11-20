@@ -93,7 +93,36 @@ PY
 # Check the migrated old project against the current checkout. This is a
 # documented source edit, NOT an automatic fexu upgrade rewriting source.
 cargo check
-"$new_cli" upgrade --check
+
+# The published generator tracks its own files in .fexu/project.json.
+# Manually editing the application source and Cargo dependency must remain a
+# visible conflict, not a "clean" upgrade. A read-only check intentionally
+# returns exit code 1, which we assert along with expected diagnostic paths.
+before=$(sha256sum Cargo.toml src/project/mod.rs fexu.toml src/apps.rs)
+set +e
+upgrade_output=$("$new_cli" upgrade --check 2>&1)
+upgrade_status=$?
+set -e
+printf '%s\n' "$upgrade_output"
+if [[ "$upgrade_status" -ne 1 ]]; then
+  echo "Expected upgrade --check to report modified tracked files (exit 1); got $upgrade_status" >&2
+  exit 1
+fi
+for expected in \
+  'project.file.modified Cargo.toml' \
+  'project.file.modified src/project/mod.rs' \
+  'project.file.modified src/apps.rs' \
+  'No files were written.'; do
+  if ! grep -Fq "$expected" <<<"$upgrade_output"; then
+    echo "Missing expected read-only upgrade diagnostic: $expected" >&2
+    exit 1
+  fi
+done
+after=$(sha256sum Cargo.toml src/project/mod.rs fexu.toml src/apps.rs)
+if [[ "$before" != "$after" ]]; then
+  echo "upgrade --check wrote to tracked project files" >&2
+  exit 1
+fi
 "$new_cli" migrate plan
 
 # Current CLI must extend the old migration chain without rewriting the old
