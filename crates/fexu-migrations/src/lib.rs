@@ -51,8 +51,8 @@ pub use packages::{
     PackageMigration,
 };
 pub use plan::{
-    package_dependency_findings, plan_database, plan_database_in, plan_embedded, PlanFinding,
-    PlanLevel, PlanReport,
+    package_dependency_findings, plan_database, plan_database_in, plan_embedded, plan_project,
+    PlanFinding, PlanLevel, PlanReport,
 };
 pub use project::{
     discover_project, load_schema_from_command, redact_database_url, resolve_database_target,

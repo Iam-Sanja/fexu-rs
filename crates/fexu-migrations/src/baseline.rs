@@ -45,7 +45,7 @@ pub async fn baseline_database(
         .last()
         .ok_or_else(|| MigrationError::new("There are no migration files to baseline.".to_owned()))?
         .to_snapshot;
-    let live = introspect_sqlite(db).await?;
+    let live = introspect_sqlite(db, false).await?;
     let differences = compare_snapshot(expected, &live);
     if !differences.is_empty() {
         return Err(MigrationError::new(format!(

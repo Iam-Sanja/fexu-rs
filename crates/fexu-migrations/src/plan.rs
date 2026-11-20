@@ -64,6 +64,118 @@ pub async fn plan_database(
     plan_database_in(db, directory, history::HISTORY_TABLE, current).await
 }
 
+/// Read-only migration plan for one project with root and namespaced apps.
+///
+/// Every app shares the root history table but has its own on-disk migration
+/// chain and snapshots. Validates each chain independently, reports unowned
+/// history IDs rather than treating them as root migrations, and compares only
+/// the live tables owned by the latest applied snapshot of each component.
+/// Nothing is created or migrated.
+pub async fn plan_project(
+    db: &DatabaseConnection,
+    root: &Path,
+    current: Option<&SchemaSnapshot>,
+    packages: &[crate::packages::PackageMigration],
+) -> Result<PlanReport, MigrationError> {
+    let mut report =
+        plan_database_internal(db, root, history::HISTORY_TABLE, current, true).await?;
+    if let Err(error) = crate::packages::validate_package_graph(packages) {
+        report.findings.push(finding(PlanLevel::Error, error.0));
+        return Ok(report);
+    }
+    let order = match crate::packages::package_order(packages) {
+        Ok(order) => order,
+        Err(error) => {
+            report.findings.push(finding(PlanLevel::Error, error.0));
+            return Ok(report);
+        }
+    };
+    // Keep the known app namespace set separate from the root history.
+    // Orphaned namespaced rows must not silently disappear from the plan.
+    let existing = history::read_history_in(db, history::HISTORY_TABLE).await?;
+    for entry in &existing {
+        if let Some((namespace, local_id)) = entry.id.split_once(':') {
+            if local_id.is_empty()
+                || local_id.contains(':')
+                || !packages.iter().any(|package| package.name == namespace)
+            {
+                report.findings.push(finding(
+                    PlanLevel::Error,
+                    format!(
+                        "Applied namespaced migration {} has no declared app or has an invalid namespace.",
+                        entry.id
+                    ),
+                ));
+            }
+        }
+    }
+    for index in order {
+        let package = &packages[index];
+        if !package.directory.is_dir() {
+            report.findings.push(finding(
+                PlanLevel::Error,
+                format!(
+                    "The migrations directory for app `{}` is missing.",
+                    package.name
+                ),
+            ));
+            continue;
+        }
+        let state = inspect_directory(&package.directory);
+        for conflict in &state.conflicts {
+            report.findings.push(finding(
+                PlanLevel::Error,
+                format!("App {}: {conflict}", package.name),
+            ));
+        }
+        let status =
+            crate::runner::namespaced_status(db, &package.directory, &package.name).await?;
+        for conflict in &status.conflicts {
+            report.findings.push(finding(
+                PlanLevel::Error,
+                format!("App {}: {conflict}", package.name),
+            ));
+        }
+        report.pending.extend(
+            status
+                .lines
+                .iter()
+                .filter(|line| line.state == "ausstehend")
+                .map(|line| line.id.clone()),
+        );
+        if !status.conflicts.is_empty()
+            || report.findings.iter().any(|item| {
+                item.level == PlanLevel::Error
+                    && item.message.starts_with(&format!("App {}:", package.name))
+            })
+        {
+            continue;
+        }
+        let last_applied = state
+            .files
+            .iter()
+            .filter(|file| {
+                let history_id = format!("{}:{}", package.name, file.id);
+                status
+                    .lines
+                    .iter()
+                    .any(|line| line.id == history_id && line.state == "angewendet")
+            })
+            .max_by_key(|file| crate::store::migration_number(&file.id).unwrap_or(0));
+        if let Some(file) = last_applied {
+            let live = introspect_live(db).await?;
+            let owned = live_tables_owned_by(&file.to_snapshot, &live);
+            for difference in compare_snapshot(&file.to_snapshot, &owned) {
+                report.findings.push(finding(
+                    PlanLevel::Drift,
+                    format!("App {}: {}", package.name, drift_text(&difference)),
+                ));
+            }
+        }
+    }
+    Ok(report)
+}
+
 /// Read-only status and live drift for an embedded framework package.
 ///
 /// History tables and schema objects are not created or altered. A checksum or
@@ -107,7 +219,7 @@ pub async fn plan_embedded(
     let trusted = !findings.iter().any(|item| item.level == PlanLevel::Error);
     if trusted {
         if let Some(file) = latest_applied(files, &status) {
-            let live = crate::introspection::introspect_live(db).await?;
+            let live = crate::introspection::introspect_framework_live(db).await?;
             let owned = live_tables_owned_by(&file.to_snapshot, &live);
             for difference in crate::introspection::compare_snapshot(&file.to_snapshot, &owned) {
                 findings.push(finding(
@@ -178,6 +290,16 @@ pub async fn plan_database_in(
     history_table: &str,
     current: Option<&SchemaSnapshot>,
 ) -> Result<PlanReport, MigrationError> {
+    plan_database_internal(db, directory, history_table, current, false).await
+}
+
+async fn plan_database_internal(
+    db: &DatabaseConnection,
+    directory: &Path,
+    history_table: &str,
+    current: Option<&SchemaSnapshot>,
+    scoped_live: bool,
+) -> Result<PlanReport, MigrationError> {
     let state = inspect_directory(directory);
     let backend = kind_of(db.get_database_backend())
         .map_err(|error| MigrationError::new(error.to_string()))?;
@@ -188,7 +310,13 @@ pub async fn plan_database_in(
         .collect::<Vec<_>>();
     let history_present = history::history_exists_in(db, history_table).await?;
     let applied = if history_present {
-        history::read_history_in(db, history_table).await?
+        history::read_history_in(db, history_table)
+            .await?
+            .into_iter()
+            // Root migrations and namespaced app migrations share the same
+            // history table. Each namespace is validated independently below.
+            .filter(|entry| history_table != history::HISTORY_TABLE || !entry.id.contains(':'))
+            .collect::<Vec<_>>()
     } else {
         Vec::new()
     };
@@ -219,7 +347,12 @@ pub async fn plan_database_in(
     if trusted {
         if let Some(file) = last_applied(&state.files, &applied) {
             let live = introspect_live(db).await?;
-            for difference in compare_snapshot(&file.to_snapshot, &live) {
+            let owned = if scoped_live {
+                live_tables_owned_by(&file.to_snapshot, &live)
+            } else {
+                live
+            };
+            for difference in compare_snapshot(&file.to_snapshot, &owned) {
                 findings.push(finding(PlanLevel::Drift, drift_text(&difference)));
             }
         } else if !state.files.is_empty() {
@@ -383,6 +516,116 @@ mod tests {
         rows.into_iter()
             .map(|row| row.try_get::<String>("", "name").unwrap())
             .collect()
+    }
+
+    #[tokio::test]
+    async fn project_plan_handles_applied_namespaced_apps_and_is_read_only() {
+        let root = scratch("namespaced");
+        let global = root.join("migrations");
+        let catalog = root.join("catalog");
+        let reports = root.join("reports");
+        std::fs::create_dir_all(&global).unwrap();
+        make_migration(&catalog, "initial", &products()).unwrap();
+        make_migration(&reports, "initial", &probe_table()).unwrap();
+        let packages = vec![
+            crate::packages::PackageMigration {
+                name: "catalog".into(),
+                directory: catalog,
+                depends_on: vec![],
+            },
+            crate::packages::PackageMigration {
+                name: "reports".into(),
+                directory: reports,
+                depends_on: vec!["catalog".into()],
+            },
+        ];
+        let file = root.join("db.sqlite");
+        let url = sqlite_url(&file);
+        let db = fexu_db::connect(&url).await.unwrap();
+        crate::apply_packages(&db, &packages, false).await.unwrap();
+        drop(db);
+
+        let before = std::fs::read(&file).unwrap();
+        let readonly = crate::readonly_database_url(&url).unwrap();
+        let db = fexu_db::connect(&readonly).await.unwrap();
+        let plan = plan_project(&db, &global, None, &packages).await.unwrap();
+        drop(db);
+        assert!(!plan.has_error(), "{plan:?}");
+        assert!(!plan.has_drift(), "{plan:?}");
+        assert!(plan.pending.is_empty(), "{plan:?}");
+        assert_eq!(std::fs::read(&file).unwrap(), before);
+
+        let db = fexu_db::connect(&url).await.unwrap();
+        db.execute(Statement::from_string(
+            DatabaseBackend::Sqlite,
+            "ALTER TABLE products ADD COLUMN unexpected integer",
+        ))
+        .await
+        .unwrap();
+        drop(db);
+        let changed = std::fs::read(&file).unwrap();
+        let db = fexu_db::connect(&readonly).await.unwrap();
+        let drift = plan_project(&db, &global, None, &packages).await.unwrap();
+        drop(db);
+        assert!(drift.has_drift(), "{drift:?}");
+        assert!(drift.findings.iter().any(|item| {
+            item.message.contains("App catalog:") && item.message.contains("unexpected")
+        }));
+        assert!(!drift
+            .findings
+            .iter()
+            .any(|item| { item.message.contains("no longer has a readable file") }));
+        assert_eq!(std::fs::read(&file).unwrap(), changed);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn project_plan_reports_orphaned_namespaced_history_without_writing() {
+        let root = scratch("orphan-namespace");
+        let global = root.join("migrations");
+        std::fs::create_dir_all(&global).unwrap();
+        let file = root.join("db.sqlite");
+        let url = sqlite_url(&file);
+        let db = fexu_db::connect(&url).await.unwrap();
+        history::ensure_history(&db).await.unwrap();
+        history::insert_history(&db, "retired:0001_initial", "initial", "a", 1)
+            .await
+            .unwrap();
+        drop(db);
+        let before = std::fs::read(&file).unwrap();
+        let db = fexu_db::connect(&crate::readonly_database_url(&url).unwrap())
+            .await
+            .unwrap();
+        let plan = plan_project(&db, &global, None, &[]).await.unwrap();
+        drop(db);
+        assert!(plan.has_error(), "{plan:?}");
+        assert!(plan.findings.iter().any(|item| {
+            item.message.contains("retired:0001_initial")
+                && item.message.contains("no declared app")
+        }));
+        assert_eq!(std::fs::read(&file).unwrap(), before);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn embedded_plan_can_see_its_own_internal_tables() {
+        let root = scratch("embedded-internal");
+        let migrations = root.join("migrations");
+        let mut internal = probe_table();
+        internal.tables[0].name = "_fexu_internal_probe".into();
+        make_migration(&migrations, "initial", &internal).unwrap();
+        let state = inspect_directory(&migrations);
+        assert!(state.conflicts.is_empty());
+        let db = fexu_db::connect("sqlite::memory:").await.unwrap();
+        crate::apply_files_with_history(&db, &state.files, false, "_fexu_internal_probe_history")
+            .await
+            .unwrap();
+        let plan = plan_embedded(&db, &state.files, "_fexu_internal_probe_history", "Auth")
+            .await
+            .unwrap();
+        assert!(!plan.has_drift(), "{plan:?}");
+        assert!(!plan.has_error(), "{plan:?}");
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[tokio::test]
