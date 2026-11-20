@@ -6,7 +6,7 @@
 
 ## Version meanings and current status
 
-- **Published:** `v0.1.2` was released on 2026-11-15. All 16 publishable Fexu workspace crates have a `0.1.2` crates.io release. The release remains **experimental and not production-ready**. See [README](../README.md) and [the v0.1.2 release](https://github.com/Iam-Sanja/fexu-rs/releases/tag/v0.1.2).
+- **Published:** `v0.1.2` was released on 2026-11-15. All 16 publishable Fexu workspace crates have a `0.1.2` crates.io release. The release remains **experimental and not production-ready**. See [README](https://github.com/Iam-Sanja/fexu-rs/blob/main/README.md) and [the v0.1.2 release](https://github.com/Iam-Sanja/fexu-rs/releases/tag/v0.1.2).
 - **Development:** `main` includes **unreleased** changes after `v0.1.2`. Use a source checkout to exercise those changes; do not advertise them as shipped in `0.1.2`.
 - **Proposed next release:** `v0.2.0` — tested developer preview and a coherent consumer experience.
 - **Proposed subsequent release:** `v0.3.0` — optional production-oriented infrastructure foundations. Neither version has a committed release date or a production-readiness guarantee.
