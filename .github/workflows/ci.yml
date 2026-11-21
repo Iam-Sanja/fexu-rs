@@ -221,6 +221,7 @@ jobs:
           require_passed -p fexu-db --test grouped_report -- --ignored postgres_grouped_report_scope_json_and_one_to_one
           require_passed -p fexu-db --test driver_types -- --ignored postgres_native_types_and_decimal_blob
           require_passed -p fexu-migrations --lib plan::tests::postgres_plan_detects_live_drift_on_a_disposable_database -- --ignored
+          require_passed -p fexu-admin --lib drafts::tests::postgres_draft_lifecycle_keeps_session_and_user_boundaries -- --ignored --exact
           require_passed -p fexu-admin --lib -- --ignored postgres_matching_uses_the_record_id_not_a_similar_name
           require_passed -p fexu --test integration_regression -- --ignored postgres_inspect_framework_and_plan_stay_read_only
           cargo build -p fexu-cli --bin embedded-migrate

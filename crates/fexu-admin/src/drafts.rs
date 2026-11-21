@@ -1,5 +1,6 @@
 //! Short-lived, session-bound form and bulk-action drafts.
 
+use crate::audit::stored_uuid;
 use fexu_auth::ADMIN_DRAFTS;
 use fexu_core::FexuError;
 use fexu_db::driver::sea_query::{Alias, Expr, PostgresQueryBuilder, Query, SqliteQueryBuilder};
@@ -45,9 +46,9 @@ pub async fn insert(
         .filter(|value| !value.is_empty())
         .map(str::to_owned);
     let values = [
-        DbValue::from(id.to_string()).into(),
-        DbValue::from(session_id.to_string()).into(),
-        DbValue::from(user_id.to_string()).into(),
+        stored_uuid(backend, id).into(),
+        stored_uuid(backend, session_id).into(),
+        stored_uuid(backend, user_id).into(),
         DbValue::from(model_key.to_owned()).into(),
         match record {
             Some(value) => DbValue::from(value).into(),
@@ -97,7 +98,7 @@ pub async fn load(
             Alias::new("user_id"),
         ])
         .from(Alias::new(ADMIN_DRAFTS))
-        .and_where(Expr::col(Alias::new("id")).eq(id.to_string()));
+        .and_where(Expr::col(Alias::new("id")).eq(stored_uuid(backend, id)));
     let (sql, values) = build(backend, &query)?;
     let Some(row) = db
         .query_one(Statement::from_sql_and_values(backend, sql, values))
@@ -149,9 +150,9 @@ pub async fn delete(
     let mut query = Query::delete();
     query
         .from_table(Alias::new(ADMIN_DRAFTS))
-        .and_where(Expr::col(Alias::new("id")).eq(id.to_string()))
-        .and_where(Expr::col(Alias::new("session_id")).eq(session_id.to_string()))
-        .and_where(Expr::col(Alias::new("user_id")).eq(user_id.to_string()));
+        .and_where(Expr::col(Alias::new("id")).eq(stored_uuid(backend, id)))
+        .and_where(Expr::col(Alias::new("session_id")).eq(stored_uuid(backend, session_id)))
+        .and_where(Expr::col(Alias::new("user_id")).eq(stored_uuid(backend, user_id)));
     execute(db, backend, &query).await
 }
 
@@ -170,7 +171,7 @@ async fn purge(db: &impl ConnectionTrait, session_id: Uuid) -> Result<(), FexuEr
             Alias::new("draft_count"),
         )
         .from(Alias::new(ADMIN_DRAFTS))
-        .and_where(Expr::col(Alias::new("session_id")).eq(session_id.to_string()));
+        .and_where(Expr::col(Alias::new("session_id")).eq(stored_uuid(backend, session_id)));
     let (sql, values) = build(backend, &count)?;
     let row = db
         .query_one(Statement::from_sql_and_values(backend, sql, values))
@@ -188,7 +189,7 @@ async fn purge(db: &impl ConnectionTrait, session_id: Uuid) -> Result<(), FexuEr
     oldest
         .column(Alias::new("id"))
         .from(Alias::new(ADMIN_DRAFTS))
-        .and_where(Expr::col(Alias::new("session_id")).eq(session_id.to_string()))
+        .and_where(Expr::col(Alias::new("session_id")).eq(stored_uuid(backend, session_id)))
         .order_by(
             Alias::new("created_at"),
             fexu_db::driver::sea_query::Order::Asc,
@@ -204,8 +205,8 @@ async fn purge(db: &impl ConnectionTrait, session_id: Uuid) -> Result<(), FexuEr
         let mut query = Query::delete();
         query
             .from_table(Alias::new(ADMIN_DRAFTS))
-            .and_where(Expr::col(Alias::new("id")).eq(id.to_string()))
-            .and_where(Expr::col(Alias::new("session_id")).eq(session_id.to_string()));
+            .and_where(Expr::col(Alias::new("id")).eq(stored_uuid(backend, id)))
+            .and_where(Expr::col(Alias::new("session_id")).eq(stored_uuid(backend, session_id)));
         execute(db, backend, &query).await?;
     }
     Ok(())
@@ -252,4 +253,127 @@ fn build(
         }
     };
     Ok((sql, values.0))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use fexu_auth::{AuthConfig, AuthService};
+    use fexu_db::driver::DatabaseConnection;
+
+    async fn exercise_draft_lifecycle(db: &DatabaseConnection) {
+        fexu_auth::apply_migrations(db).await.unwrap();
+        let auth = AuthService::new(db.clone(), AuthConfig::development());
+        let password = format!("RC-{}-aB7!", Uuid::new_v4());
+        let user = auth
+            .create_user("draft@example.test", &password, true, false)
+            .await
+            .unwrap();
+        let session = auth
+            .login(&user.email, &password, "draft-regression")
+            .await
+            .unwrap();
+        let viewer = auth.authenticate_token(&session.token).await.unwrap();
+        let payload =
+            serde_json::json!({"action":"deactivate", "ids":[Uuid::new_v4().to_string()]})
+                .as_object()
+                .unwrap()
+                .clone();
+        let draft = insert(
+            db,
+            viewer.session_id,
+            user.id,
+            "items",
+            None,
+            "bulk",
+            &payload,
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            load(db, draft, viewer.session_id, user.id, "items", "bulk")
+                .await
+                .unwrap()
+                .unwrap()
+                .values,
+            payload
+        );
+        assert!(load(db, draft, Uuid::new_v4(), user.id, "items", "bulk")
+            .await
+            .unwrap()
+            .is_none());
+        assert!(load(
+            db,
+            draft,
+            viewer.session_id,
+            Uuid::new_v4(),
+            "items",
+            "bulk"
+        )
+        .await
+        .unwrap()
+        .is_none());
+        delete(db, draft, Uuid::new_v4(), user.id).await.unwrap();
+        assert!(load(db, draft, viewer.session_id, user.id, "items", "bulk")
+            .await
+            .unwrap()
+            .is_some());
+        delete(db, draft, viewer.session_id, Uuid::new_v4())
+            .await
+            .unwrap();
+        assert!(load(db, draft, viewer.session_id, user.id, "items", "bulk")
+            .await
+            .unwrap()
+            .is_some());
+        delete(db, draft, viewer.session_id, user.id).await.unwrap();
+        assert!(load(db, draft, viewer.session_id, user.id, "items", "bulk")
+            .await
+            .unwrap()
+            .is_none());
+        let mut ids = Vec::new();
+        for _ in 0..MAX_PER_SESSION + 2 {
+            ids.push(
+                insert(
+                    db,
+                    viewer.session_id,
+                    user.id,
+                    "items",
+                    None,
+                    "bulk",
+                    &payload,
+                )
+                .await
+                .unwrap(),
+            );
+        }
+        let mut retained = 0;
+        for id in ids {
+            retained += usize::from(
+                load(db, id, viewer.session_id, user.id, "items", "bulk")
+                    .await
+                    .unwrap()
+                    .is_some(),
+            );
+        }
+        assert_eq!(retained, MAX_PER_SESSION as usize);
+    }
+
+    #[tokio::test]
+    async fn sqlite_draft_lifecycle_keeps_session_and_user_boundaries() {
+        let db = fexu_db::connect("sqlite::memory:").await.unwrap();
+        exercise_draft_lifecycle(&db).await;
+    }
+
+    #[tokio::test]
+    #[ignore = "requires DATABASE_URL, CREATEDB, and an approved PostgreSQL test database"]
+    async fn postgres_draft_lifecycle_keeps_session_and_user_boundaries() {
+        let admin = std::env::var("DATABASE_URL").expect("DATABASE_URL");
+        let disposable = fexu_db::DisposablePostgres::create(&admin)
+            .await
+            .expect("isolated postgres");
+        let db = fexu_db::connect(disposable.url()).await.expect("postgres");
+        exercise_draft_lifecycle(&db).await;
+        db.close().await.expect("close");
+        disposable.drop_database().await.expect("drop");
+    }
 }
