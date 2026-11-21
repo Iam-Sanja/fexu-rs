@@ -1,6 +1,6 @@
 # Admin design
 
-[Overview](admin-native.md) · Templates: [admin-templates.md](admin-templates.md) North Star: [../DESIGN.md](../DESIGN.md)
+[Overview](admin-native.md) · Templates: [admin-templates.md](admin-templates.md) North Star: [../DESIGN.md](https://github.com/Iam-Sanja/fexu-rs/blob/main/DESIGN.md)
 
 ## Purpose
 

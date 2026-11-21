@@ -2,16 +2,16 @@
 
 This page records repository settings, contributor workflow and CI maintenance for [Iam-Sanja/fexu-rs](https://github.com/Iam-Sanja/fexu-rs). Settings were checked through GitHub's API on **2026-11-08** against main at `5c9bd7c438179b53d02f36130871ac42f313ef5e`, when the repository was named `Iam-Sanja/ferrioxid`. They may change independently of Git; Markdown cannot enforce them.
 
-The repository is already **public**. Use the [public release security checklist](public-release-checklist.md) to distinguish completed configuration from unresolved historical-secret, licensing, policy and contributor-flow reviews. Public source availability does not imply a stable crates.io release: Cargo `0.1.2` remains experimental. Component crates began publishing on 2026-11-14; check the [README](../README.md) and live crates.io entries for installation instructions.
+The repository is already **public**. Use the [public release security checklist](public-release-checklist.md) to distinguish completed configuration from unresolved historical-secret, licensing, policy and contributor-flow reviews. Public source availability does not imply a stable crates.io release: Cargo `0.1.2` remains experimental. Component crates began publishing on 2026-11-14; check the [README](https://github.com/Iam-Sanja/fexu-rs/blob/main/README.md) and live crates.io entries for installation instructions.
 
 ## Tracked policies and workflows
 
-- [CI](../.github/workflows/ci.yml) validates main and PRs on Ubuntu and Windows, with a separate disposable PostgreSQL 16 job. PostgreSQL runs fresh framework initialization first, then HTTP and migration roundtrips.
-- [Security audit](../.github/workflows/security.yml) runs cargo-audit 0.22.2 without an advisory ignore and fails if RSA appears in the enabled dependency graph.
-- [Dependabot](../.github/dependabot.yml) proposes weekly Cargo and GitHub Actions updates; it does not merge them.
-- [CODEOWNERS](../.github/CODEOWNERS) routes changes to `@Iam-Sanja`; it grants no permissions and the current ruleset does not require code-owner approval.
-- [Issue forms](../.github/ISSUE_TEMPLATE/config.yml) disallow blank issues and link to the security policy; the [PR template](../.github/pull_request_template.md) requests validation and security considerations.
-- [CONTRIBUTING](../CONTRIBUTING.md), [SECURITY](../SECURITY.md), [Code of Conduct](../CODE_OF_CONDUCT.md), [Governance](../GOVERNANCE.md) and [MIT license](../LICENSE-MIT) are present. Presence is not a complete accuracy, third-party-license or usable-contact audit. Known stale contributor/security wording is listed in the [open checklist tasks](public-release-checklist.md#1-publication-and-historical-exposure).
+- [CI](https://github.com/Iam-Sanja/fexu-rs/blob/main/.github/workflows/ci.yml) validates main and PRs on Ubuntu and Windows, with a separate disposable PostgreSQL 16 job. PostgreSQL runs fresh framework initialization first, then HTTP and migration roundtrips.
+- [Security audit](https://github.com/Iam-Sanja/fexu-rs/blob/main/.github/workflows/security.yml) runs cargo-audit 0.22.2 without an advisory ignore and fails if RSA appears in the enabled dependency graph.
+- [Dependabot](https://github.com/Iam-Sanja/fexu-rs/blob/main/.github/dependabot.yml) proposes weekly Cargo and GitHub Actions updates; it does not merge them.
+- [CODEOWNERS](https://github.com/Iam-Sanja/fexu-rs/blob/main/.github/CODEOWNERS) routes changes to `@Iam-Sanja`; it grants no permissions and the current ruleset does not require code-owner approval.
+- [Issue forms](https://github.com/Iam-Sanja/fexu-rs/blob/main/.github/ISSUE_TEMPLATE/config.yml) disallow blank issues and link to the security policy; the [PR template](https://github.com/Iam-Sanja/fexu-rs/blob/main/.github/pull_request_template.md) requests validation and security considerations.
+- [CONTRIBUTING](https://github.com/Iam-Sanja/fexu-rs/blob/main/CONTRIBUTING.md), [SECURITY](https://github.com/Iam-Sanja/fexu-rs/blob/main/SECURITY.md), [Code of Conduct](https://github.com/Iam-Sanja/fexu-rs/blob/main/CODE_OF_CONDUCT.md), [Governance](https://github.com/Iam-Sanja/fexu-rs/blob/main/GOVERNANCE.md) and [MIT license](../LICENSE-MIT) are present. Presence is not a complete accuracy, third-party-license or usable-contact audit. Known stale contributor/security wording is listed in the [open checklist tasks](public-release-checklist.md#1-publication-and-historical-exposure).
 
 The former `.github/workflows/rust.yml` is historical; current instructions refer to `ci.yml` and `security.yml`. Current framework setup uses `fexu.toml`, `.fexu/`, `FEXU_*` and `_fexu_*`; see [the earlier name cleanup](ferrum-legacy-removal.md) for historical mappings and the intentional fresh-database requirement.
 

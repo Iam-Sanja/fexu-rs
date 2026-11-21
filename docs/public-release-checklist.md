@@ -10,7 +10,7 @@ This checklist records verified settings and remaining work for [Iam-Sanja/fexu-
 - [ ] Complete and record a full content/history secret review covering all fetched branches and tags, previous test projects, relevant PR discussions, Actions logs and downloadable artifacts. Assess separately any available unreachable/local objects and external copies. A clean working tree or `.gitignore` does not establish that these sources are free of secrets.
 - [ ] Run a dedicated history-aware scanner against a current full clone, record the tool version, exact refs and exclusions, and triage findings. Use the scanner's current supported syntax; do not publish unredacted reports. Native Secret Scanning is a second check, not proof that every historical or unsupported secret was covered.
 - [ ] Revoke and rotate any real exposed credentials and record remediation. Deleting a file or adding an ignore pattern cannot revoke a credential. Coordinate any necessary history removal; do not casually rewrite public history or assume it removes forks and downloaded copies.
-- [x] Verify that [LICENSE-MIT](../LICENSE-MIT), [SECURITY.md](../SECURITY.md), [CONTRIBUTING.md](../CONTRIBUTING.md), [CODE_OF_CONDUCT.md](../CODE_OF_CONDUCT.md), [GOVERNANCE.md](../GOVERNANCE.md), [CODEOWNERS](../.github/CODEOWNERS), issue forms and the PR template exist on current main.
+- [x] Verify that [LICENSE-MIT](../LICENSE-MIT), [SECURITY.md](https://github.com/Iam-Sanja/fexu-rs/blob/main/SECURITY.md), [CONTRIBUTING.md](https://github.com/Iam-Sanja/fexu-rs/blob/main/CONTRIBUTING.md), [CODE_OF_CONDUCT.md](https://github.com/Iam-Sanja/fexu-rs/blob/main/CODE_OF_CONDUCT.md), [GOVERNANCE.md](https://github.com/Iam-Sanja/fexu-rs/blob/main/GOVERNANCE.md), [CODEOWNERS](https://github.com/Iam-Sanja/fexu-rs/blob/main/.github/CODEOWNERS), issue forms and the PR template exist on current main.
 - [ ] Complete the license/third-party asset review, including fonts, screenshots, templates, JS/CSS and copied examples. The MIT file's presence does not establish permission for every asset.
 - [ ] Finish policy-text and contact-route review. `CONTRIBUTING.md` still describes product documentation as German and lists only two of the three PostgreSQL integration tests; `SECURITY.md` still describes Private Vulnerability Reporting conditionally. Use the verified reporting route below. The Code of Conduct has no published reporting email; verify a usable private contact route.
 - [ ] Review repository/environment Actions secrets, variables, collaborators and installed apps for necessity and scope. Do not expose credentials to untrusted code. This documentation review did not inventory secret values or certify all environments.
@@ -21,7 +21,7 @@ This checklist records verified settings and remaining work for [Iam-Sanja/fexu-
 
 Repository API and effective branch-rule checks confirmed:
 
-- [x] Issues and Discussions enabled; [issue configuration](../.github/ISSUE_TEMPLATE/config.yml) disables blank issues and routes security reports to the policy. Having Discussions enabled does not prove it is actively moderated.
+- [x] Issues and Discussions enabled; [issue configuration](https://github.com/Iam-Sanja/fexu-rs/blob/main/.github/ISSUE_TEMPLATE/config.yml) disables blank issues and routes security reports to the policy. Having Discussions enabled does not prove it is actively moderated.
 - [x] Squash merge enabled; merge commits and rebase merge disabled; automatic head-branch deletion enabled. Normal merges of main into topic branches remain possible; the restriction applies to merging PRs into protected main.
 - [x] Active [protect-main ruleset](https://github.com/Iam-Sanja/fexu-rs/rules/26812021), ID `26812021`, applies to the default branch, currently `main`; no excluded refs or bypass actors. The API reports `main.protected=true` and the current user cannot bypass the ruleset.
 - [x] Require a PR, resolved review conversations and linear history; allow squash only into main. Block deletion and non-fast-forward pushes. Do not push directly to main or bypass these controls.
@@ -35,13 +35,13 @@ CodeQL is enabled but is **not** one of the four required check contexts. Review
 
 - [x] **Private Vulnerability Reporting** enabled (`GET /private-vulnerability-reporting` returns `enabled=true`). Report vulnerabilities using the [private advisory form](https://github.com/Iam-Sanja/fexu-rs/security/advisories/new), which may require sign-in. Do not post exploit details in public issues, discussions or PRs.
 - [x] **Dependabot alerts** enabled (vulnerability-alerts endpoint returns HTTP 204); **security updates** enabled and not paused. The alert listing was accessible. This establishes alert availability, not perfect dependency coverage.
-- [x] Verify [Dependabot configuration](../.github/dependabot.yml): weekly Cargo and GitHub Actions updates. Configuration does not auto-merge updates or prove the timing of every scheduled run.
+- [x] Verify [Dependabot configuration](https://github.com/Iam-Sanja/fexu-rs/blob/main/.github/dependabot.yml): weekly Cargo and GitHub Actions updates. Configuration does not auto-merge updates or prove the timing of every scheduled run.
 - [ ] Independently verify the Dependency graph UI/data coverage, including any dependencies outside the Cargo lockfile and Actions configuration. Alert enablement alone is not a complete inventory audit.
 - [x] **Secret Scanning** and **Push Protection** enabled in repository `security_and_analysis` metadata. Coverage is limited to supported patterns and available features; neither setting proves that all historic material was scanned.
 - [ ] Assess whether additional Secret Scanning coverage is appropriate: non-provider patterns and validity checks were both reported **disabled**. No setting was changed by this PR.
 - [x] **CodeQL default setup** configured, weekly schedule, default query suite, remote threat model, with language identifiers `actions`, `javascript`, `javascript-typescript`, `rust` and `typescript`. This is not a claim that every security query suite is enabled.
 - [x] Retain the [94-alert review](security/codeql-review.md) and [per-alert ledger](security/codeql-alerts.csv) from PR #27, plus the documented PR #25 follow-up for false positive #95. Individual technical assessments do not authorize blanket alert dismissal or query suppression.
-- [x] Preserve the [audit workflow](../.github/workflows/security.yml): `cargo audit` runs without an advisory ignore. The job also fails if RSA becomes reachable in the enabled graph. Do not add an ignore to make a check green. The former `RUSTSEC-2023-0071` ignore is not still in force; see [security-rsa.md](security-rsa.md).
+- [x] Preserve the [audit workflow](https://github.com/Iam-Sanja/fexu-rs/blob/main/.github/workflows/security.yml): `cargo audit` runs without an advisory ignore. The job also fails if RSA becomes reachable in the enabled graph. Do not add an ignore to make a check green. The former `RUSTSEC-2023-0071` ignore is not still in force; see [security-rsa.md](security-rsa.md).
 
 ## 4. Actions, fork PRs and external contributions
 
@@ -53,7 +53,7 @@ CodeQL is enabled but is **not** one of the four required check contexts. Review
 
 Contributor flow remains fork + focused feature branch → tests and documentation → PR template → all required checks → maintainer review → squash merge. Public visibility does not grant write access. CODEOWNERS names `@Iam-Sanja` for routing but is not required approval under the current ruleset. Never execute outsider-controlled code with elevated credentials, remove existing protections or auto-merge failed dependency updates.
 
-Releases require an intentional version/tag, successful checks, changelog and migration guidance. Development milestone labels do not establish a stable Cargo release. See [Contributing](../CONTRIBUTING.md) and [Governance](../GOVERNANCE.md).
+Releases require an intentional version/tag, successful checks, changelog and migration guidance. Development milestone labels do not establish a stable Cargo release. See [Contributing](https://github.com/Iam-Sanja/fexu-rs/blob/main/CONTRIBUTING.md) and [Governance](https://github.com/Iam-Sanja/fexu-rs/blob/main/GOVERNANCE.md).
 
 ## 5. Merged security and naming work
 

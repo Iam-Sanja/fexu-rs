@@ -59,7 +59,7 @@ cargo build --workspace
 
 The default suite skips ignored PostgreSQL tests. These require an **isolated disposable** database and `DATABASE_URL`; never point destructive tests at an existing application.
 
-Read the full [CONTRIBUTING.md](../CONTRIBUTING.md), [Code of Conduct](../CODE_OF_CONDUCT.md) and [security policy](../SECURITY.md). Security vulnerabilities should be reported privately, not as public issues.
+Read the full [CONTRIBUTING.md](https://github.com/Iam-Sanja/fexu-rs/blob/main/CONTRIBUTING.md), [Code of Conduct](https://github.com/Iam-Sanja/fexu-rs/blob/main/CODE_OF_CONDUCT.md) and [security policy](https://github.com/Iam-Sanja/fexu-rs/blob/main/SECURITY.md). Security vulnerabilities should be reported privately, not as public issues.
 
 ## Not sure where to start?
 

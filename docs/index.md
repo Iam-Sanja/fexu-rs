@@ -2,6 +2,8 @@
 
 Fexu is an experimental Rust framework with a model-first data layer, versioned migrations, authentication, a native admin, typed apps and background jobs. The latest published workspace release is `0.1.2` (2026-11-15, experimental); all 16 publishable crates are available on crates.io at that version. `main` includes newer unreleased changes. Historical v0.x feature milestones are not registry releases. Proposed targets `0.2.0` and `0.3.0` have no committed dates; see the [release roadmap](roadmap.md). SQLite is the local default, and PostgreSQL is the optional server backend. The documentation is in English; the admin supports German and English.
 
+**Versioned documentation is being prepared for GitHub Pages.** This repository remains the authoritative source until a version is explicitly deployed. For the publication process see [documentation maintenance](documentation-maintenance.md), and for the current pre-release review backlog see [the 2026-11-20 documentation audit](documentation-audit-2026-11-20.md). The planned `0.2.0` documentation must be approved against a real candidate; it is **not** a published manual yet.
+
 ## How to read this manual
 
 **Implemented** describes behavior present in the source. **Planned** describes a proposal or limit to be addressed later, not a completed feature. Code in planned sections is illustrative unless the page explicitly identifies an implemented API. Feature milestone numbers are separate from package versions.

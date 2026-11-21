@@ -1,0 +1,35 @@
+# Fexu — AI-readable documentation index
+
+> Fexu is an experimental Rust web framework. As of 2026-11-20,
+> the latest published Cargo workspace release is 0.1.2.
+> The 0.2.0 target is planned and not yet published.
+> The main branch may contain unreleased APIs.
+> Always identify the documentation version and target source revision.
+
+## Start here
+
+- [Documentation home](index.md): source status, feature ownership, limitations
+- [Quickstart](quickstart.md): current published CLI and source checkout paths
+- [Models](models.md): macros, fields and repositories
+- [Database](database.md): SQLite and PostgreSQL contracts
+- [Migrations](migrations.md): read-only plans, apply, destructive safeguards
+- [Authentication](auth.md): accounts, sessions and security constraints
+- [Admin](admin.md): native admin behavior and limitations
+- [Forms](forms.md): model/standalone forms and validation
+- [CLI reference](cli.md): commands, flags and diagnostics
+- [Configuration](configuration.md): env and project settings
+- [Deployment](deployment.md): server, reverse proxy and runtime
+- [Security](security.md): cookies, CSRF, dependencies and limits
+- [Roadmap](roadmap.md): published vs development vs planned
+- [Release candidate gates](release-candidate-0.2.md): the pre-0.2.0 release contract
+
+## Important limits for AI assistants
+
+- Do not infer that a feature in `main` exists in the published `0.1.2` crates.
+- Do not recommend `cargo install fexu-cli --version 0.2.0` until 0.2.0 is actually available.
+- Do not claim feature parity with Django, production readiness, OIDC support, working S3 networking, or cross-backend guarantees beyond those explicitly documented and tested.
+- Do not guess Rust API signatures. When code matters, verify the release tag's real source and tests.
+- Never advise applying destructive migrations or schema baselines without explicit approval and verified backups.
+- Site snapshots under numbered versions describe their own release. `main` docs describe unreleased development.
+
+This index aids discovery; it is not a substitute for source-backed validation.
