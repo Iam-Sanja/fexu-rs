@@ -22,6 +22,8 @@ CRITICAL = {
     "docs/quickstart.md",
     "docs/release-candidate-0.2.md",
     "docs/documentation-maintenance.md",
+    "manual/index.md",
+    "manual/versions.md",
 }
 # A dated archive may mention a now-closed issue without being wrong.
 OUTDATED = (
@@ -34,6 +36,7 @@ SKIP_SCHEMES = ("http:", "https:", "mailto:", "tel:", "data:", "javascript:")
 def markdown_files() -> list[Path]:
     candidates = [ROOT / "README.md", ROOT / "CHANGELOG.md"]
     candidates += sorted((ROOT / "docs").rglob("*.md"))
+    candidates += sorted((ROOT / "manual").rglob("*.md"))
     candidates += sorted((ROOT / "crates").glob("*/README.md"))
     return [path for path in candidates if path.is_file()]
 
