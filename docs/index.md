@@ -6,7 +6,7 @@ Fexu is a Rust web framework for building database-backed web applications. It p
 
 ## Start building
 
-1. [Install Fexu and create a project](quickstart.md).
+1. [Build your first Bookstore project, step by step](tutorial-first-project.md). For a short install guide, see [quickstart](quickstart.md).
 2. [Create an app](create-app.md) and [define models](models.md).
 3. [Configure SQLite or PostgreSQL](database.md) and [apply migrations](migrations.md).
 4. [Build views](views.md), [routes](urls.md) and [templates](templates.md).
