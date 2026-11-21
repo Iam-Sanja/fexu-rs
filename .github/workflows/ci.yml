@@ -178,6 +178,7 @@ jobs:
           require_passed -p fexu-migrations --test cross_app -- --ignored postgres_enforces_cross_app_foreign_keys
           require_passed -p fexu-auth --lib -- --ignored postgres_anonymous_session_roundtrip
           require_passed -p fexu-auth --lib -- --ignored postgres_account_security_roundtrip
+          require_passed -p fexu-auth --lib -- --ignored postgres_persisted_auth_and_session_survive_migrations_and_reconnect
           require_passed -p fexu-jobs --lib -- --ignored postgres_job_claim_and_rollback
           require_passed -p fexu --test money -- --ignored postgres_decimal_and_choice_roundtrip
           require_passed -p fexu-migrations --lib fixtures::tests::postgres_fixture_roundtrip -- --ignored
@@ -242,15 +243,22 @@ jobs:
         run: |
           set -euo pipefail
           for version in 17 18; do
-            port=$((55400 + version))
             container="fexu-fixture-pg-${version}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+            # Let Docker select an unused loopback host port. Fixed 55417/55418
+            # ports can collide with other services on the runner.
             docker run -d --rm --name "$container" \
               -e POSTGRES_USER=fexu \
               -e POSTGRES_PASSWORD=fexu_dev_only \
               -e POSTGRES_DB=fexu \
-              -p "127.0.0.1:${port}:5432" "postgres:${version}"
+              -p "127.0.0.1::5432" "postgres:${version}"
             cleanup() { docker rm -f "$container" >/dev/null 2>&1 || true; }
             trap cleanup EXIT
+            mapping=$(docker port "$container" 5432/tcp)
+            port=${mapping##*:}
+            if [[ ! "$port" =~ ^[0-9]+$ ]]; then
+              echo "Could not determine isolated PostgreSQL $version host port: $mapping" >&2
+              exit 1
+            fi
             ready=0
             for attempt in $(seq 1 90); do
               if docker exec "$container" pg_isready -U fexu -d fexu >/dev/null 2>&1; then
