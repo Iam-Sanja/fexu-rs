@@ -49,8 +49,7 @@ nav:
   - Overview:
       - Welcome: index.md
       - Quick start: quickstart.md
-      - Release roadmap: roadmap.md
-      - Release candidate 0.2.0: release-candidate-0.2.md
+      - Documentation versions: documentation-versions.md
   - Tutorial:
       - Project generator: project-generator.md
       - Create an app: create-app.md
@@ -63,7 +62,7 @@ nav:
       - Forms: forms.md
       - Admin: admin.md
   - Reference:
-      - CLI: cli.md
+      - Full CLI reference: cli.md
       - API: api.md
       - Configuration: configuration.md
       - Authentication: auth.md
@@ -80,6 +79,4 @@ nav:
   - Architecture and development:
       - Architecture: architecture.md
       - Django comparison: django-capability-matrix.md
-      - Contributing: first-contribution.md
-      - Documentation maintenance: documentation-maintenance.md
-      - Documentation audit (2026-11-20): documentation-audit-2026-11-20.md
+      - Contributing to Fexu: first-contribution.md
