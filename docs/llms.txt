@@ -10,6 +10,7 @@
 - [Documentation home](index.md): user-facing guide by topic
 - [Documentation versions](documentation-versions.md): release selection and install commands
 - [Quickstart](quickstart.md): install and run on Windows, Linux and macOS
+- [First-project tutorial](tutorial-first-project.md): build Bookstore with settings, models, URLs, views, templates and admin
 - [CLI reference](cli.md): all command families, subcommands, flags and examples
 - [Project generator](project-generator.md): create projects and applications
 - [Configuration](configuration.md): fexu.toml and environment variables
