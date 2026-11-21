@@ -267,7 +267,7 @@ pub fn fail_next_insert() {
     FAIL_NEXT.with(|flag| flag.set(true));
 }
 
-fn stored_uuid(backend: DatabaseBackend, id: Uuid) -> DbValue {
+pub(crate) fn stored_uuid(backend: DatabaseBackend, id: Uuid) -> DbValue {
     match backend {
         DatabaseBackend::Postgres => DbValue::Uuid(Some(Box::new(id))),
         _ => DbValue::String(Some(Box::new(id.to_string()))),
