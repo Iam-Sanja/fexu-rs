@@ -35,9 +35,10 @@ const PRIVATE_EXAMPLES: &[&str] = &[
 fn publishable_crates_share_one_version_and_examples_stay_private() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let workspace = std::fs::read_to_string(root.join("Cargo.toml")).expect("workspace manifest");
-    assert!(workspace.contains("version = \"0.1.2\""));
+    let version = env!("CARGO_PKG_VERSION");
+    assert!(workspace.contains(&format!("version = \"{version}\"")));
     for name in PUBLISHABLE {
-        let pinned = format!("{name} = {{ path = \"crates/{name}\", version = \"0.1.2\" }}");
+        let pinned = format!("{name} = {{ path = \"crates/{name}\", version = \"{version}\" }}");
         assert!(
             workspace.contains(&pinned),
             "missing publish pin for {name}"
