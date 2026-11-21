@@ -221,6 +221,8 @@ jobs:
           require_passed -p fexu-db --test grouped_report -- --ignored postgres_grouped_report_scope_json_and_one_to_one
           require_passed -p fexu-db --test driver_types -- --ignored postgres_native_types_and_decimal_blob
           require_passed -p fexu-migrations --lib plan::tests::postgres_plan_detects_live_drift_on_a_disposable_database -- --ignored
+          require_passed -p fexu-admin --lib drafts::tests::postgres_draft_lifecycle_keeps_session_and_user_boundaries -- --ignored --exact
+          require_passed -p admin-browser --bin admin-browser link_schema_tests::postgres_link_schema_supports_uuid_membership_and_uniqueness -- --ignored --exact
           require_passed -p fexu-admin --lib -- --ignored postgres_matching_uses_the_record_id_not_a_similar_name
           require_passed -p fexu --test integration_regression -- --ignored postgres_inspect_framework_and_plan_stay_read_only
           cargo build -p fexu-cli --bin embedded-migrate
@@ -341,3 +343,17 @@ jobs:
           cat /tmp/fexu-browser/server.log || true
           cat /tmp/fexu-browser/admin.log || true
           exit 1
+
+  msrv:
+    name: MSRV 1.89 (including tests)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install minimum supported Rust
+        uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8
+        with:
+          toolchain: 1.89.0
+      - name: Check workspace and regression test code
+        run: cargo check --workspace --all-targets --locked
