@@ -5345,14 +5345,17 @@ mod tests {
             &self,
             statement: Statement,
         ) -> Result<Vec<crate::driver::QueryResult>, crate::driver::DbErr> {
-            let left = self
-                .budget
-                .try_update(
-                    std::sync::atomic::Ordering::Relaxed,
-                    std::sync::atomic::Ordering::Relaxed,
-                    |budget| budget.checked_sub(1),
-                )
-                .unwrap_or(0);
+            use std::sync::atomic::Ordering::Relaxed;
+            let mut left = self.budget.load(Relaxed);
+            while left > 0 {
+                match self
+                    .budget
+                    .compare_exchange_weak(left, left - 1, Relaxed, Relaxed)
+                {
+                    Ok(_) => break,
+                    Err(current) => left = current,
+                }
+            }
             if left == 0 {
                 return Err(crate::driver::DbErr::query("scan batch failed"));
             }
