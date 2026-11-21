@@ -65,7 +65,7 @@ Review the generated model and migration before running `fexu migrate up`. If a 
 The CLI normally writes a Cargo registry dependency. To test unpublished source features, use `--fexu-path` with a path to the Fexu workspace root (or its `crates/fexu` directory).
 
 ```powershell
-Set-Location "D:\04_Projekte_Arbeit\Projekte\Fexu\main"
+Set-Location "C:\path\to\fexu-rs"
 cargo install --path crates/fexu-cli
 $framework = (Get-Location).Path
 Set-Location ..
