@@ -46,7 +46,7 @@ pub trait ModelRepository: FexuModel + Serialize + DeserializeOwned {
 
 `i64` remains the minor-unit integer. Decimal filters and `ORDER BY` use the coefficient bytes, so `10` sorts after `9`. A JSON number is accepted only when `rust_decimal` can read its lexical token as an exact decimal. Details and the no-rounding rule are in [models.md](models.md).
 
-SeaQuery binds values using PostgreSQL `$1`, `$2` or SQLite `?` placeholders. Identifiers come only from validated macro attributes and are quoted. Inserts and updates use `RETURNING`, supported by sqlx’s bundled SQLite library. Rows are read column by column and deserialized into models. An empty PATCH reads the current row without updating it; a non-empty PATCH writes only changed columns.
+SeaQuery binds values using PostgreSQL `$1`, `$2` or SQLite `?` placeholders. Identifiers come only from validated macro attributes and are quoted. Inserts and updates use `RETURNING`, supported by bundled SQLite 3.54.1 through rusqlite. Rows are read column by column and deserialized into models. An empty PATCH reads the current row without updating it; a non-empty PATCH writes only changed columns.
 
 ## Query behavior (implemented)
 
@@ -72,7 +72,7 @@ SeaQuery binds values using PostgreSQL `$1`, `$2` or SQLite `?` placeholders. Id
 
 ## Setup
 
-SQLite is the local standard. An installation and Docker are not necessary for this. sqlx brings SQLite. Schema changes for applications run through [migrations.md](migrations.md). `render_schema` remains the legacy bootstrap with `IF NOT EXISTS` for empty test databases. Migrations use `CREATE TABLE` without `IF NOT EXISTS`.
+SQLite is the local standard. An installation and Docker are not necessary for this. SQLite is provided by rusqlite with bundled SQLite; SQLx is used for PostgreSQL. Schema changes for applications run through [migrations.md](migrations.md). `render_schema` remains the legacy bootstrap with `IF NOT EXISTS` for empty test databases. Migrations use `CREATE TABLE` without `IF NOT EXISTS`.
 
 ```text
 sqlite://db.sqlite3?mode=rwc
@@ -144,7 +144,34 @@ loop {
 }
 ```
 
-For correctness-sensitive checks (for example a blocking reservation after the 100th row), do not use `.all()` as if it were exhaustive. Choose a checked single window or a bounded complete scan:\n\n```rust\n// One window only, but fail rather than silently omit matching rows.\nlet one_window = Product::query().filter(col("active").eq(true))\n    .all_checked(&db).await?;\n\n// Read every matching row up to an explicit safe maximum (including row 101).\n// Cancellation and exceeding the maximum are errors, not partial success.\nlet all_available = Product::query().filter(col("active").eq(true))\n    .order_by("price_cents", Direction::Asc)\n    .collect_bounded(&db, 2_000, || false).await?;\n\n// If the result may exceed 10_000, process it page by page instead.\nlet mut scan = Product::query().scan()?;\nwhile !scan.is_complete() {\n    for product in scan.next_batch(&db).await? {\n        // Process the current batch without accumulating unbounded memory.\n    }\n}\n```\n\nThese are database scans, **not** concurrency-safe reservation locks. For availability decisions that can race with writes, use the transaction/locking contract in addition to a complete query. `scan_after` resumes from a saved cursor but is not a snapshot of mutations between requests.\n\n`policy_scope` is a `QueryScope` from the object policy. The default scope is `QueryScope::All`, the same default as `list`. `QueryScope::None` matches no row. `QueryScope::Equals` is AND-ed with the filters. A query does not invent a policy.
+For correctness-sensitive checks (for example a matching row after the 100th), do not treat `.all()` as exhaustive. Use a checked window or a bounded complete scan:
+
+```rust
+// One window: return an error if there are more matching rows.
+let one_window = Product::query()
+    .filter(col("active").eq(true))
+    .all_checked(&db)
+    .await?;
+
+// Complete result with an explicit maximum. Truncation and cancellation are errors.
+let all_available = Product::query()
+    .filter(col("active").eq(true))
+    .order_by("price_cents", Direction::Asc)
+    .collect_bounded(&db, 2_000, || false)
+    .await?;
+
+// Process larger results in bounded keyset batches.
+let mut scan = Product::query().scan()?;
+while !scan.is_complete() {
+    for product in scan.next_batch(&db).await? {
+        // Process this batch without accumulating all rows in memory.
+    }
+}
+```
+
+These are database reads, **not** concurrency-safe reservation locks. If writes can race with an availability decision, additionally use an appropriate transaction/locking strategy. `scan_after` can resume from a saved cursor but does not snapshot concurrent mutations.
+
+`policy_scope` is a `QueryScope` from the object policy. The default scope is `QueryScope::All`, the same default as `list`. `QueryScope::None` matches no row. `QueryScope::Equals` is AND-ed with the filters. A query does not invent a policy.
 
 | Call | Window | Result |
 |---|---|---|

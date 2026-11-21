@@ -1,10 +1,10 @@
 site_name: Fexu Documentation
-site_description: Versioned documentation for the experimental Fexu Rust web framework
+site_description: Release-specific user guide and CLI reference for the Fexu Rust web framework
 site_url: https://iam-sanja.github.io/fexu-rs/
 repo_url: https://github.com/Iam-Sanja/fexu-rs
 repo_name: Iam-Sanja/fexu-rs
-edit_uri: edit/main/docs/
-docs_dir: docs
+edit_uri: edit/main/manual/
+docs_dir: manual
 site_dir: site
 theme:
   name: material
@@ -48,38 +48,24 @@ markdown_extensions:
 nav:
   - Overview:
       - Welcome: index.md
-      - Quick start: quickstart.md
-      - Release roadmap: roadmap.md
-      - Release candidate 0.2.0: release-candidate-0.2.md
+      - Versions: versions.md
+  - Getting started:
+      - Installation: getting-started/installation.md
+      - Quickstart: getting-started/quickstart.md
   - Tutorial:
-      - Project generator: project-generator.md
-      - Create an app: create-app.md
-      - Models: models.md
-      - Database: database.md
-      - Migrations: migrations.md
-      - URLs and routing: urls.md
-      - Views: views.md
-      - Templates: templates.md
-      - Forms: forms.md
-      - Admin: admin.md
+      - Your first project (Bookstore): tutorial/first-project.md
+  - Topics:
+      - Models: topics/models.md
+      - SQLite and PostgreSQL: topics/database.md
+      - ORM queries and pagination: topics/orm.md
+      - Migrations: topics/migrations.md
+      - Views and URL routing: topics/views-and-urls.md
+      - Templates: topics/templates.md
+      - Forms: topics/forms.md
+      - Authentication and admin: topics/auth-and-admin.md
+      - Background jobs: topics/jobs.md
   - Reference:
-      - CLI: cli.md
-      - API: api.md
-      - Configuration: configuration.md
-      - Authentication: auth.md
-      - Sessions: sessions.md
-      - Permissions: permissions.md
-      - Jobs: jobs.md
-      - Storage: storage.md
-  - Operations:
-      - Deployment: deployment.md
-      - Docker: deploy-docker.md
-      - Security: security.md
-      - Testing: testing.md
-      - Release & publishing: crates-io-release.md
-  - Architecture and development:
-      - Architecture: architecture.md
-      - Django comparison: django-capability-matrix.md
-      - Contributing: first-contribution.md
-      - Documentation maintenance: documentation-maintenance.md
-      - Documentation audit (2026-11-20): documentation-audit-2026-11-20.md
+      - All CLI commands: reference/cli.md
+      - Settings and environment: reference/settings.md
+  - How-to:
+      - Docker and deployment: how-to/deployment.md

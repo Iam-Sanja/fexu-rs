@@ -5,6 +5,7 @@ on:
     paths:
       - "README.md"
       - "docs/**"
+      - "manual/**"
       - "mkdocs.yml"
       - "requirements-docs.txt"
       - "scripts/audit-documentation.py"
