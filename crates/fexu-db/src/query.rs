@@ -5347,7 +5347,7 @@ mod tests {
         ) -> Result<Vec<crate::driver::QueryResult>, crate::driver::DbErr> {
             let left = self
                 .budget
-                .try_update(
+                .fetch_update(
                     std::sync::atomic::Ordering::Relaxed,
                     std::sync::atomic::Ordering::Relaxed,
                     |budget| budget.checked_sub(1),
