@@ -51,6 +51,7 @@ nav:
       - Quick start: quickstart.md
       - Documentation versions: documentation-versions.md
   - Tutorial:
+      - Your first project (Bookstore): tutorial-first-project.md
       - Project generator: project-generator.md
       - Create an app: create-app.md
       - Models: models.md
