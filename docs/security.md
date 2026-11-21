@@ -1,6 +1,6 @@
 # Security – threat model and security boundaries
 
-[Overview](index.md) · **Implemented security mechanisms and required safeguards. Fexu `0.1.0` is pre-release and is not ready for unrestricted production use.**
+[Overview](index.md) · **Implemented security mechanisms and required safeguards. The published Fexu version is `0.1.2`; current `main` is unreleased work toward `0.2.0` and is not ready for unrestricted production use.**
 
 ## Implemented protection mechanisms
 
@@ -13,7 +13,7 @@
 - `can_create` checks the Create input before the INSERT. A foreign owner ID is rejected if the rule requires it. The standard of the method is `false`. Generated projects do not bind to `0.0.0.0` and do not contain a standard password.
 - Static files remain in the configured root. Uploads use UUID names, check the file contents and belong to the logged-in user. The request ID comes from the server. Logs do not contain a query string. Details are available in [staticfiles.md](staticfiles.md), [uploads.md](uploads.md) and [middleware.md](middleware.md).
 
-## Authentication (implemented; experimental 0.1.0)
+## Authentication (implemented; experimental)
 
 Users, Argon2id, server-side sessions, anonymous server-side sessions, HttpOnly cookies, CSRF for cookie write accesses, roles and model permissions are implemented. Anonymous sessions and their CSRF checks are on `main` after PR #62 and remain Partial: cookie-less `allow_anonymous` writes stay open. Details are available in [auth.md](auth.md), [sessions.md](sessions.md), [csrf.md](csrf.md), [permissions.md](permissions.md) and [policies.md](policies.md).
 
