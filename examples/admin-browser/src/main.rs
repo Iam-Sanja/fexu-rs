@@ -8,7 +8,10 @@ use fexu::auth::{AuthService, AuthUser, ObjectPolicy};
 use fexu::core::{FexuModel, QueryScope, ScopeValue};
 use fexu::db::ModelRepository;
 use fexu::prelude::*;
-use fexu::sea_orm::{ConnectionTrait, DatabaseBackend, Statement};
+use fexu::sea_orm::{
+    sea_query::{Alias, ColumnDef, Index, PostgresQueryBuilder, SqliteQueryBuilder, Table},
+    ConnectionTrait, DatabaseBackend, Statement,
+};
 use fexu::App;
 
 const STAFF_EMAIL: &str = "staff@example.test";
@@ -221,11 +224,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .register::<Project>()
         .register::<Task>();
     app.bootstrap_schema().await?;
-    db.execute(Statement::from_string(
-        DatabaseBackend::Sqlite,
-        "CREATE TABLE item_tags (item_id text NOT NULL, tag_id text NOT NULL, UNIQUE(item_id, tag_id))".to_owned(),
-    ))
-    .await?;
+    create_link_table(&db).await?;
 
     let mut chosen_shelf = None;
     for index in 0..30 {
@@ -349,5 +348,106 @@ fn reset_sqlite_file(url: &str) {
     };
     if !path.is_empty() {
         let _ = std::fs::remove_file(path);
+    }
+}
+
+// The fixture uses the same typed UUID links on both supported backends.
+async fn create_link_table(
+    db: &fexu::sea_orm::DatabaseConnection,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let links = Table::create()
+        .table(Alias::new("item_tags"))
+        .col(ColumnDef::new(Alias::new("item_id")).uuid().not_null())
+        .col(ColumnDef::new(Alias::new("tag_id")).uuid().not_null())
+        .index(
+            Index::create()
+                .col(Alias::new("item_id"))
+                .col(Alias::new("tag_id"))
+                .unique(),
+        )
+        .to_owned();
+    let backend = db.get_database_backend();
+    let sql = match backend {
+        DatabaseBackend::Sqlite => links.to_string(SqliteQueryBuilder),
+        DatabaseBackend::Postgres => links.to_string(PostgresQueryBuilder),
+        _ => return Err("The browser fixture supports SQLite and PostgreSQL.".into()),
+    };
+    db.execute(Statement::from_string(backend, sql)).await?;
+    Ok(())
+}
+
+#[cfg(test)]
+mod link_schema_tests {
+    use super::*;
+    use fexu::sea_orm::{
+        sea_query::{Expr, Query, Value},
+        DatabaseConnection,
+    };
+
+    async fn verify_links(db: &DatabaseConnection) {
+        create_link_table(db).await.unwrap();
+        let parent = Uuid::new_v4();
+        let child = Uuid::new_v4();
+        fexu::admin::replace_links(
+            db,
+            fexu::db::ManyToMany {
+                join_table: "item_tags",
+                parent_column: "item_id",
+                child_column: "tag_id",
+            },
+            parent,
+            &[child],
+        )
+        .await
+        .unwrap();
+        let mut insert = Query::insert();
+        insert
+            .into_table(Alias::new("item_tags"))
+            .columns([Alias::new("item_id"), Alias::new("tag_id")])
+            .values_panic([
+                Expr::val(Value::Uuid(Some(Box::new(parent)))).into(),
+                Expr::val(Value::Uuid(Some(Box::new(child)))).into(),
+            ]);
+        let backend = db.get_database_backend();
+        let (sql, values) = match backend {
+            DatabaseBackend::Postgres => insert.build(PostgresQueryBuilder),
+            DatabaseBackend::Sqlite => insert.build(SqliteQueryBuilder),
+            _ => unreachable!(),
+        };
+        assert!(db
+            .execute(Statement::from_sql_and_values(backend, sql, values))
+            .await
+            .is_err());
+        fexu::admin::replace_links(
+            db,
+            fexu::db::ManyToMany {
+                join_table: "item_tags",
+                parent_column: "item_id",
+                child_column: "tag_id",
+            },
+            parent,
+            &[],
+        )
+        .await
+        .unwrap();
+    }
+
+    #[tokio::test]
+    async fn sqlite_link_schema_supports_uuid_membership_and_uniqueness() {
+        let db = fexu::db::connect("sqlite::memory:").await.unwrap();
+        verify_links(&db).await;
+    }
+
+    #[tokio::test]
+    #[ignore = "requires DATABASE_URL, CREATEDB, and an approved PostgreSQL test database"]
+    async fn postgres_link_schema_supports_uuid_membership_and_uniqueness() {
+        let admin = std::env::var("DATABASE_URL").expect("DATABASE_URL");
+        let disposable = fexu::db::DisposablePostgres::create(&admin)
+            .await
+            .expect("isolated postgres");
+        let db = fexu::db::connect(disposable.url()).await.expect("postgres");
+        verify_links(&db).await;
+        db.close().await.expect("close");
+        disposable.drop_database().await.expect("drop");
     }
 }

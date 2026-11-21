@@ -210,6 +210,7 @@ jobs:
           require_passed -p board --test forms -- --ignored postgres_note_forms_keep_owner_outside_the_allow_list
           require_passed -p board --test relations -- --ignored postgres_project_formset_keeps_relations_inside_one_transaction
           require_passed -p board --test acceptance -- --ignored postgres_note_http_and_json_share_validation_errors
+          require_passed -p admin-browser --bin admin-browser link_schema_tests::postgres_link_schema_supports_uuid_membership_and_uniqueness -- --ignored --exact
           require_passed -p fexu-admin --lib relations::tests::postgres_lookup_covers_zero_one_hundred_and_thousand_rows -- --ignored
           require_passed -p fexu-admin --lib relations::tests::postgres_many_to_many_replacement_rolls_back_and_one_to_one_stays_unique -- --ignored
           require_passed -p fexu-db --lib write::tests::postgres_shop_cases -- --ignored
