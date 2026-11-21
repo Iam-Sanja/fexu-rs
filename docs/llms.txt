@@ -1,35 +1,55 @@
-# Fexu — AI-readable documentation index
+# Fexu documentation for AI assistants
 
-> Fexu is an experimental Rust web framework. As of 2026-11-20,
-> the latest published Cargo workspace release is 0.1.2.
-> The 0.2.0 target is planned and not yet published.
-> The main branch may contain unreleased APIs.
-> Always identify the documentation version and target source revision.
+> Fexu is a Rust web framework. Use documentation for the **exact release** a
+> project depends on. As of 21 November 2026, 0.1.2 is published and 0.2.0
+> is planned; development source on main is not a published release.
+> Verify every copied Rust API against its version's source and tests.
 
-## Start here
+## First steps
 
-- [Documentation home](index.md): source status, feature ownership, limitations
-- [Quickstart](quickstart.md): current published CLI and source checkout paths
-- [Models](models.md): macros, fields and repositories
-- [Database](database.md): SQLite and PostgreSQL contracts
-- [Migrations](migrations.md): read-only plans, apply, destructive safeguards
-- [Authentication](auth.md): accounts, sessions and security constraints
-- [Admin](admin.md): native admin behavior and limitations
-- [Forms](forms.md): model/standalone forms and validation
-- [CLI reference](cli.md): commands, flags and diagnostics
-- [Configuration](configuration.md): env and project settings
-- [Deployment](deployment.md): server, reverse proxy and runtime
-- [Security](security.md): cookies, CSRF, dependencies and limits
-- [Roadmap](roadmap.md): published vs development vs planned
-- [Release candidate gates](release-candidate-0.2.md): the pre-0.2.0 release contract
+- [Documentation home](index.md): user-facing guide by topic
+- [Documentation versions](documentation-versions.md): release selection and install commands
+- [Quickstart](quickstart.md): install and run on Windows, Linux and macOS
+- [CLI reference](cli.md): all command families, subcommands, flags and examples
+- [Project generator](project-generator.md): create projects and applications
+- [Configuration](configuration.md): fexu.toml and environment variables
 
-## Important limits for AI assistants
+## Build an application
 
-- Do not infer that a feature in `main` exists in the published `0.1.2` crates.
-- Do not recommend `cargo install fexu-cli --version 0.2.0` until 0.2.0 is actually available.
-- Do not claim feature parity with Django, production readiness, OIDC support, working S3 networking, or cross-backend guarantees beyond those explicitly documented and tested.
-- Do not guess Rust API signatures. When code matters, verify the release tag's real source and tests.
-- Never advise applying destructive migrations or schema baselines without explicit approval and verified backups.
-- Site snapshots under numbered versions describe their own release. `main` docs describe unreleased development.
+- [Apps](apps.md): registration and lifecycle
+- [Models](models.md): model declarations and metadata
+- [Relations](relations.md): foreign keys and related models
+- [Database](database.md): SQLite/PostgreSQL and query APIs
+- [Migrations](migrations.md): schema changes
+- [Views](views.md): HTTP handlers
+- [URLs](urls.md): routing
+- [Templates](templates.md): HTML rendering
+- [Forms](forms.md): validation and inputs
+- [Admin](admin.md): native administration
+- [Authentication](auth.md): accounts
+- [Sessions](sessions.md): cookies and session persistence
+- [Permissions](permissions.md): role and object-level checks
+- [OpenAPI](openapi.md): generated API documentation
 
-This index aids discovery; it is not a substitute for source-backed validation.
+## Services and operations
+
+- [Jobs](jobs.md): background work
+- [Workers](workers.md): custom job runners
+- [Mail](mail.md): email transports
+- [Cache](cache.md): process-local cache
+- [Storage](storage.md): files and storage lifecycle
+- [Uploads](uploads.md): uploaded media
+- [Deployment](deployment.md): deployment configuration
+- [Docker and proxies](deploy-docker.md): container networking and origins
+- [Security](security.md): secure application configuration
+- [Testing](testing.md): test commands and environments
+- [Fixtures](fixtures.md): data import and export
+
+## Version and safety rules
+
+- A page from `main` can describe an unreleased API. Do not present it as supported by published 0.1.2.
+- Do not invent CLI commands, flags, Rust method names or configuration keys; match the release source.
+- `fexu upgrade` handles supported project file layouts, not arbitrary Rust source rewrites or version-to-version DB upgrades.
+- `fexu migrate plan` is read-only; `fexu migrate up` writes schema changes. Require a verified backup before migrations on existing data.
+- PostgreSQL and SQLite have documented backend differences. Do not substitute one backend's SQL/DDL for the other.
+- Generated applications require explicit access control; never presume all routes are automatically protected.
