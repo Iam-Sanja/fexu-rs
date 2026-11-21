@@ -1,106 +1,171 @@
-# fexu-cli – developer commands
+# Fexu CLI reference
 
-[Overview](index.md) · **Implemented file:** `crates/fexu-cli/src/main.rs`.
+The `fexu` executable is installed by the `fexu-cli` crate. Commands below are cross-checked against `crates/fexu-cli/src/main.rs` on the development branch. For a published version, choose that version in the documentation selector: **0.1.2 is published; 0.2.0 is not yet published**.
 
-`fexu-cli` 0.1.0, 0.1.1 and 0.1.2 are published. This checkout is 0.1.2 and writes `fexu = "=0.1.2"` unless `--fexu-path` is set. Install that published CLI from crates.io, or install it from a framework checkout as shown in the [README](https://github.com/Iam-Sanja/fexu-rs/blob/main/README.md) when changing this repository. Run project creation outside the framework workspace and subsequent commands inside the generated project.
+```sh
+cargo install fexu-cli --version 0.1.2 --locked
+fexu --version
+fexu --help
+```
 
-## Actual Functionality (Implemented)
+Run `fexu new project` from a directory in which you want a new project. Run project commands inside the directory containing `fexu.toml`. `fexu <command> --help` shows the options supported by your installed binary. An installed 0.1.2 CLI may differ from unreleased development source.
 
-`fexu doctor` and `fexu check` check tools, files, both migration areas, `settings.runtime` and the mail form. The runtime test does not open a connection. `settings.runtime` becomes `ERROR` when production and debug coincide, `FEXU_DEBUG` is neither `true` nor `false`, or `BIND_ADDRESS` begins with `0.0.0.0`. `disabled` does not expect an SMTP server. `console` and `memory` remain local. `smtp` is not connected. If `FEXU_SMTP_PASSWORD` is missing, the `mail.credentials` warning arises without showing the value. Details are available in [cli-doctor.md](cli-doctor.md) and [migration-diagnostics.md](migration-diagnostics.md). `fexu upgrade` describes [project-upgrade.md](project-upgrade.md). Generator, templates and the development server are available in [project-generator.md](project-generator.md), [project-templates.md](project-templates.md) and [development-server.md](development-server.md).
+## Command overview
 
-```powershell
-fexu new project Shop --template fullstack
-cd Shop
-fexu new app shop
+| Command | Purpose | Writes? |
+| --- | --- | --- |
+| `fexu new <name>` | Shorthand for `new project <name>` | Creates project files |
+| `fexu new project <name>` | Generate a standalone API or fullstack project | Creates project files |
+| `fexu new app <name>` | Create and register an app in a layout-2 project | Creates app files |
+| `fexu doctor` | Diagnose tools, files and configuration | No migrations |
+| `fexu check` | Check the project, migrations and compilation | No migrations |
+| `fexu upgrade` | Inspect or add a missing legacy manifest | Only with `--yes` |
+| `fexu dev` | Start development server with source watching | No migrations |
+| `fexu build` | Build the release application | Build artifacts |
+| `fexu generate model` | Create and register model source | Creates files |
+| `fexu generate worker` | Generate worker entry point | Creates files |
+| `fexu migrate` | Make, inspect and execute versioned schema migrations | Depends on subcommand |
+| `fexu admin` | Create staff/admin users | Writes account data |
+| `fexu auth` | Manage users, roles and permissions | Depends on subcommand |
+| `fexu worker` | Run the persistent-jobs worker | Processes jobs |
+| `fexu jobs` | Inspect, retry and cancel jobs | Depends on subcommand |
+| `fexu dumpdata` | Export database rows as JSON | No database changes |
+| `fexu loaddata` | Validate or import fixture rows | Except `--dry-run` |
+| `fexu manage` | Execute project-defined management commands | Command-specific |
+
+## Projects, apps and development
+
+```sh
+fexu new project shop --template fullstack
+fexu new project service --template api
+fexu new project shop --apps-dir apps
+fexu new project shop --apps-dir .
+fexu new app catalog --templates local
+fexu new app catalog --templates shared
+fexu generate model Product --app catalog --timestamps
+fexu generate worker
 fexu doctor
 fexu check
+fexu check --strict
+fexu check --deploy
 fexu dev
 fexu build
-fexu generate model Customer --app shop
-fexu generate model Product --app shop --timestamps
-fexu worker
-fexu jobs list
-fexu jobs failed
-fexu generate worker
-fexu jobs inspect <id>
-fexu jobs inspect <id> --show-payload
-fexu migrate make <name> --app shop
-fexu migrate up
-fexu migrate status
-fexu dumpdata --model products
-fexu loaddata fixtures/catalog.json
-fexu loaddata fixtures/catalog.json --dry-run
-fexu loaddata fixtures/catalog.json --upsert
-fexu loaddata fixtures/catalog.json --truncate --yes
-fexu manage
-fexu manage seed-shop
-fexu manage about --name Shop
-fexu check --strict
+```
+
+Options: `new project` accepts `--template api|fullstack` (default `fullstack`), `--apps-dir apps|.` (default `apps`), and `--fexu-path <workspace-root-or-crates/fexu>` for development against a source checkout. Without `--fexu-path`, the generator uses a registry dependency. `new app` accepts `--templates local|shared` (default `local`). `generate model` accepts `--app <app>` and `--timestamps`. In layout-2 projects, create and register an app first.
+
+`fexu new help project` displays the project help. `fexu generate app` is a retired command and does not generate files; use `fexu new app`.
+
+`doctor`, `check`, and `dev` do **not** apply migrations. `check --strict` treats warnings as errors; `check --deploy` validates deployment configuration without editing it. `dev` watches relevant source/config/template files and restarts its child process; it is not a production supervisor. `build` compiles a release binary but does not start it.
+
+`upgrade` concerns supported legacy **project file layouts**, not a published-Fexu-version-to-new-Fexu-version source or database migration:
+
+```sh
 fexu upgrade --check
 fexu upgrade --dry-run
 fexu upgrade --yes
 ```
 
-`migrate` reads `fexu.toml` or the flags `--schema-file`, `--migrations-dir` and `--database-url`. The execution describes [migrations.md](migrations.md). `--bootstrap` belongs to the `myshop` binary, is legacy and does not perform a migration.
+`--check` and `--dry-run` are read-only; `--yes` may write a missing manifest but does not overwrite an existing one.
 
-```powershell
-fexu admin create-user --email admin@example.com --staff --superuser
+## Migrations
+
+Run `fexu migrate plan` and verify a restorable database backup before changing an existing schema.
+
+```sh
+fexu migrate make add_stock --app catalog
+fexu migrate make add_stock --app catalog --backfill products.stock:i64=0
+fexu migrate plan
+fexu migrate status
+fexu migrate up
+fexu migrate down --dry-run
+fexu migrate down --app catalog --dry-run
+fexu migrate rename-column --table products --from old_name --to new_name
+fexu migrate rename-table --from old_products --to products
+fexu migrate reseal migrations/0002_add_stock.json
+fexu migrate baseline
+```
+
+| Subcommand | Supported options | Effect |
+| --- | --- | --- |
+| `make [name]` | `--app`, `--schema-file`, `--backfill` (repeatable), `--migrations-dir` | Generate migration file |
+| `up` | `--database-url`, `--migrations-dir`, `--allow-destructive` | Apply pending migrations |
+| `down` | `--database-url`, `--app`, `--migrations-dir`, `--allow-destructive`, `--dry-run` | Undo latest supported migration |
+| `plan` | `--database-url`, `--migrations-dir`, `--schema-file` | Read-only schema/history comparison |
+| `status` | `--database-url`, `--migrations-dir`, `--schema-file` | Read-only migration status |
+| `rename-column` | `--table`, `--from`, `--to`, `--name`, `--schema-file`, `--migrations-dir` | Generate explicit column-rename migration |
+| `rename-table` | `--from`, `--to`, `--name`, `--schema-file`, `--migrations-dir` | Generate explicit table-rename migration |
+| `reseal <path>` | `--database-url` | Recompute checksum of **unapplied** migration |
+| `baseline` | `--database-url`, `--migrations-dir`, `--confirm` | Verify existing SQLite schema; with `--confirm`, write history |
+
+`make --app` cannot be combined with `--schema-file` or `--migrations-dir`. `down --app` cannot be combined with `--migrations-dir`. Destructive schema steps require explicit `--allow-destructive` where supported. `baseline` is SQLite-only and writes only with `--confirm`; it must not be used to conceal mismatched schema history. See [migrations](migrations.md) for detailed workflows.
+
+## Users, roles and permissions
+
+```sh
+fexu admin create-user --email admin@example.com --name "Site Administrator" --staff --superuser
 fexu auth list-users
 fexu auth create-role editor
-fexu auth grant-permission notes.read --role editor
-fexu auth assign-role --email admin@example.com --role editor
+fexu auth grant-permission products.read --role editor
+fexu auth grant-permission products.update --role editor
+fexu auth revoke-permission products.update --role editor
+fexu auth assign-role --email editor@example.com --role editor
+fexu auth revoke-role --email editor@example.com --role editor
 ```
 
-`create-user` prompts for a password without echoing it and asks for confirmation. It accepts no password argument. `FEXU_PASSWORD` can supply a password of at least 12 characters for automation; there is no default. `migrate up` applies auth migrations first. Auth commands that write data also create missing auth tables. `list-users` never prints hashes.
+Each `admin create-user` and `auth` subcommand accepts `--database-url`. `create-user` prompts securely for a password (and email if omitted); it has no default password. `--superuser` is not a substitute for `--staff` when admin access is required. Role permission strings use a resource plus `.read`, `.create`, `.update` or `.delete`. `auth list-users` does not reveal password hashes.
 
-`generate worker` writes `src/bin/worker.rs` without overwriting an existing file. `jobs inspect` hides the payload unless `--show-payload` is supplied, which warns that it may contain personal data. Neither output includes the lease token. `fexu worker` runs only the mail handler.
+## Background jobs
 
-`fexu migrate plan` compares files, history and the live catalog without writing. Exit code `1` means a history conflict or live drift. A pending migration or a model that is ahead of the latest pending file is printed as a warning and does not by itself change the exit code. `fexu migrate down` reverts the latest migration. `--app <name>` reverts the latest migration of that app. `--dry-run` writes nothing. Dropping a created table or column needs `--allow-destructive` and does not restore those rows. `fexu dev` starts neither a worker nor Vite, and warns about pending migrations without applying them. Generator integration tests limit nested Cargo builds to two jobs after unrestricted release builds crashed rustc 1.98.1 on Windows. The product command `fexu build` still performs a release build.
-
-Exit codes of the test: `0` without error, warnings included. `1` for conflicts, an unreadable existing database or a failed `cargo check`. `migrate status` also uses `1` if the SQLite file is missing and does not create it. `check --strict` uses `2` if only warnings remain. `upgrade` uses `1` for file conflicts and then does not write anything.
-
-In layout 2, create an app before generating its models. `fexu new <name>` creates a project with Fexu from crates.io and accepts the same options as `fexu new project <name>`. `app`, `project`, and `help` are subcommands, so they are not project names in the short form. `fexu new help project` shows the project command's help, and an unknown help target is rejected. `fexu generate app` still returns migration guidance and writes nothing. Layout-1 root models keep working. See [migration instructions](project-generator.md#migration-from-old-clilayouts).
-
-## CLI structure
-
-```text
-fexu
-├─ new <name>                  Create an empty project from crates.io
-├─ new project <name>          Same command, with --template, --apps-dir and --fexu-path
-├─ new app <name>              Create and register a business app
-├─ doctor                      Check tools, configuration, and project files
-├─ dev                         Start the development server; it does not migrate
-├─ generate model <name>       Write a compilable model file
-├─ check [--strict] [--deploy] Check the project and migrations without writing
-├─ upgrade --check|--dry-run|--yes   Write at most one missing legacy manifest
-├─ migrate make|up|down|plan|status  See migrations.md
-├─ dumpdata / loaddata         See fixtures.md
-├─ manage <command>            See management-commands.md
-├─ migrate rename-column       Explicit column rename
-├─ migrate rename-table        Explicit table rename
-├─ migrate reseal              Checksum of a file that is not applied yet
-├─ migrate baseline            SQLite only, and only with --confirm
-├─ migrate down [--app name]   Revert only when a snapshot is stored
-└─ build                       Release build
+```sh
+fexu generate worker
+fexu worker --concurrency 2 --poll-ms 1000
+fexu jobs list
+fexu jobs failed
+fexu jobs inspect JOB_ID
+fexu jobs inspect JOB_ID --show-payload
+fexu jobs retry JOB_ID --yes
+fexu jobs cancel JOB_ID --yes
 ```
 
-The diagram matches the English `clap` help in `crates/fexu-cli/src/main.rs`. Command output still follows `FEXU_LOCALE`, with English as the default.
+`worker` accepts `--database-url`, `--concurrency` and `--poll-ms`. Every `jobs` subcommand accepts `--database-url`. `inspect` additionally accepts `--show-payload` (potentially sensitive data); `retry` and `cancel` accept `--yes`. The built-in CLI worker runs its supported mail handler; application-specific handlers require a generated and configured worker. See [jobs](jobs.md).
 
-### Implementation notes
+## Fixtures: dumpdata and loaddata
 
-- Parsing with `clap` subcommands; Exit code 0 only if successful.
-- `new`, `generate model`, `doctor`, `check`, `dev` and `build` are implemented. `new` does not overwrite an existing directory.
-- `doctor` checks Cargo and the URL scheme without creating a database file.
-- `dev` ends the child process at Ctrl+C. A crash does not restart itself.
-- Migrations are not aliases of `--bootstrap`.
-- CLI outputs with precise paths and repairable error messages.
+```sh
+fexu dumpdata --model products --output fixtures/products.json
+fexu dumpdata --app catalog --output fixtures/catalog.json
+fexu loaddata fixtures/catalog.json --dry-run
+fexu loaddata fixtures/catalog.json
+fexu loaddata fixtures/catalog.json --upsert
+fexu loaddata fixtures/catalog.json --truncate --yes
+```
 
-## Planned test matrix
+`dumpdata` accepts `--model`, `--app`, `--schema-file`, `--database-url`, `--output`. If `--output` is omitted it writes to standard output. `loaddata <file>` accepts `--dry-run`, `--upsert`, `--truncate`, `--yes`, `--model`, `--app`, `--schema-file`, `--database-url`. `--truncate` deletes selected data and requires `--yes`: perform it only against an intentionally disposable database or after explicit backup and approval. See [fixtures](fixtures.md).
 
-- `--help` and `--version` work.
-- Unknown Command: Exit != 0.
-- Existing project directory: refuse to overwrite it.
-- Doctor without a database: report the relevant diagnostic rather than claiming success.
-- Database errors do not contain passwords.
+## Project-defined management commands
 
-For migrations see [migrations.md](migrations.md).
+```sh
+fexu manage
+fexu manage --help
+fexu manage seed-shop
+```
+
+The available management commands are defined by the application's `fexu-manage` binary; `seed-shop` is an example, **not** a guaranteed built-in command in every project. Additional arguments are passed to the project command. See [management commands](management-commands.md).
+
+## Configuration and troubleshooting
+
+SQLite uses a local `sqlite://db.sqlite3?mode=rwc` URL by default in generated projects. PostgreSQL uses a `postgres://` URL supplied through the project configuration or `DATABASE_URL`. Avoid putting credentials into command history; prefer scoped environment variables and protected config.
+
+For command-specific usage on the exact installed CLI:
+
+```sh
+fexu --help
+fexu migrate --help
+fexu migrate make --help
+fexu auth --help
+fexu jobs --help
+fexu loaddata --help
+```
+
+See [quickstart](quickstart.md), [configuration](configuration.md), [CLI diagnostics](cli-doctor.md), [authentication](auth.md), and [deployment](deployment.md).
