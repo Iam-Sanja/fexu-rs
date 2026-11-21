@@ -97,15 +97,16 @@ test("foreign key, one-to-one and many-to-many edits keep an off-page selection"
   await expect(tags.getByRole("checkbox", { name: "Tag 100" })).toHaveCount(0);
   await expect(tags.locator('input[type="hidden"][name="m2m.tags"]')).toHaveCount(1);
   await expect(tags).toContainText("Selected records on other pages stay selected.");
-  await tags.getByRole("button", { name: "Next" }).click();
+  await Promise.all([page.waitForEvent("load"), tags.getByRole("button", { name: "Next" }).click()]);
   await expect(tags.getByRole("checkbox", { name: "Tag 100" })).toBeChecked();
-  await tags.getByRole("button", { name: "Previous" }).click();
+  await Promise.all([page.waitForEvent("load"), tags.getByRole("button", { name: "Previous" }).click()]);
   await expect(tags.locator('input[type="hidden"][name="m2m.tags"]')).toHaveCount(1);
   await page.locator("#m2m-tags-q").fill("Tag 100");
-  await tags.getByRole("button", { name: "Search" }).click();
+  await Promise.all([page.waitForEvent("load"), tags.getByRole("button", { name: "Search" }).click()]);
   await expect(tags.getByRole("checkbox", { name: "Tag 100" })).toBeChecked();
+  await expect(page.locator("form[data-track-dirty=record]")).toHaveAttribute("data-dirty", "0");
   await page.locator("#desk_id").selectOption({ label: nextDesk });
-  await page.getByRole("button", { name: "Save and continue editing" }).click();
+  await Promise.all([page.waitForEvent("load"), page.getByRole("button", { name: "Save and continue editing" }).click()]);
   await expect(page.locator("#desk_id option:checked")).toHaveText(nextDesk);
   await expect(page.locator("#shelf_id option:checked")).toHaveText("Regal 20");
   await expect(tags).toContainText("Total: 1");
@@ -154,13 +155,13 @@ test("inline create, update and delete stay on the project form", async ({ page 
   await page.goto("/admin/models/projects/new");
   await page.locator("#name").fill("Auftrag");
   await page.locator('input[name="inline_tasks_0_label"]').fill("Erste Zeile");
-  await page.getByRole("button", { name: "Save and continue editing" }).click();
+  await Promise.all([page.waitForEvent("load"), page.getByRole("button", { name: "Save and continue editing" }).click()]);
   await expect(page.locator('input[name="inline_tasks_0_label"]')).toHaveValue("Erste Zeile");
   await page.locator('input[name="inline_tasks_0_label"]').fill("Geändert");
-  await page.getByRole("button", { name: "Save and continue editing" }).click();
+  await Promise.all([page.waitForEvent("load"), page.getByRole("button", { name: "Save and continue editing" }).click()]);
   await expect(page.locator('input[name="inline_tasks_0_label"]')).toHaveValue("Geändert");
   await page.locator('input[name="inline_tasks_0_remove"]').check();
-  await page.getByRole("button", { name: "Save and continue editing" }).click();
+  await Promise.all([page.waitForEvent("load"), page.getByRole("button", { name: "Save and continue editing" }).click()]);
   await expect(page.locator('input[name="inline_tasks_0_label"]')).toHaveValue("");
 });
 

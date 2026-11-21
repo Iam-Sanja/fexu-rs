@@ -56,6 +56,21 @@ fn clean_room_project_has_no_local_fexu_path() {
         .replace('\\', "/");
     assert!(!cargo.replace('\\', "/").contains(&workspace), "{cargo}");
 
+    // Compile the registry default too: local-checkout generator tests use a different API.
+    let mut compile = Command::new("cargo");
+    compile
+        .current_dir(&project)
+        .args(["check", "--all-targets"])
+        .env("CARGO_BUILD_JOBS", "2");
+    if let Some(target) = std::env::var_os("CARGO_TARGET_DIR") {
+        compile.env(
+            "CARGO_TARGET_DIR",
+            Path::new(&target).join("registry-quickstart"),
+        );
+    }
+    let checked = compile.output().unwrap();
+    assert!(checked.status.success(), "{}", combined(&checked));
+
     let database = project.join("app.sqlite");
     std::fs::File::create(&database).unwrap();
     let url = format!(
