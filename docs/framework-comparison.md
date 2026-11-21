@@ -2,11 +2,13 @@
 
 Checked on 2026-11-12, with crate versions re-read on 2026-11-17. This page is a documentation matrix. The timed Fexu SQLite baseline, its commands and its limits are in [benchmarks](benchmarks.md). Runique, Cot and Loco were still not built or timed. Do not quote a cross-framework rate from either page.
 
+Fexu publication status corrected from current release documentation on 2026-11-21; the other framework observations remain dated historical checks.
+
 ## Versions and sources
 
 | Framework | Version used for this note | Source checked |
 |---|---|---|
-| Fexu | Cargo `0.1.2` prepared; crates.io still lists `0.1.0` / `fexu-cli` `0.1.1` | This repository; [release readiness](release-readiness.md) |
+| Fexu | Published crates and CLI `0.1.2`; current `main` is unreleased work toward `0.2.0` | This repository; [release readiness](release-readiness.md) |
 | Runique | crates.io `4.0.0`, created 2026-11-08. The `master` README the same day calls the workspace `4.1.0-preview` and names 4.0.0 as the published crate. | [crates.io/crates/runique](https://crates.io/crates/runique), [README](https://github.com/seb-alliot/runique/blob/master/README.md) |
 | Cot | `0.8.0`, published 2026-11-09 | [crates.io/crates/cot](https://crates.io/crates/cot), [github.com/cot-rs/cot](https://github.com/cot-rs/cot) |
 | Loco | `loco-rs` `1.3.1` and generator `loco` `1.3.1`, published 2026-11-06 | [crates.io/crates/loco-rs](https://crates.io/crates/loco-rs), [github.com/loco-rs/loco/releases](https://github.com/loco-rs/loco/releases) |
