@@ -32,5 +32,6 @@ This manual documents the **unpublished `0.2.0-dev.1` development source** being
 - [Full CLI reference](reference/cli.md)
 - [Project configuration reference](reference/settings.md)
 - [Documentation versions](versions.md)
+- [Upgrade from 0.1.2 to the 0.2 development source](how-to/upgrade-0.1.2-to-0.2.md)
 
 This site intentionally excludes internal audits, issue timelines and engineering worklogs. Source history and contributor notes remain in the repository, separate from this user manual.

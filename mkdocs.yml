@@ -69,3 +69,4 @@ nav:
       - Settings and environment: reference/settings.md
   - How-to:
       - Docker and deployment: how-to/deployment.md
+      - Upgrading from 0.1.2: how-to/upgrade-0.1.2-to-0.2.md

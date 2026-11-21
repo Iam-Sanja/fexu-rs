@@ -92,3 +92,4 @@ For PostgreSQL, configure `[database] url` in `fexu.toml` or supply `DATABASE_UR
 - [Models](../topics/models.md) — fields, relationships and queries
 - [Admin](../topics/auth-and-admin.md) — accounts and management views
 - [Deployment](../how-to/deployment.md) — server and production configuration
+- [Upgrade guide](../how-to/upgrade-0.1.2-to-0.2.md) — published 0.1.2 versus development-source compatibility
