@@ -85,6 +85,7 @@ For PostgreSQL, configure `[database] url` in `fexu.toml` or supply `DATABASE_UR
 
 ## Next steps
 
+- [First-project tutorial](tutorial-first-project.md) — complete Bookstore app with settings, models, views, URLs and templates
 - [CLI reference](cli.md) — every command, subcommand and important option
 - [Project structure](project-structure.md) — files and directories
 - [Configuration](configuration.md) — settings and environment variables
