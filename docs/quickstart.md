@@ -1,74 +1,93 @@
 # Quickstart
 
-This page lists the commands. A step is marked as run only when this repository's tests actually ran it.
+Create a Fexu application, initialize a database, sign in to its admin and start the development server. These commands use the **published Fexu 0.1.2** release. For changes introduced in the upcoming 0.2.0 release, use the matching versioned documentation when it becomes available.
 
-`fexu dev` and `fexu doctor` do not apply migrations. `fexu migrate up` is the command that writes schema changes, and it does not reset a database. There is no default admin password.
+Fexu requires a supported Rust toolchain (the current workspace declares Rust 1.89.0 as its minimum). New projects use SQLite by default; you do not need Docker or a PostgreSQL service for the first application.
 
-## Published CLI
-
-Use this when the crates.io packages are already published. This working tree did not run `cargo install fexu-cli` against crates.io.
+## Windows PowerShell
 
 ```powershell
 cargo install fexu-cli --version 0.1.2 --locked
-fexu new project demo
+fexu --version
+
+# Choose a directory outside the Fexu framework repository.
+fexu new project demo --template fullstack
 Set-Location demo
+
+# Inspect the generated files and configuration.
 fexu doctor
+fexu check
+
+# Review migrations before applying them.
+fexu migrate plan
 fexu migrate up
+
+# Prompts for a password; no default credentials are supplied.
 fexu admin create-user --email admin@example.com --staff --superuser
+
+# Start the local development server.
 fexu dev
 ```
 
-`fexu new project` writes `fexu = { version = "=0.1.2", features = ["admin-ui"] }` for the fullstack template. That dependency comes from crates.io. The automated test `clean_room_project_has_no_local_fexu_path` checks the generated files and `fexu doctor` without a local framework checkout. It does not download the published crate or start the server.
-
-The same published install on Linux and macOS uses a POSIX shell. This tree did not run these commands against crates.io either.
+## Linux or macOS
 
 ```bash
 cargo install fexu-cli --version 0.1.2 --locked
-fexu new project demo
+fexu --version
+fexu new project demo --template fullstack
 cd demo
 fexu doctor
+fexu check
+fexu migrate plan
 fexu migrate up
 fexu admin create-user --email admin@example.com --staff --superuser
 fexu dev
 ```
 
-## Local checkout
+Stop the development process with Ctrl+C. The dev server watches supported source, configuration and template changes and restarts the application. It does not apply migrations automatically.
 
-Use this while changing Fexu itself. The generator tests in this repository do run this path, including compile, `migrate up`, app and model generation, and a short `fexu dev`.
+## Create your first app and model
 
-```powershell
-cargo install --path crates/fexu-cli
-$repo = (Get-Location).Path
-Set-Location ..
-fexu new project demo --template fullstack --fexu-path $repo
-Set-Location demo
-fexu migrate up
-fexu dev
+Inside the generated project:
+
+```sh
+fexu new app catalog
+fexu generate model Product --app catalog --timestamps
+fexu doctor
+fexu migrate make add_products --app catalog
+fexu migrate plan
 ```
 
-`--fexu-path` must be the workspace root or `crates/fexu`. Omit it to use crates.io.
+Review the generated model and migration before running `fexu migrate up`. If a non-nullable field is added to a table containing existing rows, a safe backfill or an explicit migration decision may be needed. See [creating apps](create-app.md), [models](models.md) and [migrations](migrations.md).
 
-## SQLite
+## Working against a Fexu source checkout
 
-New projects set `[database] url` to `sqlite://db.sqlite3?mode=rwc`. No database server is required. `fexu doctor` does not create a missing SQLite file. Create it by running `fexu migrate up` when you intend to write the schema.
+The CLI normally writes a Cargo registry dependency. To test unpublished source features, use `--fexu-path` with a path to the Fexu workspace root (or its `crates/fexu` directory).
 
-## PostgreSQL
+```powershell
+Set-Location "D:\04_Projekte_Arbeit\Projekte\Fexu\main"
+cargo install --path crates/fexu-cli
+$framework = (Get-Location).Path
+Set-Location ..
+fexu new project demo-main --template fullstack --fexu-path $framework
+Set-Location demo-main
+fexu doctor
+fexu migrate plan
+```
 
-Set `DATABASE_URL` or `[database] url` to a `postgres://` URL only for an application that needs PostgreSQL. The value is not printed by `doctor` or `check`. This quickstart did not start a PostgreSQL server. Workspace CI runs the existing ignored PostgreSQL tests against its own disposable service. Do not point these commands at a production database.
+A local checkout of `main` contains unreleased APIs and is not equivalent to installing the latest crates.io version. Do not advertise its behavior as published until a corresponding release is available.
 
-## Development and production
+## Database selection
 
-`fexu dev` is the development process. It rebuilds after `.rs`, `.toml`, `.json`, `.html` and `.css` changes, stops the previous process before starting another one, and does not migrate. `fexu check --deploy` is read-only and expects production settings such as a 64-character hex `FEXU_CSRF_SECRET`. It does not print that secret. `fexu build` writes a release binary and does not start it.
+The generated SQLite URL is `sqlite://db.sqlite3?mode=rwc`. The database file is created as part of the intended migration/application workflow, not by `fexu doctor`.
 
-## When a command fails
+For PostgreSQL, configure `[database] url` in `fexu.toml` or supply `DATABASE_URL` in a protected environment. Use a disposable database while evaluating migration behavior. Keep database credentials out of source control and command history.
 
-| Symptom | Cause and fix |
-|---|---|
-| `No fexu.toml found` | The working directory is not a project. Run `fexu new project` or `cd` into one. |
-| `project.file.missing` | `Cargo.toml`, `src/main.rs` or `src/lib.rs` is gone. Restore the generated file. |
-| `migrations.missing` | The migrations directory is gone. Recreate it. `doctor` will not migrate. |
-| `templates.missing` | `templates.enabled` is true and the directory is absent. Create it or disable templates. |
-| `migration.database.missing` | The SQLite file is not there. Run `fexu migrate up` only when you want it created. |
-| `migration.database.unavailable` | The configured database did not answer. Fix the existing URL. The URL is not shown. |
-| `Port ... is already in use` | Another process holds `server.port`. Stop it or change the port. `dev` does not start a second server. |
-| Invalid `FEXU_CSRF_SECRET` | The value is not 64 hexadecimal characters. Replace it. The current value is not shown. |
+## Next steps
+
+- [CLI reference](cli.md) — every command, subcommand and important option
+- [Project structure](project-structure.md) — files and directories
+- [Configuration](configuration.md) — settings and environment variables
+- [Models](models.md) — fields, relationships and queries
+- [Admin](admin.md) — accounts and management views
+- [Deployment](deployment.md) — server and production configuration
