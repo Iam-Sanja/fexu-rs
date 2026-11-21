@@ -31,9 +31,20 @@ mkdocs serve
 
 The CI build uses `mkdocs build --strict`: site warnings must fail the job instead of being reported as success. Structural validation still cannot prove that code examples compile, external links remain reachable, or framework claims match source. Record those reviews separately before release.
 
+## Development preview on GitHub Pages (explicit manual deployment)
+
+A standalone `.github/workflows/docs-pages-preview.yml` workflow can publish the **unreleased** `main` manual to GitHub Pages. This is a development preview, not a frozen release-specific manual and not approval to publish `0.2.0`.
+
+1. In the repository's **Settings → Pages → Build and deployment**, select **GitHub Actions** as the source. The repository owner must do this once; the documentation CI cannot change repository Pages settings.
+2. In **Actions**, open **Publish documentation preview (manual)**, choose **Run workflow** on `main`, and inspect the completed deployment. The expected base URL is `https://iam-sanja.github.io/fexu-rs/` once GitHub Pages is enabled and the run succeeds.
+3. The workflow checks the docs, runs `mkdocs build --strict`, and deploys the `manual/` content using the Pages artifact. It has no crates.io credentials, and does not publish a crate, create a Git tag, or alter a stable alias.
+4. GitHub Pages workflows need the repository's **GitHub Actions** Pages source. The older `mike deploy --push` instructions below use a **different Pages source** (`gh-pages` branch); never switch sources implicitly. Decide the final release-specific `mike` publishing mechanism in a separate approved change before the release, rather than assuming both methods can run simultaneously.
+
+The preview is updated **only by manually running the workflow**. No push or pull request triggers a deployment. Readers must use the documentation version guide to distinguish published `0.1.2` from the unreleased source version.
+
 ## Publish versioned docs — only after a signed-off release
 
-GitHub Pages must first be enabled by a maintainer on the repository with the `gh-pages` branch as its source. The following is a **manual maintainer action**, not something triggered automatically by this repository:
+For the legacy `mike deploy --push` procedure below, GitHub Pages must first be configured by a maintainer with the `gh-pages` branch as its source. This is **not** the Pages source used for the development-preview workflow above; switch only as part of a separately reviewed release-publishing plan. The following is a **manual maintainer action**, not something triggered automatically by this repository:
 
 ```bash
 # From the reviewed release tag checkout, after verifying that

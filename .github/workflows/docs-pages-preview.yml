@@ -1,0 +1,51 @@
+name: Publish documentation preview (manual)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: fexu-pages-preview
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Build and deploy unreleased manual
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          persist-credentials: false
+      - name: Configure Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.12"
+      - name: Install documentation dependencies
+        run: python -m pip install -r requirements-docs.txt
+      - name: Audit documentation
+        run: python scripts/audit-documentation.py
+      - name: Build preview documentation
+        run: mkdocs build --strict
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: site
+      - name: Deploy development preview
+        id: deployment
+        uses: actions/deploy-pages@v4
+      - name: Explain publication status
+        run: |
+          echo "Deployed the current unreleased `main` manual as a DEVELOPMENT PREVIEW." >> "$GITHUB_STEP_SUMMARY"
+          echo "This did not publish crates, create a release tag, or set a stable release alias." >> "$GITHUB_STEP_SUMMARY"
