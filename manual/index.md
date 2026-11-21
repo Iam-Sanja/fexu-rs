@@ -18,6 +18,7 @@ This manual documents the development-source behavior being prepared for **Fexu 
 | Project settings | [Settings and environment](reference/settings.md) |
 | Models | [Models and fields](topics/models.md) |
 | Database | [SQLite and PostgreSQL](topics/database.md) |
+| ORM | [Queries, filters and pagination](topics/orm.md) |
 | Schema changes | [Migrations](topics/migrations.md) |
 | HTTP | [Views and URL routing](topics/views-and-urls.md) |
 | HTML | [Templates](topics/templates.md) |

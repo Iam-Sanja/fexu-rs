@@ -29,4 +29,6 @@ Do not assume that custom SQLite DDL and PostgreSQL DDL are identical; generate/
 
 Model registration exposes the generated REST endpoints and Rust-side model APIs according to its declaration. Permissions are enforced according to the model and app registration, not automatically granted to anonymous users.
 
+For concrete query-builder examples, see [ORM queries and pagination](orm.md).
+
 For a guided creation of the Book model and migration see [the first-project tutorial](../tutorial/first-project.md); for evolving database schema see [migrations](migrations.md).

@@ -57,6 +57,7 @@ nav:
   - Topics:
       - Models: topics/models.md
       - SQLite and PostgreSQL: topics/database.md
+      - ORM queries and pagination: topics/orm.md
       - Migrations: topics/migrations.md
       - Views and URL routing: topics/views-and-urls.md
       - Templates: topics/templates.md
