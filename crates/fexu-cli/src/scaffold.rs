@@ -74,7 +74,10 @@ pub fn new_project(
     write(&destination.join("src/apps.rs"), APPS_REGISTRY)?;
     write(
         &destination.join("src/project/mod.rs"),
-        &project_source(template),
+        &project_source(
+            template,
+            matches!(source, FexuSource::Registry) && PUBLISHED_FEXU_VERSION == "0.1.2",
+        ),
     )?;
     write(&destination.join("src/project/settings.rs"), settings_rs())?;
     write(&destination.join("src/project/urls.rs"), URLS_SOURCE)?;
@@ -662,7 +665,12 @@ pub async fn execute() -> u8 {
 }
 "#;
 
-fn project_source(template: Template) -> String {
+fn project_source(template: Template, legacy_database_resolver: bool) -> String {
+    let database_resolver = if legacy_database_resolver {
+        "settings.resolved_database_url()"
+    } else {
+        "settings.resolved_database_url()?"
+    };
     let admin = if matches!(template, Template::Fullstack) {
         r#"let admin = fexu::admin::AdminRegistry::new().with_branding(fexu::admin::AdminBranding {
         site_title: settings.site_title.clone(), site_header: settings.site_header.clone(),
@@ -694,7 +702,7 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {{
     }}
     let settings = settings::load()?;
     tracing_subscriber::fmt().with_env_filter("info").init();
-    let database_url = settings.resolved_database_url()?;
+    let database_url = {database_resolver};
     let db = fexu::db::connect(&database_url).await?;
     let address = settings.bind_address()?;
     let mut auth_config = fexu::auth::AuthConfig::from_env();
@@ -737,9 +745,11 @@ mod tests {
 
     #[test]
     fn generated_runtime_uses_the_shared_database_resolver() {
-        let source = super::project_source(super::Template::Api);
+        let source = super::project_source(super::Template::Api, false);
         assert!(source.contains("settings.resolved_database_url()?"));
         assert!(source.contains("fexu::db::connect(&database_url)"));
+        let published = super::project_source(super::Template::Api, true);
+        assert!(published.contains("let database_url = settings.resolved_database_url();"));
     }
 
     #[test]
