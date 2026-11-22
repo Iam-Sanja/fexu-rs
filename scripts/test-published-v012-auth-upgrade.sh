@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # Real published v0.1.2 producer and development source consumer.
 set -euo pipefail
-repo="$(cd "$(dirname "\${BASH_SOURCE[0]}")/.." && pwd)"
+repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 chmod 700 "$work"
 export CARGO_TARGET_DIR="$repo/target"
-export CARGO_BUILD_JOBS="\${CARGO_BUILD_JOBS:-2}"
+export CARGO_BUILD_JOBS="${CARGO_BUILD_JOBS:-2}"
 export DATABASE_URL="sqlite://$work/legacy.sqlite3?mode=rwc"
 export FEXU_TEST_FIXTURE="$work/fixture"
 export FEXU_TEST_PASSWORD="$(python3 -c 'import secrets; print("V012pass!" + secrets.token_hex(20))')"
