@@ -31,6 +31,17 @@ test -f apps/catalog/urls.rs
 # A fresh project must be able to compile its registered app and schema.
 cargo check --all-targets
 "$cli" migrate make initial --app catalog
+
+# The planner is intentionally read-only and will not create a missing SQLite
+# database. Create only this disposable test fixture before planning.
+python3 - "$work/bookstore.sqlite3" <<'PY'
+import sqlite3
+import sys
+
+with sqlite3.connect(sys.argv[1]):
+    pass
+PY
+
 "$cli" migrate plan
 "$cli" migrate up
 "$cli" migrate status
