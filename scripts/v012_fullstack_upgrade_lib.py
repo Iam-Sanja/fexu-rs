@@ -103,7 +103,7 @@ def sqlite_snapshot(db_path: Path) -> AuthSnapshot:
         sessions = [
             row[0]
             for row in conn.execute(
-                'SELECT "token" FROM "_fexu_sessions" ORDER BY "created_at"'
+                'SELECT "token_hash" FROM "_fexu_sessions" ORDER BY "created_at"'
             )
         ]
         migrations = [
@@ -172,7 +172,7 @@ def postgres_snapshot(database_url: str) -> AuthSnapshot:
         row[0]
         for row in psql_query(
             database_url,
-            'SELECT "token" FROM "_fexu_sessions" ORDER BY "created_at"',
+            'SELECT "token_hash" FROM "_fexu_sessions" ORDER BY "created_at"',
         )
     ]
     migrations = [
