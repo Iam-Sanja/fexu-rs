@@ -183,7 +183,7 @@ def postgres_snapshot(database_url: str) -> AuthSnapshot:
         )
     ]
     users = [
-        (row[0], int(row[1]), int(row[2]), int(row[3]))
+        (row[0], *(1 if value == "t" else 0 if value == "f" else int(value) for value in row[1:4]))
         for row in psql_query(
             database_url,
             'SELECT "email", "is_active", "is_staff", "is_superuser" FROM "_fexu_users" ORDER BY "email"',
