@@ -7,7 +7,7 @@
 ## Version meanings and current status
 
 - **Published:** `v0.1.2` was released on 2026-11-15. All 16 publishable Fexu workspace crates have a `0.1.2` crates.io release. The release remains **experimental and not production-ready**. See [README](https://github.com/Iam-Sanja/fexu-rs/blob/main/README.md) and [the v0.1.2 release](https://github.com/Iam-Sanja/fexu-rs/releases/tag/v0.1.2).
-- **Development:** `main` declares **unpublished `0.2.0-dev.1`** and includes **unreleased** changes after `v0.1.2`. Use a source checkout to exercise those changes; do not advertise them as shipped in `0.1.2`.
+- **Development:** `main` declares **unpublished `0.2.0`** and includes **unreleased** changes after `v0.1.2`. Use a source checkout to exercise those changes; do not advertise them as shipped in `0.1.2`.
 - **Proposed next release:** `v0.2.0` — tested developer preview and a coherent consumer experience.
 - **Proposed subsequent release:** `v0.3.0` — optional production-oriented infrastructure foundations. Neither version has a committed release date or a production-readiness guarantee.
 - **Historical labels:** changelog entries and old engineering notes such as `v0.13` / `v0.28` are *internal feature milestones*, **not** Cargo versions or crates.io releases.
@@ -29,7 +29,7 @@ These commits are on `main` after the previous review and after the published `0
 - PRs #198–#226 have been merged since the previous review, including [#222](https://github.com/Iam-Sanja/fexu-rs/pull/222) published v0.1.2 SQLite consumer test, [#223](https://github.com/Iam-Sanja/fexu-rs/pull/223) app-aware migration planning, [#224](https://github.com/Iam-Sanja/fexu-rs/pull/224) PostgreSQL regression and [#226](https://github.com/Iam-Sanja/fexu-rs/pull/226) the non-publishing preflight.
 - [#83](https://github.com/Iam-Sanja/fexu-rs/issues/83), [#117](https://github.com/Iam-Sanja/fexu-rs/issues/117), [#143](https://github.com/Iam-Sanja/fexu-rs/issues/143) and [#144](https://github.com/Iam-Sanja/fexu-rs/issues/144) are closed with recorded acceptance; that is not release authorization. Candidate regression and compatibility checks remain mandatory.
 - [#92](https://github.com/Iam-Sanja/fexu-rs/issues/92) and [#93](https://github.com/Iam-Sanja/fexu-rs/issues/93) still require a published-to-candidate consumer upgrade including persisted accounts and sessions on SQLite/PostgreSQL, documentation/security sign-off and release approval.
-- All 16 crates target the stable `0.2.0` release together. The workspace on `main` now declares **unpublished `0.2.0-dev.1`** (PR #243), while crates.io remains at published `0.1.2`; the stable release bump still requires a separate approved candidate PR.
+- All 16 crates target the stable `0.2.0` release together. The workspace on `main` now declares **unpublished `0.2.0`** (PR #243), while crates.io remains at published `0.1.2`; the stable release bump still requires a separate approved candidate PR.
 
 ## What is available in the development source
 

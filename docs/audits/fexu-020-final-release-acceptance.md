@@ -1,42 +1,42 @@
 # Fexu 0.2.0 final release acceptance
 
 **Repository:** [Iam-Sanja/fexu-rs](https://github.com/Iam-Sanja/fexu-rs)  
-**Basis-SHA (`origin/main`):** `bb113962140710dc5d8ca3fbb296da0cf4b1a3e4`  
-**Acceptance-Branch:** `release/020-final-acceptance`  
-**Workspace-Label:** `0.2.0-dev.1` (kein crates.io-`0.2.0`)  
+**Acceptance-Basis:** `release/020-final-acceptance` @ `d76dab7c93739f50cfea7fb49f872a3eef16e923` (14/14 CI grün)  
+**Versions-Kandidat:** Branch `cursor/release-020-version` (nur `0.2.0`-Bump)  
+**Workspace-Label:** `0.2.0` (Kandidat, **nicht** auf crates.io veröffentlicht)  
 **Laufzeit:** 2026-11-22, Windows 10.0.26300, rustc/cargo 1.100.0  
-**Isoliertes Worktree:** `D:\04_Projekte_Arbeit\Projekte\Fexu\release-acceptance-020`  
-**TestShop / Haupt-Checkout:** unangetastet (nur lesender Kontext); `main` @ `bb11396` mit lokalen PR-Template-Edits unverändert.
+**Isoliertes Worktree (Version):** `D:\04_Projekte_Arbeit\Projekte\Fexu\release-version-020`  
+**TestShop / Haupt-Checkout:** unangetastet.
 
 ## Gate-Tabelle
 
 | Phase | Gate | Status | Evidenz |
 |---|---|---|---|
-| 0 | `origin/main` @ erwarteter SHA | **PASS** | `bb113962140710dc5d8ca3fbb296da0cf4b1a3e4` |
-| 4 | Published 0.1.2 **API** CLI → Checkout (SQLite) | **PASS** | Bestehend `scripts/test-published-v012-upgrade.sh` in CI |
+| 0 | Acceptance-Branch CI grün | **PASS** | `d76dab7` — 14/14 Checks inkl. PostgreSQL auth + Fullstack |
+| 4 | Published 0.1.2 **API** CLI → Checkout (SQLite) | **PASS** | `scripts/test-published-v012-upgrade.sh` in CI @ `d76dab7` |
 | 4 | Published 0.1.2 Auth-Binär-Upgrade SQLite | **PASS** | `scripts/test-published-v012-auth-upgrade.sh` + CI |
-| 4 | Published 0.1.2 Auth-Binär-Upgrade PostgreSQL | **PASS** | `scripts/test-published-v012-postgres-auth-upgrade.sh` + CI-Job |
-| 4 | Published 0.1.2 **Fullstack**-App → Checkout (SQLite, HTTP, Rollen, Daten) | **PASS** | Neu: `scripts/test-published-v012-fullstack-upgrade.sh` — lokal Windows Git-Bash Exit 0, ~3 min; CI-Step in diesem Branch |
-| 4 | Published 0.1.2 Fullstack → Checkout **PostgreSQL 16** (eigene DB) | **BLOCKED** (lokal) / **CI pending** | Neu: `scripts/test-published-v012-fullstack-postgres-upgrade.sh` + Erweiterung `postgres_auth_upgrade` in `.github/workflows/ci.yml` (PostgreSQL-16-Service, kein TestShop-`DATABASE_URL`). Lokal Windows 10.0.26300: **BLOCKED** — weder `docker` noch `psql` im PATH (Exit 3); Evidenz läuft über CI auf Push |
-| 4 | Fehlgeschlagene Migration ohne Datenverlust (Fullstack-Skript) | **PASS** | `failed-migration` Hilfe in Fullstack-Skript; Framework: `schema_evolution.rs` in CI |
-| 5 | HTTP Admin vor/nach Upgrade (Login, Session, CSRF, Bad Password) | **PASS** | `v012_fullstack_upgrade_lib.py` Matrix im Fullstack-Skript |
-| 5 | Playwright/Myshop-Browser-Matrix (kein Upgrade) | **PASS** | Bestehender `tests/browser` CI-Job @ `bb11396` |
-| 5 | Vollständige Admin-CRUD/Paging-Matrix auf Upgrade-App | **NOT TESTED** | Nur Kern-HTTP; erweiterbar über Playwright auf Disposable-App |
+| 4 | Published 0.1.2 Auth-Binär-Upgrade PostgreSQL | **PASS** | `scripts/test-published-v012-postgres-auth-upgrade.sh` + CI |
+| 4 | Published 0.1.2 **Fullstack**-App → Checkout (SQLite, HTTP, Rollen, Daten) | **PASS** | `scripts/test-published-v012-fullstack-upgrade.sh` — lokal Git-Bash + CI |
+| 4 | Published 0.1.2 Fullstack → Checkout **PostgreSQL 16** (eigene DB) | **PASS** (CI) / **BLOCKED** (lokal) | CI-Job „Published 0.1.2 PostgreSQL auth and fullstack upgrade“ @ `d76dab7` grün. Lokal Windows: weder `docker` noch `psql` im PATH (Skript Exit 3) |
+| 4 | Fehlgeschlagene Migration ohne Datenverlust (Fullstack-Skript) | **PASS** | `failed-migration` in Fullstack-Skripten; `schema_evolution.rs` in CI |
+| 5 | HTTP Admin vor/nach Upgrade (Login, Session, CSRF, Bad Password) | **PASS** | `v012_fullstack_upgrade_lib.py` Matrix |
+| 5 | Playwright/Myshop-Browser-Matrix (kein Upgrade) | **PASS** | CI `tests/browser` @ `d76dab7` |
+| 5 | Vollständige Admin-CRUD/Paging-Matrix auf Upgrade-App | **NOT TESTED** | Nur Kern-HTTP; optional Playwright auf Disposable-App |
 | 6 | Argon2 Reproducer debug 8×25 | **PASS** | 25/25 PASS, 0 AV |
 | 6 | Argon2 Reproducer debug 24×25 | **PASS** | 25/25 PASS, 0 AV |
 | 6 | Argon2 Reproducer release 8×25 | **PASS** | 25/25 PASS, 0 AV |
 | 6 | Argon2 Reproducer release 24×25 | **PASS** | 25/25 PASS, 0 AV |
 | 6 | `fexu-auth` Framework-Tests | **PASS** | `cargo test -p fexu-auth --lib`: 48 passed, 3 ignored (PostgreSQL) |
-| 6 | Historische 30/180 AV-Reproduktion | **NOT TESTED** | Kein 0xc0000005 in diesem Lauf; keine Behauptung „gefixt“ |
-| 7 | `cargo fmt --check` | **PASS** | Exit 0 |
-| 7 | `cargo clippy -D warnings` | **PASS** | Exit 0 (Manifest-Warnungen `fexu-contract`, kein Rust-Lint) |
-| 7 | `cargo test --workspace --locked` | **NOT TESTED** | Zeitbudget; letzter Audit #250 CI grün @ vorherigem SHA |
-| 7 | `cargo build/check --release --locked` | **PARTIAL** | `cargo build` debug OK; voller Release-Workspace nicht in diesem Lauf wiederholt |
-| 7 | MSRV 1.89 | **NOT TESTED** | CI-Job `msrv` auf Linux |
-| 7 | `cargo audit` | **PASS** (mit Follow-up) | 3× unmaintained `chrono`/`chrono-tz`/`chrono-tz-build`; keine neuen kritischen CVEs |
-| 9 | Version `0.2.0` / 16 Crates / Lockfile | **BLOCKED** | Bewusst nicht in diesem PR; separate PR nur nach grünen CI-Gates |
-| 9 | Publish-Preflight `publish-workspace.py` / `publish.yml` | **NOT TESTED** | Kein `0.2.0`-Bump autorisiert |
-| 9 | Maintainer-Sign-off / Tag / crates.io | **BLOCKED** | Außerhalb Scope |
+| 6 | Historische 30/180 AV-Reproduktion | **NOT TESTED** | Kein 0xc0000005 in dokumentierter Matrix; **keine** Behauptung „historischer Crash behoben“ |
+| 7 | `cargo fmt --check` | **PASS** | Lokal auf Versions-Worktree nach Bump |
+| 7 | `cargo clippy -D warnings` | **PASS** | CI @ `d76dab7` (Versions-PR muss erneut grün werden) |
+| 7 | `cargo test --workspace --locked` | **PASS** | CI @ `d76dab7` |
+| 7 | `cargo build/check --release --locked` | **PASS** | Release-Preflight-Workflow-Äquivalent in CI-Linux-Jobs @ `d76dab7`; Versions-PR CI ausstehend |
+| 7 | MSRV 1.89 | **PASS** | CI-Job `msrv` @ `d76dab7` |
+| 7 | `cargo audit` | **PASS** (mit Follow-up) | CI; 3× unmaintained `chrono`-Familie |
+| 9 | Version `0.2.0` / 16 Crates / Lockfile | **PASS** (lokal) | `scripts/publish-workspace.py --version 0.2.0 --plan`; `fexu-cli` `release_set`; Kandidat-PR `cursor/release-020-version` |
+| 9 | Publish-Preflight (`publish-workspace.py` / `publish.yml` **ohne** Publish) | **PARTIAL** | Lokal: `--plan` + `cargo fmt --check` PASS auf Versions-SHA; voller GHA-Preflight (`release-preflight.yml`) und `cargo test/clippy/release` auf **Versions-SHA** noch nicht abgeschlossen |
+| 9 | Maintainer-Sign-off / Tag / crates.io | **BLOCKED** | Bewusst außerhalb Scope; kein Merge/Tag/Publish |
 
 ### Argon2-Matrix (dieser Lauf)
 
@@ -48,30 +48,32 @@
 | release-24 | `fexu-auth-crash-minimal.exe 24 8388608` | 25 | 25 | 0 |
 | **Summe** | | **100** | **100** | **0** |
 
-Stack: 8 388 608 Byte; Argon2 **0.5.3**; rustc **1.100.0**.
+Stack: 8 388 608 Byte; Argon2 **0.5.3** (Parameter unverändert); rustc **1.100.0**.
 
-## Änderungen in diesem Acceptance-PR
+## Preflight (Versions-SHA, ohne Publish)
 
-- `scripts/test-published-v012-fullstack-upgrade.sh` — Clean-room Fullstack 0.1.2 → source consumer (SQLite)
-- `scripts/test-published-v012-fullstack-postgres-upgrade.sh` — Fullstack 0.1.2 → source auf disposable PostgreSQL 16 (Docker-Fallback oder `FEXU_POSTGRES_ADMIN`)
-- `scripts/v012_fullstack_upgrade_lib.py` / `v012_fullstack_upgrade_runner.py` — HTTP, Snapshots (SQLite/PostgreSQL), Migration-Failure-Check
-- `scripts/run-windows-argon2-matrix.ps1` — dokumentierte Windows-Matrix
-- `.github/workflows/ci.yml` — neuer Linux-Step Fullstack-SQLite-Upgrade
+| Schritt | Ergebnis |
+|---|---|
+| `python3 scripts/publish-workspace.py --version 0.2.0 --plan` | **PASS** — 16 Crates in Abhängigkeitsreihenfolge |
+| `cargo fmt --all -- --check` | **PASS** |
+| `cargo metadata` — 16× Version `0.2.0` | **PASS** |
+| `publish.yml`-Gates `clippy` / `test --workspace` / `release` build | **Ausstehend** auf Versions-PR-CI bzw. manuelles `workflow_dispatch` |
 
-Kein Version-Bump, kein Tag, kein Publish.
+## Änderungen Versions-PR
+
+- Workspace + 16 publishable Crates `0.2.0-dev.1` → `0.2.0`; `Cargo.lock`; `PUBLISHED_FEXU_VERSION` / Generator-Tests `=0.2.0`
+- `CHANGELOG.md`, README, Manual/Docs-Kandidatversionen
+- Kein Argon2-Parameter-Change; kein Tag; kein crates.io-Upload
 
 ## Verbleibende Blocker
 
-1. **PostgreSQL Fullstack-Consumer-Upgrade — CI-Evidenz** — Skript/Job eingefügt; PASS erst nach grünem `postgres_auth_upgrade`-Fullstack-Step.
-2. **Frischer CI-Grünlauf** auf dem Acceptance-Commit (Fullstack-SQLite + Fullstack-PostgreSQL im erweiterten Job, ~90 min Job-Limit).
-3. **Vollständiger Workspace-`cargo test --workspace`** auf finalem SHA (Windows-Symlink/Developer-Mode-Risiko).
-4. **Phase 9** — `0.2.0`-Versions-PR, Lockfile, Changelog, Publish-Preflight, Maintainer-Freigabe.
-5. **Erweiterte Admin-Browser-Matrix** auf der Upgrade-App (optional Playwright).
+1. **CI auf Versions-Kandidat-SHA** (inkl. erneuter 0.1.2-Upgrade-Regressionen mit Generator `=0.2.0`-Pin).
+2. **GHA Release candidate preflight** (`release-preflight.yml`, Input `0.2.0`) auf finalem Versions-SHA.
+3. **Maintainer-Sign-off**, Tag, GitHub Release, crates.io — nicht autorisiert.
+4. **Optionale Gates:** Admin-CRUD auf Upgrade-App; historische 30/180 AV-Reproduktion.
 
 ## Urteil
 
 ### **NO-GO**
 
-Evidenz für den kritischen Fullstack-SQLite-Upgrade-Pfad und die Windows-Argon2-Matrix (100/0 AV) ist in diesem Lauf **neu positiv**. PostgreSQL-Fullstack ist implementiert; lokale Ausführung ohne Docker/`psql` ist **BLOCKED**, CI-Evidenz steht noch aus. Crates.io-`0.2.0`, Publish-Preflight und Maintainer-Sign-off fehlen weiterhin.
-
-**Nächste konkrete Schritte:** CI-Grün auf neuem SHA abwarten (Fullstack-PostgreSQL) → Workspace-Test/MSRV auf Kandidaten-SHA → separater `0.2.0`-Versions-PR → Publish-Preflight → Sign-off (kein Merge/Tag/Publish vor vollständiger Gate-Evidenz).
+Alle **mandatory Consumer-Upgrade-Gates** (SQLite/PostgreSQL Fullstack inkl. CI @ `d76dab7`) und der **konsistente 0.2.0-Versionsgraph** sind dokumentiert. **TECHNICAL GO** ist noch nicht gerechtfertigt: Maintainer-Sign-off fehlt, Publish-Preflight auf dem Versions-SHA ist nur teilweise lokal belegt, optionale/erweiterte Gates sind offen, und **kein** Merge/Tag/Publish ist autorisiert.

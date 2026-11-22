@@ -1,7 +1,7 @@
 # Upgrade from Fexu 0.1.2 to the 0.2.0 development source
 
 !!! warning "Development instructions — no 0.2.0 release yet"
-    The latest published Fexu packages are **0.1.2**. The `main` workspace currently declares **0.2.0-dev.1**, which is **not** available as a stable crates.io release. This guide documents *pre-release source compatibility work*, not an approved production upgrade or a guaranteed migration path.
+    The latest published Fexu packages are **0.1.2**. The `main` workspace currently declares **0.2.0**, which is **not** available as a stable crates.io release. This guide documents *pre-release source compatibility work*, not an approved production upgrade or a guaranteed migration path.
 
 ## Before you upgrade
 

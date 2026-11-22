@@ -4,7 +4,7 @@
 
 ## Publication status
 
-The code and documentation on `main` describe **unreleased development**, unless a page explicitly identifies a versioned published contract. As of 2026-11-20, **0.1.2** is the latest published Cargo workspace release; **`main` declares `0.2.0-dev.1`**, while **0.2.0 is planned, not published**. The CLI generator keeps its registry default at published 0.1.2 until the coordinated release pin is updated. README crate badges show actual crates.io releases. Never rewrite historical references to 0.1.2 as if they were 0.2.0.
+The code and documentation on `main` describe **unreleased development**, unless a page explicitly identifies a versioned published contract. As of 2026-11-20, **0.1.2** is the latest published Cargo workspace release; **`main` declares `0.2.0`**, while **0.2.0 is planned, not published**. The CLI generator keeps its registry default at published 0.1.2 until the coordinated release pin is updated. README crate badges show actual crates.io releases. Never rewrite historical references to 0.1.2 as if they were 0.2.0.
 
 The public user manual uses Markdown in `manual/` and builds with MkDocs (`mkdocs.yml` sets `docs_dir: manual`). Engineering notes stay under `docs/`. `mike` captures an immutable, version-specific rendered site on a `gh-pages` branch. This can give readers paths such as `/fexu-rs/0.2.0/` and `/fexu-rs/stable/`, with a version selector. Creating a version or changing the `stable` alias is a **separate release action**, never a side effect of merging a pull request.
 

@@ -1,6 +1,6 @@
 # Fexu 0.2.0 release candidate: controlled preflight
 
-Issue [#92](https://github.com/Iam-Sanja/fexu-rs/issues/92) is the publication tracker; [#93](https://github.com/Iam-Sanja/fexu-rs/issues/93) covers independent acceptance. **This document is a proposed gate, not a release authorization.** The currently published crates.io version is **0.1.2**. The unpublished `main` checkout declares **`0.2.0-dev.1`**, not an approved `0.2.0` release. Do not call it released 0.2.0.
+Issue [#92](https://github.com/Iam-Sanja/fexu-rs/issues/92) is the publication tracker; [#93](https://github.com/Iam-Sanja/fexu-rs/issues/93) covers independent acceptance. **This document is a proposed gate, not a release authorization.** The currently published crates.io version is **0.1.2**. The unpublished `main` checkout declares **`0.2.0`**, not an approved `0.2.0` release. Do not call it released 0.2.0.
 
 ## Release contract
 
@@ -11,7 +11,7 @@ Issue [#92](https://github.com/Iam-Sanja/fexu-rs/issues/92) is the publication t
 
 ## Candidate workflow (no publishing)
 
-1. Create a focused final release PR that promotes `0.2.0-dev.1` to `0.2.0` across the workspace version and *all* internal crate dependency requirements, updates `Cargo.lock`, the CLI generator pins, generated examples and changelog. Review the version diff separately from feature development.
+1. Create a focused final release PR that promotes the workspace from the last dev marker to **`0.2.0`** across *all* internal crate dependency requirements, updates `Cargo.lock`, the CLI generator pins, generated examples and changelog. Review the version diff separately from feature development.
 2. On that candidate branch, manually run **Release candidate preflight (no publishing)** from GitHub Actions with the exact Cargo version (e.g. `0.2.0`). The workflow validates dependency order and package metadata, checks formatting/lints/tests, builds Linux release binaries, and lists the actual packaged files for all 16 crates. No crates.io token, tag or GitHub Release is used.
 3. Require the regular **10 green checks** on the release PR, including PostgreSQL, Windows, browser and Cargo audit. Verify the final candidate commit exactly matches the commit that received those checks.
 4. Run independent clean-room generated consumer upgrades from the **published 0.1.2 CLI and crates** to the candidate checkout on both SQLite and disposable PostgreSQL. Exercise real prior application migration files and rows, successful *and rejected* schema evolutions, and preserved existing auth accounts, passwords, sessions and admin access. Assert no unnoticed history/row changes from read-only commands. Current `scripts/test-published-v012-upgrade.sh` covers the SQLite CLI/source/migration side, and `scripts/test-published-v012-auth-upgrade.sh` validates historical auth/session continuity on SQLite. The new `scripts/test-published-v012-postgres-auth-upgrade.sh` exercises published-to-source auth/session continuity on isolated PostgreSQL, but it must pass CI and does **not** yet cover a full generated PostgreSQL project, HTTP admin/browser behavior, or the exact final candidate.

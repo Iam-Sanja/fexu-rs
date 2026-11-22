@@ -76,7 +76,7 @@ pub fn new_project(
         &destination.join("src/project/mod.rs"),
         &project_source(
             template,
-            matches!(source, FexuSource::Registry) && PUBLISHED_FEXU_VERSION == "0.1.2",
+            matches!(source, FexuSource::Registry) && PUBLISHED_FEXU_VERSION == "0.2.0",
         ),
     )?;
     write(&destination.join("src/project/settings.rs"), settings_rs())?;
@@ -247,7 +247,7 @@ pub fn validate_project_name(name: &str) -> Result<(), String> {
 
 /// crates.io version of the `fexu` library written into generated projects.
 /// This is not `fexu-cli`'s own package version.
-pub(crate) const PUBLISHED_FEXU_VERSION: &str = "0.1.2";
+pub(crate) const PUBLISHED_FEXU_VERSION: &str = "0.2.0";
 
 #[derive(Debug)]
 enum FexuSource {
