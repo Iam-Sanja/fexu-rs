@@ -1132,27 +1132,35 @@ mod tests {
         std::fs::create_dir(&outside).unwrap();
         std::fs::write(outside.join("secret.txt"), b"secret").unwrap();
         let linked_owner = Uuid::new_v4();
-        link_dir(&outside, &root.join(linked_owner.to_string()));
-        assert!(storage
-            .save(linked_owner, "notes.txt", b"leaked")
-            .await
-            .is_err());
-        assert_eq!(
-            std::fs::read(outside.join("secret.txt")).unwrap(),
-            b"secret"
-        );
-        assert_eq!(std::fs::read_dir(&outside).unwrap().count(), 1);
+        if link_created_or_windows_privilege_missing(link_dir(
+            &outside,
+            &root.join(linked_owner.to_string()),
+        )) {
+            assert!(storage
+                .save(linked_owner, "notes.txt", b"leaked")
+                .await
+                .is_err());
+            assert_eq!(
+                std::fs::read(outside.join("secret.txt")).unwrap(),
+                b"secret"
+            );
+            assert_eq!(std::fs::read_dir(&outside).unwrap().count(), 1);
 
-        let data = root.join(owner.to_string()).join(stored.id.to_string());
-        std::fs::remove_file(&data).unwrap();
-        link_file(&outside.join("secret.txt"), &data);
-        assert!(storage.read(owner, stored.id).await.is_err());
-        storage.cleanup_orphans(0).unwrap();
-        assert_eq!(
-            std::fs::read(outside.join("secret.txt")).unwrap(),
-            b"secret"
-        );
-        assert_eq!(storage.purge_owner(linked_owner).unwrap(), 1);
+            let data = root.join(owner.to_string()).join(stored.id.to_string());
+            std::fs::remove_file(&data).unwrap();
+            if link_created_or_windows_privilege_missing(link_file(
+                &outside.join("secret.txt"),
+                &data,
+            )) {
+                assert!(storage.read(owner, stored.id).await.is_err());
+                storage.cleanup_orphans(0).unwrap();
+                assert_eq!(
+                    std::fs::read(outside.join("secret.txt")).unwrap(),
+                    b"secret"
+                );
+            }
+            assert_eq!(storage.purge_owner(linked_owner).unwrap(), 1);
+        }
         assert!(outside.join("secret.txt").is_file());
         let _ = std::fs::remove_dir_all(&root);
         let _ = std::fs::remove_dir_all(&outside);
@@ -1277,17 +1285,39 @@ mod tests {
         let _ = std::fs::remove_dir_all(root);
     }
 
-    fn link_dir(target: &std::path::Path, link: &std::path::Path) {
-        #[cfg(windows)]
-        std::os::windows::fs::symlink_dir(target, link).expect("directory symlink");
-        #[cfg(unix)]
-        std::os::unix::fs::symlink(target, link).expect("directory symlink");
+    // Windows without Developer Mode or SeCreateSymbolicLinkPrivilege returns
+    // ERROR_PRIVILEGE_NOT_HELD (1314). Only that specific environment constraint
+    // may skip the symlink assertions; all other failures are test failures.
+    fn link_created_or_windows_privilege_missing(result: std::io::Result<()>) -> bool {
+        match result {
+            Ok(()) => true,
+            #[cfg(windows)]
+            Err(error) if error.raw_os_error() == Some(1314) => false,
+            Err(error) => panic!("unexpected symlink creation failure: {error}"),
+        }
     }
 
-    fn link_file(target: &std::path::Path, link: &std::path::Path) {
+    fn link_dir(target: &std::path::Path, link: &std::path::Path) -> std::io::Result<()> {
         #[cfg(windows)]
-        std::os::windows::fs::symlink_file(target, link).expect("file symlink");
+        return std::os::windows::fs::symlink_dir(target, link);
         #[cfg(unix)]
-        std::os::unix::fs::symlink(target, link).expect("file symlink");
+        return std::os::unix::fs::symlink(target, link);
+        #[cfg(not(any(unix, windows)))]
+        Err(std::io::Error::new(
+            std::io::ErrorKind::Unsupported,
+            "symlinks are not supported on this platform",
+        ))
+    }
+
+    fn link_file(target: &std::path::Path, link: &std::path::Path) -> std::io::Result<()> {
+        #[cfg(windows)]
+        return std::os::windows::fs::symlink_file(target, link);
+        #[cfg(unix)]
+        return std::os::unix::fs::symlink(target, link);
+        #[cfg(not(any(unix, windows)))]
+        Err(std::io::Error::new(
+            std::io::ErrorKind::Unsupported,
+            "symlinks are not supported on this platform",
+        ))
     }
 }
