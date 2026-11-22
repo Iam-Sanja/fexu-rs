@@ -49,8 +49,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let password = std::env::var("FEXU_TEST_PASSWORD")?;
     let email = "existing-admin@example.test";
     let user = auth.create_user(email, &password, true, true).await?;
-    auth.grant_permission("release-operator", "reports.read").await?;
-    auth.assign_role(email, "release-operator").await?;
+    auth.grant_permission("release_operator", "reports.read").await?;
+    auth.assign_role(email, "release_operator").await?;
     let session = auth.login(email, &password, "published-v012").await?;
     let authenticated = auth.authenticate_token(&session.token).await?;
     assert_eq!(authenticated.id, user.id);
