@@ -26,22 +26,34 @@ chmod 700 "$work"
 
 old_root="$work/published-cli"
 new_cli="$repo/target/debug/fexu"
+[[ -x "$new_cli" ]] || new_cli="$repo/target/debug/fexu.exe"
 mkdir -p "$old_root"
-if [[ ! -x "$new_cli" ]]; then
+if [[ ! -x "$new_cli" && ! -f "$new_cli" ]]; then
   echo "Build the current CLI first: cargo build -p fexu-cli --bin fexu" >&2
   exit 1
 fi
 
-cache_cli="$repo/target/v012-cli/bin/fexu"
-[[ -x "$cache_cli" ]] || cache_cli="$repo/target/v012-cli/bin/fexu.exe"
+v012_root="$repo/target/v012-cli"
+resolve_v012_cli() {
+  if [[ -x "$v012_root/bin/fexu" ]]; then
+    printf '%s\n' "$v012_root/bin/fexu"
+  elif [[ -f "$v012_root/bin/fexu.exe" ]]; then
+    printf '%s\n' "$v012_root/bin/fexu.exe"
+  else
+    return 1
+  fi
+}
+
 if [[ -n "${FEXU_V012_CLI_PATH:-}" && ( -x "${FEXU_V012_CLI_PATH}" || -f "${FEXU_V012_CLI_PATH}" ) ]]; then
   old_cli="${FEXU_V012_CLI_PATH}"
-elif [[ -f "$cache_cli" ]]; then
-  old_cli="$cache_cli"
+elif old_cli="$(resolve_v012_cli)"; then
+  :
 else
-  cargo install --locked --version 0.1.2 --root "$repo/target/v012-cli" fexu-cli
-  old_cli="$cache_cli"
-  [[ -f "$old_cli" ]] || old_cli="$repo/target/v012-cli/bin/fexu.exe"
+  cargo install --locked --version 0.1.2 --root "$v012_root" fexu-cli
+  old_cli="$(resolve_v012_cli)" || {
+    echo "published fexu-cli 0.1.2 install did not produce bin/fexu or bin/fexu.exe" >&2
+    exit 1
+  }
 fi
 "$old_cli" --version | grep -F '0.1.2'
 
