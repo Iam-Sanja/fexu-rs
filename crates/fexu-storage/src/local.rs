@@ -1132,7 +1132,10 @@ mod tests {
         std::fs::create_dir(&outside).unwrap();
         std::fs::write(outside.join("secret.txt"), b"secret").unwrap();
         let linked_owner = Uuid::new_v4();
-        if link_dir(&outside, &root.join(linked_owner.to_string())).is_ok() {
+        if link_created_or_windows_privilege_missing(link_dir(
+            &outside,
+            &root.join(linked_owner.to_string()),
+        )) {
             assert!(storage
                 .save(linked_owner, "notes.txt", b"leaked")
                 .await
@@ -1145,7 +1148,10 @@ mod tests {
 
             let data = root.join(owner.to_string()).join(stored.id.to_string());
             std::fs::remove_file(&data).unwrap();
-            if link_file(&outside.join("secret.txt"), &data).is_ok() {
+            if link_created_or_windows_privilege_missing(link_file(
+                &outside.join("secret.txt"),
+                &data,
+            )) {
                 assert!(storage.read(owner, stored.id).await.is_err());
                 storage.cleanup_orphans(0).unwrap();
                 assert_eq!(
@@ -1277,6 +1283,18 @@ mod tests {
             Err(super::StorageError::Forbidden)
         ));
         let _ = std::fs::remove_dir_all(root);
+    }
+
+    // Windows without Developer Mode or SeCreateSymbolicLinkPrivilege returns
+    // ERROR_PRIVILEGE_NOT_HELD (1314). Only that specific environment constraint
+    // may skip the symlink assertions; all other failures are test failures.
+    fn link_created_or_windows_privilege_missing(result: std::io::Result<()>) -> bool {
+        match result {
+            Ok(()) => true,
+            #[cfg(windows)]
+            Err(error) if error.raw_os_error() == Some(1314) => false,
+            Err(error) => panic!("unexpected symlink creation failure: {error}"),
+        }
     }
 
     fn link_dir(target: &std::path::Path, link: &std::path::Path) -> std::io::Result<()> {
