@@ -28,7 +28,7 @@ Issue [#92](https://github.com/Iam-Sanja/fexu-rs/issues/92) is the publication t
 | Historical migration artifact -> checkout (SQLite + PostgreSQL) | `crates/fexu-migrations/tests/schema_evolution.rs` | Existing, not external sessions |
 | Published 0.1.2 consumer -> 0.2.0 (PostgreSQL) | Not yet established | **Blocked** |
 | Persisted auth/admin identity, role and session continuity across reconnect (current migrations) | `crates/fexu-auth/src/session_upgrade_tests.rs` (SQLite and disposable PostgreSQL) | Required CI regression; **not a historical binary upgrade** |
-| Existing user/admin login and session continuity across actual published 0.1.2 -> candidate upgrade | Separate old/new consumer binaries not yet exercised | **Blocked** |
+| Existing user/admin login and session continuity across actual published 0.1.2 -> candidate upgrade | `scripts/test-published-v012-auth-upgrade.sh`: separate published auth/db 0.1.2 and development-source binaries on disposable SQLite; first CI pass pending | **Partial — PostgreSQL, final candidate and fullstack still blocked** |
 | Candidate version bump, locked dependencies, packaged contents | Manual preflight workflow | Not yet run for candidate |
 | Verified final changelog, install instructions, rollback plan | This document and release checklist | Maintainer sign-off pending |
 | Approved tag/GitHub Release, crates.io publication | Never authorized by this document | **Not started** |

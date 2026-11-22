@@ -57,6 +57,12 @@ jobs:
         shell: bash
         run: bash scripts/test-published-v012-upgrade.sh
 
+      - name: Published v0.1.2 auth/session binary upgrade (disposable SQLite)
+        if: runner.os == 'Linux'
+        timeout-minutes: 35
+        shell: bash
+        run: bash scripts/test-published-v012-auth-upgrade.sh
+
       - name: Bookstore manual fullstack smoke (development source)
         if: runner.os == 'Linux'
         timeout-minutes: 30
