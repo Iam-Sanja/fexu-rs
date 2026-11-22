@@ -2,15 +2,15 @@
 
 | Field | Value |
 |---|---|
-| **Starting SHA** (version branch tip) | `fa8c48ba18b6b32146c80c93acbb2788ab66ed1e` |
-| **Documentation review HEAD** | `518acb4af56c6be40d95a0657796085626de358b` |
-| **Documentation branch** | `cursor/release-020-docs` (rebased with `git rebase --onto origin/cursor/release-020-version 5548ac5`) |
+| **Starting SHA** (`main` after 0.2.0 version merge) | `a39d5e6082ecbde135ba260162c3cea016e022e6` |
+| **Documentation review HEAD** | `9884413440bcf8eb575b3aa9ccdc02e6b8fbd8d6` |
+| **Documentation branch** | `cursor/release-020-docs` (rebased onto `origin/main` @ `a39d5e6`) |
 | **Worktree** | `D:\04_Projekte_Arbeit\Projekte\Fexu\release-docs-020` |
-| **Release stack** | [PR #251](https://github.com/Iam-Sanja/fexu-rs/pull/251) **merged** to `main`; [PR #252](https://github.com/Iam-Sanja/fexu-rs/pull/252) **open** → `main`, head `cursor/release-020-version` @ `fa8c48b`; [PR #254](https://github.com/Iam-Sanja/fexu-rs/pull/254) **open** → `cursor/release-020-version`, head this branch |
+| **Release stack** | [PR #251](https://github.com/Iam-Sanja/fexu-rs/pull/251) **merged**; [PR #252](https://github.com/Iam-Sanja/fexu-rs/pull/252) **merged** (squash → `a39d5e6`); [PR #254](https://github.com/Iam-Sanja/fexu-rs/pull/254) **open** → `main`, head this branch |
 | **OS** | Windows 10.0.26300 |
 | **rustc** | 1.100.0 (0ef1bc386 2026-11-09) |
 | **cargo** | 1.100.0 (3acc79c0c 2026-11-05) |
-| **Built-on commits** | Version `fa8c48ba18b6b32146c80c93acbb2788ab66ed1e`; acceptance in `main` via #251 (`c0b7fa1`); three docs commits on top of `fa8c48b` |
+| **Built-on commits** | `main` @ `a39d5e6`; four documentation commits on `cursor/release-020-docs` |
 
 **Argon2 maintainer decision (fixed wording):** Historical Windows Argon2 access violation not reproduced after OS reinstall and BIOS update. Residual risk accepted by maintainer.
 
@@ -86,7 +86,7 @@ Cross-cutting: **scheduler** (`fexu-jobs` cron), **fixtures** (`fexu-migrations`
 |---|---|
 | API SQLite published→source | `scripts/test-published-v012-upgrade.sh` — CI @ #251 |
 | Auth SQLite/PostgreSQL | `scripts/test-published-v012-*-auth-upgrade.sh` |
-| Fullstack SQLite/PostgreSQL + HTTP | `scripts/test-published-v012-fullstack-*` — CI on #252 @ `fa8c48b` and PR #254 |
+| Fullstack SQLite/PostgreSQL + HTTP | `scripts/test-published-v012-fullstack-*` — CI @ PR #254 |
 | Not automatic app rewrite | Documented in upgrade guide + `fexu upgrade --check` behavior |
 | `resolved_database_url()?` breaking change | Documented with source edit |
 
@@ -110,7 +110,7 @@ Cross-cutting: **scheduler** (`fexu-jobs` cron), **fixtures** (`fexu-migrations`
 |---|---|---|
 | MyShop `cargo check -p myshop --locked` | **PASS** | Finished dev profile |
 | Generated fullstack + `--fexu-path` | **PASS** | Section 2 |
-| Bookstore manual smoke (`scripts/test-bookstore-manual-smoke.sh`) | **PARTIAL** | Exit **49** — `cargo check` OK; script tail needs `python` (not in PATH on this host) |
+| Bookstore manual smoke (`scripts/test-bookstore-manual-smoke.sh`) | **NOT TESTED** | `python` not in PATH on this Windows host (script exit **49** if attempted) |
 | API template + `--fexu-path` + `cargo check` | **PASS** | Exit **0** — temp `smokeapi020` under `%TEMP%` |
 | HTTP CRUD restart | **NOT TESTED** | |
 
@@ -142,18 +142,18 @@ Untested production limits remain explicit in security and deployment docs.
 | `cargo check -p myshop --locked` | **PASS** | Exit **0** |
 | `scripts/audit-documentation.py` | **PASS** | Exit **0** — 175 docs, 888 links |
 | `scripts/check-docs-impact.py` | **PASS** | Exit **0** — scanner still echoes legacy #251 PR-body text (not a code defect) |
-| `scripts/test-bookstore-manual-smoke.sh` | **PARTIAL** | Exit **49** — missing `python` on host |
+| `scripts/test-bookstore-manual-smoke.sh` | **NOT TESTED** | `python` not in PATH on this host |
 | `cargo audit` | **PASS** (warnings) | Exit **0** — 3× allowed unmaintained advisories |
 | `publish-workspace.py --version 0.2.0 --plan` | **PASS** | Exit **0** — 16-crate order |
 | `cargo package --list` ×16 | **PASS** | Exit **0** each (prior run; unchanged graph @ `fa8c48b`) |
 | Quickstart / generator tests | **PASS** | Included in workspace test run |
-| Browser / Playwright | **NOT TESTED** | PR #254 **Browser** job (CI) |
+| Browser / Playwright | **PASS** | PR #254 **Browser** job @ `9884413` |
 | PostgreSQL fullstack local | **NOT TESTED** | No `docker` / `psql` in PATH on this host |
-| `mkdocs build` | **NOT TESTED** | `mkdocs` not in PATH; **Validate Markdown and build documentation** on CI |
-| MSRV 1.89 | **NOT TESTED** | PR #254 **MSRV** job (CI) |
-| GitHub CI green **PR #254 @ documentation HEAD** | **PENDING** | Runnable gates above PASS; verdict waits for CI on pushed SHA |
+| `mkdocs build` | **PASS** | PR #254 **Validate Markdown and build documentation** @ `9884413` |
+| MSRV 1.89 | **PASS** | PR #254 **MSRV** job @ `9884413` |
+| GitHub CI green **PR #254 @ `9884413`** | **PASS** | **14/14** success (2026-11-22) |
 
-**Rebase note:** `cursor/release-020-docs` was replayed with `git rebase --onto origin/cursor/release-020-version 5548ac5` (three docs commits only; acceptance history deduped via #251 on base).
+**Rebase note:** `cursor/release-020-docs` replayed with `git rebase --onto origin/main fa8c48b` (four docs commits only; version slice in `main` via #252 squash).
 
 ---
 
@@ -191,29 +191,20 @@ Untested production limits remain explicit in security and deployment docs.
 
 ## 12. Blockers and verdict
 
-### Remaining (non-technical / post-release)
+### Remaining
 
-1. **Maintainer release approval** — no tag, GitHub Release, or crates.io publish in this pass.
+1. **Maintainer release approval** — explicit sign-off; no tag, GitHub Release, or crates.io publish without it.
 2. **Post-publish crates.io smoke** — `cargo install fexu-cli --version 0.2.0` / `cargo add fexu@0.2.0` (invalid before publish).
-3. **PR #252** — version promotion to `main` still open (not a documentation defect).
 
-### Technical blockers
+### Technical gates
 
 | Gate | Status |
 |---|---|
-| Local runnable verification (Section 9) | **PASS** (bookstore script tail **PARTIAL** — host lacks `python`; compile path verified) |
-| GitHub CI on **PR #254** @ documentation HEAD | **PENDING** at file write — **sole technical gate** if jobs still running or not yet triggered after rebase push |
+| Local runnable verification (Section 9) | **PASS** (bookstore script **NOT TESTED** on host; covered elsewhere in CI) |
+| GitHub CI **PR #254** @ `9884413440bcf8eb575b3aa9ccdc02e6b8fbd8d6` | **PASS** — **14/14** |
 
 ### Verdict
 
-## **RELEASE BLOCKED**
-
-**Reason:** GitHub Actions on [PR #254](https://github.com/Iam-Sanja/fexu-rs/pull/254) at the rebased documentation HEAD must finish **green** before the documentation slice is technically complete.
-
-When PR #254 CI is **all green**, re-read this section as:
-
 ## **READY FOR MAINTAINER RELEASE APPROVAL**
-
-(Only maintainer sign-off and post-publish registry smoke would remain.)
 
 No merge, tag, or publish is performed in this pass.
