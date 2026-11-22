@@ -3,7 +3,7 @@
 | Field | Value |
 |---|---|
 | **Starting SHA** (version branch tip) | `fa8c48ba18b6b32146c80c93acbb2788ab66ed1e` |
-| **Documentation review HEAD** | `448b10ced901ce71b58a210a97a9c1475d8b69e1` |
+| **Documentation review HEAD** | `518acb4af56c6be40d95a0657796085626de358b` |
 | **Documentation branch** | `cursor/release-020-docs` (rebased with `git rebase --onto origin/cursor/release-020-version 5548ac5`) |
 | **Worktree** | `D:\04_Projekte_Arbeit\Projekte\Fexu\release-docs-020` |
 | **Release stack** | [PR #251](https://github.com/Iam-Sanja/fexu-rs/pull/251) **merged** to `main`; [PR #252](https://github.com/Iam-Sanja/fexu-rs/pull/252) **open** → `main`, head `cursor/release-020-version` @ `fa8c48b`; [PR #254](https://github.com/Iam-Sanja/fexu-rs/pull/254) **open** → `cursor/release-020-version`, head this branch |
