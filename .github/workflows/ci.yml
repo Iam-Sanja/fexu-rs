@@ -69,6 +69,12 @@ jobs:
         shell: bash
         run: bash scripts/test-bookstore-manual-smoke.sh
 
+      - name: Published 0.1.2 fullstack consumer upgrade (disposable SQLite)
+        if: runner.os == 'Linux'
+        timeout-minutes: 55
+        shell: bash
+        run: bash scripts/test-published-v012-fullstack-upgrade.sh
+
       - name: Relocated embedded migrations
         shell: bash
         run: |
@@ -117,9 +123,9 @@ jobs:
         run: powershell -NoProfile -File scripts/cold-start-embedded.ps1
 
   postgres_auth_upgrade:
-    name: Published 0.1.2 PostgreSQL auth/session upgrade
+    name: Published 0.1.2 PostgreSQL auth and fullstack upgrade
     runs-on: ubuntu-24.04
-    timeout-minutes: 40
+    timeout-minutes: 90
     services:
       postgres:
         image: postgres:16
@@ -152,6 +158,15 @@ jobs:
         env:
           FEXU_POSTGRES_ADMIN: postgres://fexu:fexu_dev_only@127.0.0.1:5432/fexu
         run: bash scripts/test-published-v012-postgres-auth-upgrade.sh
+
+      - name: Build development CLI for fullstack PostgreSQL upgrade
+        run: cargo build -p fexu-cli --bin fexu
+
+      - name: Published 0.1.2 fullstack consumer upgrade on disposable PostgreSQL 16
+        timeout-minutes: 55
+        env:
+          FEXU_POSTGRES_ADMIN: postgres://fexu:fexu_dev_only@127.0.0.1:5432/fexu
+        run: bash scripts/test-published-v012-fullstack-postgres-upgrade.sh
 
   postgres:
     name: PostgreSQL
