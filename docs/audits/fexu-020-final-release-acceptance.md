@@ -17,7 +17,7 @@
 | 4 | Published 0.1.2 Auth-Binär-Upgrade SQLite | **PASS** | `scripts/test-published-v012-auth-upgrade.sh` + CI |
 | 4 | Published 0.1.2 Auth-Binär-Upgrade PostgreSQL | **PASS** | `scripts/test-published-v012-postgres-auth-upgrade.sh` + CI-Job |
 | 4 | Published 0.1.2 **Fullstack**-App → Checkout (SQLite, HTTP, Rollen, Daten) | **PASS** | Neu: `scripts/test-published-v012-fullstack-upgrade.sh` — lokal Windows Git-Bash Exit 0, ~3 min; CI-Step in diesem Branch |
-| 4 | Published 0.1.2 Fullstack → Checkout **PostgreSQL 16** (eigene DB) | **NOT TESTED** | Auth-PostgreSQL abgedeckt; Fullstack-PostgreSQL-Skript folgt separater CI-Job-Erweiterung |
+| 4 | Published 0.1.2 Fullstack → Checkout **PostgreSQL 16** (eigene DB) | **BLOCKED** (lokal) / **CI pending** | Neu: `scripts/test-published-v012-fullstack-postgres-upgrade.sh` + Erweiterung `postgres_auth_upgrade` in `.github/workflows/ci.yml` (PostgreSQL-16-Service, kein TestShop-`DATABASE_URL`). Lokal Windows 10.0.26300: **BLOCKED** — weder `docker` noch `psql` im PATH (Exit 3); Evidenz läuft über CI auf Push |
 | 4 | Fehlgeschlagene Migration ohne Datenverlust (Fullstack-Skript) | **PASS** | `failed-migration` Hilfe in Fullstack-Skript; Framework: `schema_evolution.rs` in CI |
 | 5 | HTTP Admin vor/nach Upgrade (Login, Session, CSRF, Bad Password) | **PASS** | `v012_fullstack_upgrade_lib.py` Matrix im Fullstack-Skript |
 | 5 | Playwright/Myshop-Browser-Matrix (kein Upgrade) | **PASS** | Bestehender `tests/browser` CI-Job @ `bb11396` |
@@ -52,8 +52,9 @@ Stack: 8 388 608 Byte; Argon2 **0.5.3**; rustc **1.100.0**.
 
 ## Änderungen in diesem Acceptance-PR
 
-- `scripts/test-published-v012-fullstack-upgrade.sh` — Clean-room Fullstack 0.1.2 → source consumer
-- `scripts/v012_fullstack_upgrade_lib.py` / `v012_fullstack_upgrade_runner.py` — HTTP, Snapshots, Migration-Failure-Check
+- `scripts/test-published-v012-fullstack-upgrade.sh` — Clean-room Fullstack 0.1.2 → source consumer (SQLite)
+- `scripts/test-published-v012-fullstack-postgres-upgrade.sh` — Fullstack 0.1.2 → source auf disposable PostgreSQL 16 (Docker-Fallback oder `FEXU_POSTGRES_ADMIN`)
+- `scripts/v012_fullstack_upgrade_lib.py` / `v012_fullstack_upgrade_runner.py` — HTTP, Snapshots (SQLite/PostgreSQL), Migration-Failure-Check
 - `scripts/run-windows-argon2-matrix.ps1` — dokumentierte Windows-Matrix
 - `.github/workflows/ci.yml` — neuer Linux-Step Fullstack-SQLite-Upgrade
 
@@ -61,8 +62,8 @@ Kein Version-Bump, kein Tag, kein Publish.
 
 ## Verbleibende Blocker
 
-1. **PostgreSQL Fullstack-Consumer-Upgrade** — eigener Job + Skript (Auth-PostgreSQL allein reicht nicht für #92/#93).
-2. **Frischer CI-Grünlauf** auf dem Acceptance-Commit (insb. neuer Fullstack-Step, ~55 min).
+1. **PostgreSQL Fullstack-Consumer-Upgrade — CI-Evidenz** — Skript/Job eingefügt; PASS erst nach grünem `postgres_auth_upgrade`-Fullstack-Step.
+2. **Frischer CI-Grünlauf** auf dem Acceptance-Commit (Fullstack-SQLite + Fullstack-PostgreSQL im erweiterten Job, ~90 min Job-Limit).
 3. **Vollständiger Workspace-`cargo test --workspace`** auf finalem SHA (Windows-Symlink/Developer-Mode-Risiko).
 4. **Phase 9** — `0.2.0`-Versions-PR, Lockfile, Changelog, Publish-Preflight, Maintainer-Freigabe.
 5. **Erweiterte Admin-Browser-Matrix** auf der Upgrade-App (optional Playwright).
@@ -71,6 +72,6 @@ Kein Version-Bump, kein Tag, kein Publish.
 
 ### **NO-GO**
 
-Evidenz für den kritischen Fullstack-SQLite-Upgrade-Pfad und die Windows-Argon2-Matrix (100/0 AV) ist in diesem Lauf **neu positiv**. Crates.io-`0.2.0`, PostgreSQL-Fullstack, frisches CI auf diesem Branch, Publish-Preflight und Maintainer-Sign-off fehlen weiterhin.
+Evidenz für den kritischen Fullstack-SQLite-Upgrade-Pfad und die Windows-Argon2-Matrix (100/0 AV) ist in diesem Lauf **neu positiv**. PostgreSQL-Fullstack ist implementiert; lokale Ausführung ohne Docker/`psql` ist **BLOCKED**, CI-Evidenz steht noch aus. Crates.io-`0.2.0`, Publish-Preflight und Maintainer-Sign-off fehlen weiterhin.
 
-**Nächste konkrete Schritte:** Acceptance-PR mergen nach grünem CI → PostgreSQL-Fullstack-Skript + Job → Workspace-Test/MSRV auf Kandidaten-SHA → separater `0.2.0`-Versions-PR → Publish-Preflight → Sign-off.
+**Nächste konkrete Schritte:** CI-Grün auf neuem SHA abwarten (Fullstack-PostgreSQL) → Workspace-Test/MSRV auf Kandidaten-SHA → separater `0.2.0`-Versions-PR → Publish-Preflight → Sign-off (kein Merge/Tag/Publish vor vollständiger Gate-Evidenz).

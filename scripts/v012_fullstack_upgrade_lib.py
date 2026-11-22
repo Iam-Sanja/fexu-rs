@@ -80,6 +80,16 @@ class AuthSnapshot:
     session_tokens: list[str]
     migration_rows: list[tuple[str, str]]
     user_rows: list[tuple[str, int, int, int]]
+    role_assignments: list[tuple[str, str]]
+
+
+_ROLE_ASSIGNMENTS_SQL = """
+SELECT u."email", r."name"
+FROM "_fexu_user_roles" ur
+JOIN "_fexu_users" u ON ur."user_id" = u."id"
+JOIN "_fexu_roles" r ON ur."role_id" = r."id"
+ORDER BY u."email", r."name"
+"""
 
 
 def sqlite_snapshot(db_path: Path) -> AuthSnapshot:
@@ -108,7 +118,117 @@ def sqlite_snapshot(db_path: Path) -> AuthSnapshot:
                 'SELECT "email", "is_active", "is_staff", "is_superuser" FROM "_fexu_users" ORDER BY "email"'
             )
         ]
-    return AuthSnapshot(hashes, sessions, migrations, users)
+        roles = [tuple(row) for row in conn.execute(_ROLE_ASSIGNMENTS_SQL)]
+    return AuthSnapshot(hashes, sessions, migrations, users, roles)
+
+
+def is_postgres_database_url(url: str) -> bool:
+    return url.startswith("postgres://") or url.startswith("postgresql://")
+
+
+def require_psql() -> str:
+    import shutil
+
+    psql = shutil.which("psql")
+    if not psql:
+        raise SystemExit("BLOCKED: psql client is required for PostgreSQL fullstack upgrade")
+    return psql
+
+
+def psql_query(database_url: str, sql: str) -> list[tuple[str, ...]]:
+    psql = require_psql()
+    result = subprocess.run(
+        [psql, database_url, "-v", "ON_ERROR_STOP=1", "-At", "-F", "\t", "-c", sql],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    rows: list[tuple[str, ...]] = []
+    for line in result.stdout.splitlines():
+        if not line.strip():
+            continue
+        rows.append(tuple(line.split("\t")))
+    return rows
+
+
+def psql_scalar(database_url: str, sql: str) -> str:
+    rows = psql_query(database_url, sql)
+    if len(rows) != 1 or len(rows[0]) != 1:
+        raise SystemExit(f"unexpected scalar query result for: {sql[:80]}")
+    return rows[0][0]
+
+
+def postgres_snapshot(database_url: str) -> AuthSnapshot:
+    if not is_postgres_database_url(database_url):
+        raise SystemExit("postgres_snapshot requires a postgres:// DATABASE_URL")
+    hashes = {
+        row[0]: row[1]
+        for row in psql_query(
+            database_url,
+            'SELECT "email", "password_hash" FROM "_fexu_users" ORDER BY "email"',
+        )
+    }
+    sessions = [
+        row[0]
+        for row in psql_query(
+            database_url,
+            'SELECT "token" FROM "_fexu_sessions" ORDER BY "created_at"',
+        )
+    ]
+    migrations = [
+        (row[0], row[1])
+        for row in psql_query(
+            database_url,
+            'SELECT "id", "checksum" FROM "_fexu_migrations" ORDER BY "id"',
+        )
+    ]
+    users = [
+        (row[0], int(row[1]), int(row[2]), int(row[3]))
+        for row in psql_query(
+            database_url,
+            'SELECT "email", "is_active", "is_staff", "is_superuser" FROM "_fexu_users" ORDER BY "email"',
+        )
+    ]
+    roles = [tuple(row) for row in psql_query(database_url, _ROLE_ASSIGNMENTS_SQL)]
+    return AuthSnapshot(hashes, sessions, migrations, users, roles)
+
+
+def snapshot_from_backend(db_path: Path | None, database_url: str | None) -> AuthSnapshot:
+    if database_url:
+        return postgres_snapshot(database_url)
+    if db_path is None:
+        raise SystemExit("snapshot requires db path or DATABASE_URL")
+    return sqlite_snapshot(db_path)
+
+
+def write_snapshot(path: Path, snap: AuthSnapshot) -> None:
+    payload = {
+        "password_hashes": snap.password_hashes,
+        "session_tokens": snap.session_tokens,
+        "migration_rows": snap.migration_rows,
+        "user_rows": snap.user_rows,
+        "role_assignments": snap.role_assignments,
+    }
+    path.write_text(json.dumps(payload, sort_keys=True, indent=2) + "\n", encoding="utf-8")
+
+
+def load_snapshot(path: Path) -> AuthSnapshot:
+    data = json.loads(path.read_text(encoding="utf-8"))
+    return AuthSnapshot(
+        data["password_hashes"],
+        data["session_tokens"],
+        [tuple(row) for row in data["migration_rows"]],
+        [tuple(row) for row in data["user_rows"]],
+        [tuple(row) for row in data["role_assignments"]],
+    )
+
+
+def patch_fexu_database_url(fexu_toml: Path, database_url: str) -> None:
+    text = fexu_toml.read_text(encoding="utf-8")
+    old = 'url = "sqlite://db.sqlite3?mode=rwc"'
+    if text.count(old) != 1:
+        raise SystemExit(f"expected single default sqlite url in {fexu_toml}")
+    fexu_toml.write_text(text.replace(old, f'url = "{database_url}"'), encoding="utf-8")
 
 
 def assert_snapshots_unchanged(before: AuthSnapshot, after: AuthSnapshot) -> None:
@@ -120,6 +240,8 @@ def assert_snapshots_unchanged(before: AuthSnapshot, after: AuthSnapshot) -> Non
         raise SystemExit("historical migration checksums changed")
     if before.user_rows != after.user_rows:
         raise SystemExit("user flags changed unexpectedly")
+    if before.role_assignments != after.role_assignments:
+        raise SystemExit("role assignments changed unexpectedly")
 
 
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -325,11 +447,82 @@ def seed_catalog_rows(db_path: Path, author_id: str, book_id: str) -> None:
         assert conn.execute('SELECT COUNT(*) FROM "books"').fetchone()[0] == 1
 
 
+def seed_catalog_rows_pg(database_url: str, author_id: str, book_id: str) -> None:
+    require_psql()
+    psql = require_psql()
+    statements = [
+        f"INSERT INTO \"authors\" (\"id\", \"name\") VALUES ('{author_id}', 'Ada Author');",
+        (
+            f"INSERT INTO \"books\" (\"id\", \"name\", \"author_id\") "
+            f"VALUES ('{book_id}', 'Published V012 Book', '{author_id}');"
+        ),
+    ]
+    for sql in statements:
+        subprocess.run(
+            [psql, database_url, "-v", "ON_ERROR_STOP=1", "-c", sql],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    if psql_scalar(database_url, 'SELECT COUNT(*) FROM "authors"') != "1":
+        raise SystemExit("authors seed count mismatch")
+    if psql_scalar(database_url, 'SELECT COUNT(*) FROM "books"') != "1":
+        raise SystemExit("books seed count mismatch")
+
+
+def table_exists(database_url: str, table: str) -> bool:
+    if not re.fullmatch(r"[a-z_]+", table):
+        raise SystemExit(f"unexpected table name: {table}")
+    return (
+        psql_scalar(
+            database_url,
+            f"SELECT COUNT(*) FROM pg_tables WHERE schemaname = 'public' AND tablename = '{table}'",
+        )
+        == "1"
+    )
+
+
+def assert_post_upgrade_catalog(database_url: str, staff_email: str, role_name: str) -> None:
+    snap = postgres_snapshot(database_url)
+    if not snap.session_tokens:
+        raise SystemExit("missing persisted session rows")
+    if len(snap.password_hashes) < 2:
+        raise SystemExit("missing seeded user password hashes")
+    if not table_exists(database_url, "shelfs"):
+        raise SystemExit("shelfs table missing after upgrade migration")
+    assignment = (staff_email, role_name)
+    if assignment not in snap.role_assignments:
+        raise SystemExit(f"missing role assignment {assignment}: {snap.role_assignments}")
+    book_author = psql_scalar(
+        database_url,
+        'SELECT COUNT(*) FROM "books" b JOIN "authors" a ON b."author_id" = a."id"',
+    )
+    if book_author != "1":
+        raise SystemExit("catalog author/book relation broken after upgrade")
+
+
+def _author_count(db_path: Path | None, database_url: str | None) -> int:
+    if database_url:
+        return int(psql_scalar(database_url, 'SELECT COUNT(*) FROM "authors"'))
+    assert db_path is not None
+    return int(sqlite3.connect(db_path).execute('SELECT COUNT(*) FROM "authors"').fetchone()[0])
+
+
+def _migration_history_count(db_path: Path | None, database_url: str | None) -> int:
+    if database_url:
+        return int(psql_scalar(database_url, 'SELECT COUNT(*) FROM "_fexu_migrations"'))
+    assert db_path is not None
+    return int(
+        sqlite3.connect(db_path).execute('SELECT COUNT(*) FROM "_fexu_migrations"').fetchone()[0]
+    )
+
+
 def assert_failed_migration_preserves_data(
     project: Path,
     cli: Path,
-    db_path: Path,
+    db_path: Path | None,
     env: dict[str, str],
+    database_url: str | None = None,
 ) -> None:
     migrations = sorted((project / "apps/catalog/migrations").glob("*.json"))
     if not migrations:
@@ -344,10 +537,10 @@ def assert_failed_migration_preserves_data(
     tables.append({"name": "authors", "columns": tables[0].get("columns", [])})
     broken = project / "apps/catalog/migrations/9999_broken.json"
     broken.write_text(json.dumps(template), encoding="utf-8")
-    before_authors = sqlite3.connect(db_path).execute('SELECT COUNT(*) FROM "authors"').fetchone()[0]
-    before_history = sqlite3.connect(db_path).execute(
-        'SELECT COUNT(*) FROM "_fexu_migrations"'
-    ).fetchone()[0]
+    url = database_url or env.get("DATABASE_URL")
+    pg_url = url if url and is_postgres_database_url(url) else None
+    before_authors = _author_count(db_path, pg_url)
+    before_history = _migration_history_count(db_path, pg_url)
     result = subprocess.run(
         [str(cli), "migrate", "up"],
         cwd=project,
@@ -357,10 +550,8 @@ def assert_failed_migration_preserves_data(
     )
     if result.returncode == 0:
         raise SystemExit("expected failed migration to be rejected")
-    after_authors = sqlite3.connect(db_path).execute('SELECT COUNT(*) FROM "authors"').fetchone()[0]
-    after_history = sqlite3.connect(db_path).execute(
-        'SELECT COUNT(*) FROM "_fexu_migrations"'
-    ).fetchone()[0]
+    after_authors = _author_count(db_path, pg_url)
+    after_history = _migration_history_count(db_path, pg_url)
     if before_authors != after_authors:
         raise SystemExit("failed migration changed author row count")
     if after_history != before_history:
