@@ -27,6 +27,7 @@ After a release, the matching version page will contain its exact installation c
 
 ## Find the right instructions
 
+- [Upgrade from 0.1.2 to development source](how-to/upgrade-0.1.2-to-0.2.md) — known source edits, SQLite evidence and release blockers
 - [Quickstart](getting-started/quickstart.md) — build your first project
 - [CLI reference](reference/cli.md) — all subcommands, options and examples
 - [Configuration](reference/settings.md) — project and environment settings

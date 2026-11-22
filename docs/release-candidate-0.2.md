@@ -33,6 +33,10 @@ Issue [#92](https://github.com/Iam-Sanja/fexu-rs/issues/92) is the publication t
 | Verified final changelog, install instructions, rollback plan | This document and release checklist | Maintainer sign-off pending |
 | Approved tag/GitHub Release, crates.io publication | Never authorized by this document | **Not started** |
 
+## Public upgrade documentation
+
+The current [development-source upgrade guide](../manual/how-to/upgrade-0.1.2-to-0.2.md) explains the verified published 0.1.2 SQLite API-project regression, its exact source edit, and missing PostgreSQL/fullstack/auth-session evidence. It is not a proof that a complete production migration is supported. A version-specific guide must be rechecked against the final candidate before release.
+
 ## Installation instructions to verify with actual released version
 
 Windows PowerShell and Linux/macOS shell share the Cargo commands, provided a supported Rust toolchain and native build prerequisites are installed:
