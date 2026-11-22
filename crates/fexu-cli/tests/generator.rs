@@ -445,7 +445,7 @@ fn shorthand_uses_the_same_argument_rules_as_the_project_command() {
     );
     let demo = std::fs::read_to_string(root.join("Demo/Cargo.toml")).unwrap();
     let explicit = std::fs::read_to_string(root.join("Explicit/Cargo.toml")).unwrap();
-    let fullstack = "fexu = { version = \"=0.1.2\", features = [\"admin-ui\"] }";
+    let fullstack = "fexu = { version = \"=0.2.0\", features = [\"admin-ui\"] }";
     assert!(demo.contains(fullstack), "{demo}");
     assert!(explicit.contains(fullstack), "{explicit}");
     assert!(!demo.contains("path =") && !demo.contains("git ="));
@@ -460,7 +460,7 @@ fn shorthand_uses_the_same_argument_rules_as_the_project_command() {
     for name in ["ApiSpaced", "ApiEquals", "ApiLong"] {
         let manifest = std::fs::read_to_string(root.join(name).join("Cargo.toml")).unwrap();
         assert!(
-            manifest.contains("fexu = \"=0.1.2\"\n"),
+            manifest.contains("fexu = \"=0.2.0\"\n"),
             "{name}: {manifest}"
         );
         assert!(!manifest.contains("admin-ui"), "{name}");
@@ -649,8 +649,8 @@ fn registry_projects_pin_the_release_without_a_framework_checkout() {
     assert!(!api.canonicalize().unwrap().starts_with(&repo));
     let fullstack = std::fs::read_to_string(project.join("Cargo.toml")).unwrap();
     let api_manifest = std::fs::read_to_string(api.join("Cargo.toml")).unwrap();
-    assert!(fullstack.contains("fexu = { version = \"=0.1.2\", features = [\"admin-ui\"] }"));
-    assert!(api_manifest.contains("fexu = \"=0.1.2\"\n"));
+    assert!(fullstack.contains("fexu = { version = \"=0.2.0\", features = [\"admin-ui\"] }"));
+    assert!(api_manifest.contains("fexu = \"=0.2.0\"\n"));
     for manifest in [&fullstack, &api_manifest] {
         assert!(!manifest.contains("path ="), "{manifest}");
         assert!(!manifest.contains("git ="), "{manifest}");

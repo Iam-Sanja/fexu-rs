@@ -7,10 +7,9 @@ Each published Fexu release gets its **own frozen manual**. Use the manual match
 | Version | What it documents |
 | --- | --- |
 | **0.1.2** | Latest published release as of 21 November 2026. Installation: `cargo install fexu-cli --version 0.1.2 --locked` |
-| **0.2.0** | Next planned release. Its manual is published only after the 0.2.0 release itself is available. |
-| **0.2.0-dev.1** | Unpublished version declared by the `main` workspace. Source checkout only; not an approved release or an available crates.io package. |
+| **0.2.0 (candidate)** | Source checkout on the `0.2.0` candidate branch. **Not** an approved crates.io release until publish and manual publication complete. |
 
-The CLI built from `main` still generates standalone registry projects pinned to published `0.1.2` by default. Use `--fexu-path` to test `main` source changes. The workspace Cargo version does **not** update published packages or switch the generator’s registry pin automatically.
+The CLI built from a `0.2.0` candidate checkout generates standalone registry projects pinned to `=0.2.0`. Until that version exists on crates.io, use `--fexu-path` for local source or stay on published `0.1.2`.
 
 When the documentation website is enabled, the version selector will let you switch between released versions. The `stable` URL will point to the latest **approved** release manual, not automatically to `main`.
 
@@ -21,6 +20,12 @@ For the published 0.1.2 release:
 ```sh
 cargo install fexu-cli --version 0.1.2 --locked
 cargo add fexu@0.1.2
+```
+
+For the unreleased `0.2.0` candidate, build from a matching checkout:
+
+```sh
+cargo install --path crates/fexu-cli --locked
 ```
 
 After a release, the matching version page will contain its exact installation commands. Code examples, flags and signatures on a versioned page apply to that version only.

@@ -1,6 +1,12 @@
 # Changelog
 
-> **Release separation (2026-11-18):** `v0.1.2` is the published crates.io release. Published crates stay `0.1.2`. Headings above `## 0.1.2 — synchronized workspace version` describe source on `main` after that release and are not in the crates.io `0.1.2` packages. Notes inserted below that heading after the tag — framework benchmark baseline, API contract pagination, selectable HTML CRUD parts, admin view queries, the contract suite, the configured database target, the read-only migration plan, and per-application browser cookies — are also absent from the `v0.1.2` changelog and from that tag. `## Unreleased — fexu-cli 0.1.1` was already in the `v0.1.2` tree. Its `fexu = "=0.1.0"` pin was replaced by `fexu = "=0.1.2"` in the 0.1.2 section. Do not read `=0.1.0` as the current generator pin. Headings below `## 0.1.0 — initial crates.io rollout` are historical internal milestones, not Cargo releases. Proposed `0.2.0` and `0.3.0` are specified in [docs/roadmap.md](docs/roadmap.md). No `0.2.0` release has been cut.
+> **Release separation (2026-11-18):** `v0.1.2` remains the latest **published** crates.io release until an approved publish. The `## 0.2.0 — synchronized workspace version` section is a **candidate** workspace pin, not a registry release. Accumulated `Unreleased` headings before `## 0.1.2` still describe 0.2.0 source work not summarized there. Headings below `## 0.1.0 — initial crates.io rollout` are historical milestones.
+
+## 0.2.0 — synchronized workspace version (candidate)
+
+- All **16** publishable crates and every internal path dependency requirement are `0.2.0`. Examples stay `publish = false`.
+- `fexu new` writes `fexu = "=0.2.0"` unless `--fexu-path` is set. The fullstack template keeps `features = ["admin-ui"]` on that registry dependency.
+- `scripts/publish-workspace.py --version 0.2.0 --plan` validates publish order without uploading. This entry does **not** authorize crates.io publication.
 
 ## Unreleased — English-first diagnostics
 

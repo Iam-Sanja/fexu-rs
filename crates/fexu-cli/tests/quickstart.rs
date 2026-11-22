@@ -42,7 +42,7 @@ fn clean_room_project_has_no_local_fexu_path() {
     let project = parent.join("Demo");
     let cargo = std::fs::read_to_string(project.join("Cargo.toml")).unwrap();
     assert!(
-        cargo.contains("version = \"=0.1.2\""),
+        cargo.contains("version = \"=0.2.0\""),
         "registry dependency missing: {cargo}"
     );
     assert!(!cargo.contains("path ="), "{cargo}");

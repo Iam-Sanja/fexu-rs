@@ -2,7 +2,7 @@
 
 **Build database-backed Rust web applications with models, migrations, server-rendered pages, an admin, authentication, jobs and an integrated CLI.**
 
-This manual documents the **unpublished `0.2.0-dev.1` development source** being prepared for **Fexu 0.2.0**. The latest published CLI remains **0.1.2** until the next release is approved. Always match examples and CLI versions to your project's exact dependency. The website publishes frozen manuals by release rather than silently updating older versions.
+This manual documents the **unpublished `0.2.0` development source** being prepared for **Fexu 0.2.0**. The latest published CLI remains **0.1.2** until the next release is approved. Always match examples and CLI versions to your project's exact dependency. The website publishes frozen manuals by release rather than silently updating older versions.
 
 ## Start here
 

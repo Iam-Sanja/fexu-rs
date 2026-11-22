@@ -15,7 +15,7 @@ A Django-inspired, experimental web framework built with **Axum**, **Tera**, **S
 [**Quick start**](#quick-start) · [**Features**](#why-fexu) · [**Documentation source**](docs/index.md) · [**Contribute**](#help-build-fexu) · [**Roadmap**](docs/roadmap.md) · [**Documentation site setup**](docs/documentation-maintenance.md)
 
 > [!IMPORTANT]
-> **Fexu 0.1.2 is published on crates.io but remains experimental and is not production-ready.** APIs, configuration and migrations may change. The version badges show the latest crates.io releases. The `main` branch uses the **unpublished `0.2.0-dev.1` workspace version** and may contain newer changes; features added after the `v0.1.2` tag are not part of the published 0.1.2 packages. The `-dev.1` version is a development marker, not a registry release or an approved 0.2.0 release candidate. Do not expose a demo application directly to the public internet.
+> **Fexu 0.1.2 is published on crates.io but remains experimental and is not production-ready.** APIs, configuration and migrations may change. The version badges show the latest crates.io releases. This candidate branch declares **`0.2.0`** across the workspace, but **crates.io still serves `0.1.2`** until an approved publish. Do not treat this branch as a completed registry release. Do not expose a demo application directly to the public internet.
 
 ## Why Fexu?
 
@@ -34,7 +34,7 @@ These features have **documented limitations**. In particular, public model rout
 
 ## Workspace crates
 
-Fexu is developed as a **16-crate Rust workspace**. Each version badge below reflects the latest version reported by crates.io. The `main` branch is currently `0.2.0-dev.1` (unpublished), and can contain changes not yet released to the registry. The CLI generator still deliberately pins registry-generated projects to published `0.1.2` unless `--fexu-path` is supplied.
+Fexu is developed as a **16-crate Rust workspace**. Each version badge below reflects the latest version reported by crates.io. The `main` branch is currently `0.2.0` (unpublished), and can contain changes not yet released to the registry. The CLI generator pins registry-generated projects to `=0.2.0` once this version is published; until then, use `--fexu-path` for unreleased source.
 
 | Crate | Purpose | Latest published on crates.io | Next coordinated release (planned) |
 |---|---|---|---|
@@ -55,7 +55,7 @@ Fexu is developed as a **16-crate Rust workspace**. Each version badge below ref
 | [`fexu-mail`](crates/fexu-mail/) | Email utilities | [![fexu-mail version](https://img.shields.io/crates/v/fexu-mail.svg?label=version)](https://crates.io/crates/fexu-mail) | `0.2.0` (candidate, not published) |
 | [`fexu-jobs`](crates/fexu-jobs/) | Persistent background jobs | [![fexu-jobs version](https://img.shields.io/crates/v/fexu-jobs.svg?label=version)](https://crates.io/crates/fexu-jobs) | `0.2.0` (candidate, not published) |
 
-All **16** workspace crates currently have a published `0.1.2` release on crates.io. On `main`, the shared Cargo version is **`0.2.0-dev.1`**, while the next coordinated stable release is planned as **`0.2.0`** and remains unpublished. The badges deliberately reflect real registry versions, while the last column describes the release target. Use compatible published versions when building an independent project. Features merged into `main` after `v0.1.2` require a source checkout until the next release.
+All **16** workspace crates currently have a published `0.1.2` release on crates.io. On `main`, the shared Cargo version is **`0.2.0`**, while the next coordinated stable release is planned as **`0.2.0`** and remains unpublished. The badges deliberately reflect real registry versions, while the last column describes the release target. Use compatible published versions when building an independent project. Features merged into `main` after `v0.1.2` require a source checkout until the next release.
 
 ## Quick start
 

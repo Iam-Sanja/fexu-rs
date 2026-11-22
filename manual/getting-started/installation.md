@@ -17,7 +17,7 @@ fexu --version
 fexu --help
 ```
 
-For unpublished `main` (`0.2.0-dev.1`), install the CLI directly from the corresponding Fexu checkout instead:
+For unpublished `main` (`0.2.0`), install the CLI directly from the corresponding Fexu checkout instead:
 
 ```sh
 cargo install --path crates/fexu-cli

@@ -2,7 +2,7 @@
 
 **Repository:** [Iam-Sanja/fexu-rs](https://github.com/Iam-Sanja/fexu-rs)  
 **Audit-Basis (origin/main):** `3a0ac3fc1b4a86fbe21fd179cfce8e383ce6b101`  
-**Entwicklungslabel im Workspace:** `0.2.0-dev.1`  
+**Entwicklungslabel im Workspace:** `0.2.0`  
 **Zuletzt auf crates.io:** `0.1.2`  
 **Audit-Branch:** `cursor/windows-release-audit-78b7`  
 **Arbeitskopie:** isoliertes Git-Worktree `D:\04_Projekte_Arbeit\Projekte\Fexu\audit-worktree-20261122` (Haupt-Checkout `D:\04_Projekte_Arbeit\Projekte\Fexu\main` unverändert auf lokalem `main`, hinter `origin/main`)
@@ -169,7 +169,7 @@ Rohdaten: `.audit-argon2-results.json` (nicht committet).
 
 | Thema | Abgleich | Label |
 |---|---|---|
-| Version `0.2.0-dev.1` nicht auf crates.io | `manual/versions.md`, Installation → 0.1.2 | **VERIFIED** konsistent |
+| Version `0.2.0` nicht auf crates.io | `manual/versions.md`, Installation → 0.1.2 | **VERIFIED** konsistent |
 | Upgrade-Anleitung vs. `release-candidate-0.2.md` | Manual `how-to/upgrade-0.1.2-to-0.2.md` nennt Auth-Session-Upgrade noch als „nicht“ / partiell blockiert; `release-candidate-0.2.md` auf `3a0ac3f` verweist bereits auf #248/#249 | **MEDIUM** Abweichung |
 | Bookstore-Tutorial | Disclaimer „not yet verified“ vs. CI-Smoke #247 | **LOW** — Tutorial strenger formuliert als CI-Smoke |
 | Installationsbefehle | `cargo install fexu-cli --version 0.1.2` stimmt mit crates.io | **VERIFIED** |
