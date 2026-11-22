@@ -57,6 +57,12 @@ jobs:
         shell: bash
         run: bash scripts/test-published-v012-upgrade.sh
 
+      - name: Bookstore manual fullstack smoke (development source)
+        if: runner.os == 'Linux'
+        timeout-minutes: 30
+        shell: bash
+        run: bash scripts/test-bookstore-manual-smoke.sh
+
       - name: Relocated embedded migrations
         shell: bash
         run: |
