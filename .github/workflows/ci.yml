@@ -69,6 +69,12 @@ jobs:
         shell: bash
         run: bash scripts/test-bookstore-manual-smoke.sh
 
+      - name: Published 0.1.2 fullstack consumer upgrade (disposable SQLite)
+        if: runner.os == 'Linux'
+        timeout-minutes: 55
+        shell: bash
+        run: bash scripts/test-published-v012-fullstack-upgrade.sh
+
       - name: Relocated embedded migrations
         shell: bash
         run: |
