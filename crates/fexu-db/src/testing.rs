@@ -253,7 +253,7 @@ async fn drop_on_connection(admin: &DatabaseConnection, db_name: &str) -> Result
                 .execute(Statement::from_sql_and_values(
                     DatabaseBackend::Postgres,
                     "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = $1 AND pid <> pg_backend_pid()",
-                    [Value::String(Some(Box::new(db_name.to_owned())))],
+                    [Value::String(Some(db_name.to_owned()))],
                 ))
                 .await;
             drop_database_statement(admin, db_name).await
@@ -284,7 +284,7 @@ async fn drop_database_statement(admin: &DatabaseConnection, db_name: &str) -> R
                     .execute(Statement::from_sql_and_values(
                         DatabaseBackend::Postgres,
                         "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = $1 AND pid <> pg_backend_pid()",
-                        [Value::String(Some(Box::new(db_name.to_owned())))],
+                        [Value::String(Some(db_name.to_owned()))],
                     ))
                     .await;
                 last = message;
@@ -316,7 +316,7 @@ async fn database_ownership(
         .query_one(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "SELECT datname AS datname, (pg_catalog.pg_get_userbyid(datdba) = CURRENT_USER) AS owned_by_current_user FROM pg_catalog.pg_database WHERE datname = $1",
-            [Value::String(Some(Box::new(db_name.to_owned())))],
+            [Value::String(Some(db_name.to_owned()))],
         ))
         .await
         .map_err(|error| redact(&error.to_string()))?;
