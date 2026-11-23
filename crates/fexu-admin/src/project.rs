@@ -2,7 +2,7 @@
 
 use crate::registry::{is_hex_color, is_public_label, AdminBranding, AdminRegistry, ProjectIcons};
 use fexu_core::FexuError;
-use fexu_db::driver::sea_query::{Alias, Expr, PostgresQueryBuilder, Query, SqliteQueryBuilder};
+use fexu_db::driver::sea_query::{Alias, Expr, ExprTrait, PostgresQueryBuilder, Query, SqliteQueryBuilder};
 use fexu_db::driver::{
     ConnectionTrait, DatabaseBackend, DatabaseConnection, Statement, Value as DbValue,
 };
@@ -286,7 +286,7 @@ fn is_ico(bytes: &[u8]) -> bool {
 }
 
 fn blob_value(bytes: Option<&[u8]>) -> fexu_db::driver::sea_query::SimpleExpr {
-    DbValue::Bytes(bytes.map(|bytes| Box::new(bytes.to_vec()))).into()
+    DbValue::Bytes(bytes.map(|bytes| bytes.to_vec())).into()
 }
 
 pub(crate) fn clean_icon(value: &str) -> Option<String> {
