@@ -5,7 +5,9 @@
 //! transaction. The caller supplies the object scope.
 
 use fexu_core::{ColumnKind, ColumnSpec, FexuError, QueryScope};
-use fexu_db::driver::sea_query::{Alias, Expr, ExprTrait, PostgresQueryBuilder, Query, SqliteQueryBuilder};
+use fexu_db::driver::sea_query::{
+    Alias, Expr, ExprTrait, PostgresQueryBuilder, Query, SqliteQueryBuilder,
+};
 use fexu_db::driver::{
     ConnectionTrait, DatabaseBackend, DatabaseConnection, Statement, TransactionTrait, Value,
 };
@@ -165,9 +167,7 @@ pub async fn current_members(
     query
         .column(Alias::new(link.child_column))
         .from(Alias::new(link.join_table))
-        .and_where(
-            Expr::col(Alias::new(link.parent_column)).eq(Value::Uuid(Some(parent))),
-        )
+        .and_where(Expr::col(Alias::new(link.parent_column)).eq(Value::Uuid(Some(parent))))
         .limit(1001);
     let rows = db
         .query_all(statement(db, &query)?)
@@ -282,9 +282,9 @@ pub(crate) async fn replace_links_in(
         unique.push(*child);
     }
     let mut delete = Query::delete();
-    delete.from_table(Alias::new(link.join_table)).and_where(
-        Expr::col(Alias::new(link.parent_column)).eq(Value::Uuid(Some(parent))),
-    );
+    delete
+        .from_table(Alias::new(link.join_table))
+        .and_where(Expr::col(Alias::new(link.parent_column)).eq(Value::Uuid(Some(parent))));
     db.execute(statement(db, &delete)?)
         .await
         .map_err(FexuError::database)?;
