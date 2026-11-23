@@ -4,6 +4,7 @@
 
 - Dependency modernization: GitHub Actions `setup-python` 7.1.0 was merged in PR #237.
 - Candidate update `rusqlite` 0.42.0 to 0.43.0 for v0.3.0; SQLite schema, migrations and cross-platform CI must pass before it is accepted.
+- Candidate Argon2 0.5.3 to 0.6.0 upgrade for upcoming v0.3.0; must preserve stored password hash verification, authentication/session continuity and Windows stability before acceptance.
 - Future dependency upgrades, documentation and all 16 crate versions are reviewed together. v0.3.0 has not been released.
 
 ## 0.2.0 — published 2026-11-23
