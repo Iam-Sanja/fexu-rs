@@ -12,6 +12,13 @@
 - **Development:** Cargo manifests currently reflect the most recent published `0.2.0` version, because no 0.3.0 code is merged yet. The **first actual 0.3.0 code change** should coordinate all 16 crate versions and internal dependency requirements (proposed `0.3.0-dev.1`) and update the lockfile, generator pins, README, manual, changelog and roadmap in a tested PR. An unpublished prerelease must not be presented as available on crates.io.
 - Old engineering milestone labels (for example `v0.13`) are not Cargo release tags.
 
+## v0.3.0 dependency modernization
+
+- [Dependabot #237](https://github.com/Iam-Sanja/fexu-rs/pull/237) upgraded the SHA-pinned `actions/setup-python` action to 7.1.0 (merged).
+- [Dependabot #238](https://github.com/Iam-Sanja/fexu-rs/pull/238) proposes `rusqlite` 0.42 to 0.43; integration remains under CI review. SQLite migrations, schema behavior and MSRV compatibility must pass before acceptance.
+- Next dedicated migrations: Argon2 0.6, SQLx 0.9 (core and PostgreSQL together), SeaQuery 1.0. Never merge failing cross-platform checks.
+- Dependency updates on GitHub are not new published Fexu versions. Coordinate all 16 framework crates, generator pins, lockfile and documentation as part of the v0.3.0 development version bump.
+
 ## What v0.2.0 delivered
 
 - 16 coordinated crates: CLI, models, SQLite/PostgreSQL, migrations, APIs, authentication, native admin, forms, storage, mail and jobs.
