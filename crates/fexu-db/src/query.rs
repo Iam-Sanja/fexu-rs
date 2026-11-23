@@ -1639,8 +1639,8 @@ fn escape_glob(term: &str) -> String {
 
 fn qualified_col(qualifier: Option<&str>, name: &str) -> SimpleExpr {
     match qualifier {
-        Some(alias) => Expr::col((Alias::new(alias), Alias::new(name))).into(),
-        None => Expr::col(Alias::new(name)).into(),
+        Some(alias) => Expr::col((Alias::new(alias), Alias::new(name))),
+        None => Expr::col(Alias::new(name)),
     }
 }
 
