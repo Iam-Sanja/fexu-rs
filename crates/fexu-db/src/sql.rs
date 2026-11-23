@@ -1370,10 +1370,10 @@ mod tests {
                 "fexu_admin_search",
                 &columns(),
                 vec![
-                    Value::Uuid(Some(Uuid::from_u128(id)))),
-                    Value::String(Some(name.to_owned()))),
-                    Value::String(Some(sku.to_owned()))),
-                    Value::Uuid(Some(Uuid::from_u128(owner)))),
+                    Value::Uuid(Some(Uuid::from_u128(id))),
+                    Value::String(Some(name.to_owned())),
+                    Value::String(Some(sku.to_owned())),
+                    Value::Uuid(Some(Uuid::from_u128(owner))),
                 ],
             )
             .await
