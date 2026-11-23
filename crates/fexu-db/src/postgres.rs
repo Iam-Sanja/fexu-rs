@@ -246,25 +246,25 @@ fn bind(arguments: &mut PgArguments, value: &Value) -> Result<(), DbErr> {
         Value::String(Some(value)) => arguments.add(value.to_string()),
         Value::Char(Some(value)) => arguments.add(value.to_string()),
         Value::Bytes(None) => arguments.add(None::<Vec<u8>>),
-        Value::Bytes(Some(value)) => arguments.add(value.as_ref().clone()),
+        Value::Bytes(Some(value)) => arguments.add(value.clone()),
         Value::Json(None) => arguments.add(None::<Json>),
         Value::Json(Some(value)) => arguments.add(value.as_ref().clone()),
         Value::ChronoDate(None) => arguments.add(None::<NaiveDate>),
-        Value::ChronoDate(Some(value)) => arguments.add(**value),
+        Value::ChronoDate(Some(value)) => arguments.add(*value),
         Value::ChronoTime(None) => arguments.add(None::<NaiveTime>),
-        Value::ChronoTime(Some(value)) => arguments.add(**value),
+        Value::ChronoTime(Some(value)) => arguments.add(*value),
         Value::ChronoDateTime(None) => arguments.add(None::<NaiveDateTime>),
-        Value::ChronoDateTime(Some(value)) => arguments.add(**value),
+        Value::ChronoDateTime(Some(value)) => arguments.add(*value),
         Value::ChronoDateTimeUtc(None)
         | Value::ChronoDateTimeLocal(None)
         | Value::ChronoDateTimeWithTimeZone(None) => arguments.add(None::<DateTime<Utc>>),
-        Value::ChronoDateTimeUtc(Some(value)) => arguments.add(**value),
+        Value::ChronoDateTimeUtc(Some(value)) => arguments.add(*value),
         Value::ChronoDateTimeLocal(Some(value)) => arguments.add(value.with_timezone(&Utc)),
         Value::ChronoDateTimeWithTimeZone(Some(value)) => arguments.add(value.with_timezone(&Utc)),
         Value::Uuid(None) => arguments.add(None::<Uuid>),
         Value::Uuid(Some(value)) => arguments.add(*value),
         Value::Decimal(None) => arguments.add(None::<Decimal>),
-        Value::Decimal(Some(value)) => arguments.add(*value.as_ref()),
+        Value::Decimal(Some(value)) => arguments.add(*value),
     };
     bound.map_err(|error| DbErr::exec(error.to_string()))
 }
