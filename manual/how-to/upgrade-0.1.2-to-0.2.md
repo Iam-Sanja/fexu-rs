@@ -1,7 +1,7 @@
 # Upgrade from Fexu 0.1.2 to the 0.2.0 development source
 
-!!! warning "Development instructions — no 0.2.0 release yet"
-    The latest published Fexu packages are **0.1.2**. The `main` workspace currently declares **0.2.0**, which is **not** available as a stable crates.io release. This guide documents *pre-release source compatibility work*, not an approved production upgrade or a guaranteed migration path.
+!!! warning "Source upgrade — not automatic"
+    Published crates.io is still **0.1.2** until authorize publish. Workspace **0.2.0** requires source edits or path dependencies; `fexu upgrade` does **not** fully rewrite application code or guarantee production migration.
 
 ## Before you upgrade
 
@@ -19,7 +19,12 @@ The repository includes `scripts/test-published-v012-upgrade.sh`, which:
 4. Runs `cargo check`, confirms that `fexu upgrade --check` reports tracked-file modifications without writing files, verifies that `fexu migrate plan` does not mutate the database, and applies a new `Customer` model migration.
 5. Checks that the original product row, historical migration chain and the new table remain present.
 
-This is a **partial SQLite API-project compatibility test**. It does **not** demonstrate a full upgrade of real accounts, passwords, sessions or admin logins; it does **not** exercise an external PostgreSQL consumer or a fullstack Bookstore application. Those checks are **release blockers** for 0.2.0.
+Additional acceptance scripts on branch `release/020-final-acceptance` (CI green @ `d76dab7`) cover:
+
+- Published 0.1.2 **auth** consumer → source on SQLite and disposable PostgreSQL.
+- Published 0.1.2 **fullstack** consumer → source on SQLite and disposable PostgreSQL (HTTP login, sessions, roles, catalog data, failed migration guard).
+
+These are **regression fixtures**, not a promise that every production app upgrades without manual Rust edits. The API SQLite script above remains the minimal catalog/product proof.
 
 ## Compare a published project with your source checkout
 
