@@ -1874,19 +1874,19 @@ fn bind_chrono(backend: DatabaseBackend, value: ChronoBound) -> Result<Value, Fe
             Value::ChronoDate(Some(Box::new(date)))
         }
         (DatabaseBackend::Sqlite, ChronoBound::Date(date)) => {
-            Value::String(Some(fexu_core::temporal::format_date(date))))
+            Value::String(Some(fexu_core::temporal::format_date(date)))
         }
         (DatabaseBackend::Postgres, ChronoBound::Time(time)) => {
             Value::ChronoTime(Some(Box::new(time)))
         }
         (DatabaseBackend::Sqlite, ChronoBound::Time(time)) => {
-            Value::String(Some(fexu_core::temporal::format_time(time))))
+            Value::String(Some(fexu_core::temporal::format_time(time)))
         }
         (DatabaseBackend::Postgres, ChronoBound::DateTime(instant)) => {
             Value::ChronoDateTimeUtc(Some(Box::new(instant)))
         }
         (DatabaseBackend::Sqlite, ChronoBound::DateTime(instant)) => {
-            Value::String(Some(sqlite_datetime_text(instant))))
+            Value::String(Some(sqlite_datetime_text(instant)))
         }
         (DatabaseBackend::MySql, _) => return mysql(),
     })
@@ -1900,8 +1900,8 @@ fn bound_value(value: &Bound) -> Value {
     match value {
         Bound::Bool(flag) => Value::Bool(Some(*flag)),
         Bound::I64(number) => Value::BigInt(Some(*number)),
-        Bound::Text(text) => Value::String(Some(text.clone()))),
-        Bound::Uuid(id) => Value::Uuid(Some(*id))),
+        Bound::Text(text) => Value::String(Some(text.clone())),
+        Bound::Uuid(id) => Value::Uuid(Some(*id)),
         Bound::Date(_) | Bound::Time(_) | Bound::DateTime(_) => {
             unreachable!("temporal values are bound in bind_temporal")
         }
@@ -2645,16 +2645,16 @@ mod tests {
             Item::descriptor().table,
             Item::columns(),
             vec![
-                Value::Uuid(Some(Uuid::from_u128(row.id)))),
-                Value::String(Some(row.name.to_owned()))),
+                Value::Uuid(Some(Uuid::from_u128(row.id))),
+                Value::String(Some(row.name.to_owned())),
                 Value::BigInt(Some(row.stock)),
                 Value::Bool(Some(row.active)),
                 Value::BigInt(Some(row.price)),
                 match row.category {
-                    Some(category) => Value::Uuid(Some(Uuid::from_u128(category)))),
+                    Some(category) => Value::Uuid(Some(Uuid::from_u128(category))),
                     None => Value::Uuid(None),
                 },
-                Value::Uuid(Some(Uuid::from_u128(row.owner)))),
+                Value::Uuid(Some(Uuid::from_u128(row.owner))),
             ],
         )
         .await
@@ -3367,7 +3367,7 @@ mod tests {
             let children = crate::find_by_column::<Item>(
                 &tx,
                 "owner_id",
-                Value::Uuid(Some(Uuid::from_u128(7)))),
+                Value::Uuid(Some(Uuid::from_u128(7))),
             )
             .await
             .unwrap();
@@ -3596,8 +3596,8 @@ mod tests {
                 Alias::new("visible"),
             ])
             .values_panic([
-                Value::Uuid(Some(Uuid::from_u128(id)))).into(),
-                Value::Uuid(Some(Uuid::from_u128(item)))).into(),
+                Value::Uuid(Some(Uuid::from_u128(id))).into(),
+                Value::Uuid(Some(Uuid::from_u128(item))).into(),
                 Value::BigInt(Some(amount)).into(),
                 Value::Bool(Some(visible == 1)).into(),
             ]);
@@ -3613,8 +3613,8 @@ mod tests {
             .into_table(Alias::new("fexu_query_membership"))
             .columns([Alias::new("item_id"), Alias::new("tag_id")])
             .values_panic([
-                Value::Uuid(Some(Uuid::from_u128(item)))).into(),
-                Value::Uuid(Some(Uuid::from_u128(tag)))).into(),
+                Value::Uuid(Some(Uuid::from_u128(item))).into(),
+                Value::Uuid(Some(Uuid::from_u128(tag))).into(),
             ]);
         db.execute(render(db.get_database_backend(), &query).unwrap())
             .await
@@ -4322,7 +4322,7 @@ mod tests {
         db.execute(Statement::from_sql_and_values(
             DatabaseBackend::Sqlite,
             "INSERT INTO fexu_uuid_probe (id) VALUES (?)",
-            [Value::Uuid(Some(id)))],
+            [Value::Uuid(Some(id))],
         ))
         .await
         .unwrap();
@@ -4330,7 +4330,7 @@ mod tests {
             .query_one(Statement::from_sql_and_values(
                 DatabaseBackend::Sqlite,
                 "SELECT id FROM fexu_uuid_probe WHERE id = ?",
-                [Value::Uuid(Some(id)))],
+                [Value::Uuid(Some(id))],
             ))
             .await
             .unwrap();
@@ -4339,7 +4339,7 @@ mod tests {
             .query_one(Statement::from_sql_and_values(
                 DatabaseBackend::Sqlite,
                 "SELECT id FROM fexu_uuid_probe WHERE id = ?",
-                [Value::String(Some(id.to_string())))],
+                [Value::String(Some(id.to_string()))],
             ))
             .await
             .unwrap();
@@ -5465,7 +5465,7 @@ mod tests {
             bind_temporal(&column, &Bound::DateTime(winter), DatabaseBackend::Postgres).unwrap();
         assert_eq!(
             winter_sqlite,
-            Value::String(Some("2027-02-08T08:00:00+00:00".to_owned())))
+            Value::String(Some("2027-02-08T08:00:00+00:00".to_owned()))
         );
         match winter_postgres {
             Value::ChronoDateTimeUtc(Some(value)) => assert_eq!(*value, winter),
@@ -5475,7 +5475,7 @@ mod tests {
             bind_temporal(&column, &Bound::DateTime(summer), DatabaseBackend::Sqlite).unwrap();
         assert_eq!(
             summer_sqlite,
-            Value::String(Some("2026-07-08T07:00:00+00:00".to_owned())))
+            Value::String(Some("2026-07-08T07:00:00+00:00".to_owned()))
         );
 
         let db = connect("sqlite::memory:").await.unwrap();
@@ -5558,10 +5558,10 @@ mod tests {
     }
 
     fn uuid_value(id: u128) -> Value {
-        Value::Uuid(Some(Uuid::from_u128(id))))
+        Value::Uuid(Some(Uuid::from_u128(id)))
     }
 
     fn text_value(text: &str) -> Value {
-        Value::String(Some(text.to_owned())))
+        Value::String(Some(text.to_owned()))
     }
 }
