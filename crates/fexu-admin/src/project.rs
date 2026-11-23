@@ -2,7 +2,9 @@
 
 use crate::registry::{is_hex_color, is_public_label, AdminBranding, AdminRegistry, ProjectIcons};
 use fexu_core::FexuError;
-use fexu_db::driver::sea_query::{Alias, Expr, ExprTrait, PostgresQueryBuilder, Query, SqliteQueryBuilder};
+use fexu_db::driver::sea_query::{
+    Alias, Expr, ExprTrait, PostgresQueryBuilder, Query, SqliteQueryBuilder,
+};
 use fexu_db::driver::{
     ConnectionTrait, DatabaseBackend, DatabaseConnection, Statement, Value as DbValue,
 };
