@@ -425,10 +425,7 @@ pub async fn exercise(db: &DatabaseConnection) -> Result<(), String> {
         db,
         Note::descriptor().table,
         Note::columns(),
-        vec![
-            Value::Uuid(Some(Uuid::from_u128(13))),
-            Value::Json(None),
-        ],
+        vec![Value::Uuid(Some(Uuid::from_u128(13))), Value::Json(None)],
     )
     .await
     .map_err(|error| error.to_string())?;
