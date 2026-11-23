@@ -1101,8 +1101,8 @@ impl<M> Select<M> {
             );
         }
         let aggregate = Func::coalesce([
-            Expr::col((Alias::new("fexu_agg"), Alias::new("aggregate_value"))).into(),
-            Expr::val(0).into(),
+            Expr::col((Alias::new("fexu_agg"), Alias::new("aggregate_value"))),
+            Expr::val(0),
         ]);
         let cast = match db.get_database_backend() {
             DatabaseBackend::Postgres => "bigint",
@@ -1639,8 +1639,8 @@ fn escape_glob(term: &str) -> String {
 
 fn qualified_col(qualifier: Option<&str>, name: &str) -> SimpleExpr {
     match qualifier {
-        Some(alias) => Expr::col((Alias::new(alias), Alias::new(name))).into(),
-        None => Expr::col(Alias::new(name)).into(),
+        Some(alias) => Expr::col((Alias::new(alias), Alias::new(name))),
+        None => Expr::col(Alias::new(name)),
     }
 }
 
@@ -1793,7 +1793,7 @@ pub(crate) fn bind_for_column(
             column.scale,
         )
         .map_err(|error| FexuError::Validation(format!("{} {}", column.name, error.message)))?;
-        return Ok(Value::Bytes(Some(Box::new(bytes.to_vec()))));
+        return Ok(Value::Bytes(Some(bytes.to_vec())));
     }
     if column.kind == ColumnKind::Choice {
         let Bound::Text(text) = value else {
@@ -1870,23 +1870,19 @@ enum ChronoBound {
 fn bind_chrono(backend: DatabaseBackend, value: ChronoBound) -> Result<Value, FexuError> {
     let mysql = || Err(FexuError::Validation("MySQL is not supported".into()));
     Ok(match (backend, value) {
-        (DatabaseBackend::Postgres, ChronoBound::Date(date)) => {
-            Value::ChronoDate(Some(Box::new(date)))
-        }
+        (DatabaseBackend::Postgres, ChronoBound::Date(date)) => Value::ChronoDate(Some(date)),
         (DatabaseBackend::Sqlite, ChronoBound::Date(date)) => {
-            Value::String(Some(Box::new(fexu_core::temporal::format_date(date))))
+            Value::String(Some(fexu_core::temporal::format_date(date)))
         }
-        (DatabaseBackend::Postgres, ChronoBound::Time(time)) => {
-            Value::ChronoTime(Some(Box::new(time)))
-        }
+        (DatabaseBackend::Postgres, ChronoBound::Time(time)) => Value::ChronoTime(Some(time)),
         (DatabaseBackend::Sqlite, ChronoBound::Time(time)) => {
-            Value::String(Some(Box::new(fexu_core::temporal::format_time(time))))
+            Value::String(Some(fexu_core::temporal::format_time(time)))
         }
         (DatabaseBackend::Postgres, ChronoBound::DateTime(instant)) => {
-            Value::ChronoDateTimeUtc(Some(Box::new(instant)))
+            Value::ChronoDateTimeUtc(Some(instant))
         }
         (DatabaseBackend::Sqlite, ChronoBound::DateTime(instant)) => {
-            Value::String(Some(Box::new(sqlite_datetime_text(instant))))
+            Value::String(Some(sqlite_datetime_text(instant)))
         }
         (DatabaseBackend::MySql, _) => return mysql(),
     })
@@ -1900,8 +1896,8 @@ fn bound_value(value: &Bound) -> Value {
     match value {
         Bound::Bool(flag) => Value::Bool(Some(*flag)),
         Bound::I64(number) => Value::BigInt(Some(*number)),
-        Bound::Text(text) => Value::String(Some(Box::new(text.clone()))),
-        Bound::Uuid(id) => Value::Uuid(Some(Box::new(*id))),
+        Bound::Text(text) => Value::String(Some(text.clone())),
+        Bound::Uuid(id) => Value::Uuid(Some(*id)),
         Bound::Date(_) | Bound::Time(_) | Bound::DateTime(_) => {
             unreachable!("temporal values are bound in bind_temporal")
         }
@@ -2645,16 +2641,16 @@ mod tests {
             Item::descriptor().table,
             Item::columns(),
             vec![
-                Value::Uuid(Some(Box::new(Uuid::from_u128(row.id)))),
-                Value::String(Some(Box::new(row.name.to_owned()))),
+                Value::Uuid(Some(Uuid::from_u128(row.id))),
+                Value::String(Some(row.name.to_owned())),
                 Value::BigInt(Some(row.stock)),
                 Value::Bool(Some(row.active)),
                 Value::BigInt(Some(row.price)),
                 match row.category {
-                    Some(category) => Value::Uuid(Some(Box::new(Uuid::from_u128(category)))),
+                    Some(category) => Value::Uuid(Some(Uuid::from_u128(category))),
                     None => Value::Uuid(None),
                 },
-                Value::Uuid(Some(Box::new(Uuid::from_u128(row.owner)))),
+                Value::Uuid(Some(Uuid::from_u128(row.owner))),
             ],
         )
         .await
@@ -3367,7 +3363,7 @@ mod tests {
             let children = crate::find_by_column::<Item>(
                 &tx,
                 "owner_id",
-                Value::Uuid(Some(Box::new(Uuid::from_u128(7)))),
+                Value::Uuid(Some(Uuid::from_u128(7))),
             )
             .await
             .unwrap();
@@ -3596,8 +3592,8 @@ mod tests {
                 Alias::new("visible"),
             ])
             .values_panic([
-                Value::Uuid(Some(Box::new(Uuid::from_u128(id)))).into(),
-                Value::Uuid(Some(Box::new(Uuid::from_u128(item)))).into(),
+                Value::Uuid(Some(Uuid::from_u128(id))).into(),
+                Value::Uuid(Some(Uuid::from_u128(item))).into(),
                 Value::BigInt(Some(amount)).into(),
                 Value::Bool(Some(visible == 1)).into(),
             ]);
@@ -3613,8 +3609,8 @@ mod tests {
             .into_table(Alias::new("fexu_query_membership"))
             .columns([Alias::new("item_id"), Alias::new("tag_id")])
             .values_panic([
-                Value::Uuid(Some(Box::new(Uuid::from_u128(item)))).into(),
-                Value::Uuid(Some(Box::new(Uuid::from_u128(tag)))).into(),
+                Value::Uuid(Some(Uuid::from_u128(item))).into(),
+                Value::Uuid(Some(Uuid::from_u128(tag))).into(),
             ]);
         db.execute(render(db.get_database_backend(), &query).unwrap())
             .await
@@ -4322,7 +4318,7 @@ mod tests {
         db.execute(Statement::from_sql_and_values(
             DatabaseBackend::Sqlite,
             "INSERT INTO fexu_uuid_probe (id) VALUES (?)",
-            [Value::Uuid(Some(Box::new(id)))],
+            [Value::Uuid(Some(id))],
         ))
         .await
         .unwrap();
@@ -4330,7 +4326,7 @@ mod tests {
             .query_one(Statement::from_sql_and_values(
                 DatabaseBackend::Sqlite,
                 "SELECT id FROM fexu_uuid_probe WHERE id = ?",
-                [Value::Uuid(Some(Box::new(id)))],
+                [Value::Uuid(Some(id))],
             ))
             .await
             .unwrap();
@@ -4339,7 +4335,7 @@ mod tests {
             .query_one(Statement::from_sql_and_values(
                 DatabaseBackend::Sqlite,
                 "SELECT id FROM fexu_uuid_probe WHERE id = ?",
-                [Value::String(Some(Box::new(id.to_string())))],
+                [Value::String(Some(id.to_string()))],
             ))
             .await
             .unwrap();
@@ -4462,15 +4458,15 @@ mod tests {
     }
 
     fn date_value(text: &str) -> Value {
-        Value::ChronoDate(Some(Box::new(fexu_core::parse_date(text).unwrap())))
+        Value::ChronoDate(Some(fexu_core::parse_date(text).unwrap()))
     }
 
     fn time_value(text: &str) -> Value {
-        Value::ChronoTime(Some(Box::new(fexu_core::parse_time(text).unwrap())))
+        Value::ChronoTime(Some(fexu_core::parse_time(text).unwrap()))
     }
 
     fn instant_value(text: &str) -> Value {
-        Value::ChronoDateTimeUtc(Some(Box::new(fexu_core::parse_datetime_utc(text).unwrap())))
+        Value::ChronoDateTimeUtc(Some(fexu_core::parse_datetime_utc(text).unwrap()))
     }
 
     async fn insert_temporal(db: &impl ConnectionTrait, kind: DatabaseKind) {
@@ -5465,17 +5461,17 @@ mod tests {
             bind_temporal(&column, &Bound::DateTime(winter), DatabaseBackend::Postgres).unwrap();
         assert_eq!(
             winter_sqlite,
-            Value::String(Some(Box::new("2027-02-08T08:00:00+00:00".to_owned())))
+            Value::String(Some("2027-02-08T08:00:00+00:00".to_owned()))
         );
         match winter_postgres {
-            Value::ChronoDateTimeUtc(Some(value)) => assert_eq!(*value, winter),
+            Value::ChronoDateTimeUtc(Some(value)) => assert_eq!(value, winter),
             other => panic!("postgres bind {other:?}"),
         }
         let summer_sqlite =
             bind_temporal(&column, &Bound::DateTime(summer), DatabaseBackend::Sqlite).unwrap();
         assert_eq!(
             summer_sqlite,
-            Value::String(Some(Box::new("2026-07-08T07:00:00+00:00".to_owned())))
+            Value::String(Some("2026-07-08T07:00:00+00:00".to_owned()))
         );
 
         let db = connect("sqlite::memory:").await.unwrap();
@@ -5558,10 +5554,10 @@ mod tests {
     }
 
     fn uuid_value(id: u128) -> Value {
-        Value::Uuid(Some(Box::new(Uuid::from_u128(id))))
+        Value::Uuid(Some(Uuid::from_u128(id)))
     }
 
     fn text_value(text: &str) -> Value {
-        Value::String(Some(Box::new(text.to_owned())))
+        Value::String(Some(text.to_owned()))
     }
 }

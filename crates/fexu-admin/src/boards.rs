@@ -2,7 +2,7 @@
 
 use fexu_core::{ColumnKind, ColumnSpec, FexuError, QueryScope, ScopeValue};
 use fexu_db::driver::sea_query::{
-    Alias, Expr, Order, PostgresQueryBuilder, Query, SqliteQueryBuilder,
+    Alias, Expr, ExprTrait, Order, PostgresQueryBuilder, Query, SqliteQueryBuilder,
 };
 use fexu_db::driver::{
     ConnectionTrait, DatabaseBackend, DatabaseConnection, Statement, Value as DbValue,

@@ -393,7 +393,7 @@ impl Queue {
         for row in candidates {
             let id = required_uuid(&row, "id")?;
             let token = Uuid::new_v4().to_string();
-            let expires = now.saturating_add(lease_secs.max(1));
+            let expires = now.saturating_add(std::cmp::Ord::max(lease_secs, 1));
             let mut update = Query::update();
             update
                 .table(Alias::new(JOBS))
@@ -483,8 +483,11 @@ impl Queue {
             record.cron_zone.clone(),
             record.schedule_key.clone(),
         ) {
-            let next_at =
-                crate::schedule::next_after(&expression, &zone, now.max(record.available_at))?;
+            let next_at = crate::schedule::next_after(
+                &expression,
+                &zone,
+                std::cmp::Ord::max(now, record.available_at),
+            )?;
             let idempotency = recur_key(&schedule_key, next_at)?;
             if find_by_column(&transaction, "idempotency_key", &idempotency)
                 .await?
@@ -642,7 +645,7 @@ impl Queue {
             return Ok(0);
         }
         let now = self.clock.unix()?;
-        let cutoff = now.saturating_sub(self.policy.retention_secs.max(3600));
+        let cutoff = now.saturating_sub(std::cmp::Ord::max(self.policy.retention_secs, 3600));
         let mut inner = Query::select();
         inner
             .column(Alias::new("id"))
@@ -874,7 +877,7 @@ async fn conditional_status(
                 if clear_schedule {
                     null_text()
                 } else {
-                    Expr::col(Alias::new("schedule_key")).into()
+                    Expr::col(Alias::new("schedule_key"))
                 },
             ),
         ])
@@ -1313,7 +1316,7 @@ fn database(error: impl ToString) -> JobError {
 
 fn id_expr(backend: DatabaseBackend, id: Uuid) -> fexu_db::driver::sea_query::SimpleExpr {
     match backend {
-        DatabaseBackend::Postgres => Expr::value(Value::Uuid(Some(Box::new(id)))),
+        DatabaseBackend::Postgres => Expr::value(Value::Uuid(Some(id))),
         DatabaseBackend::Sqlite | DatabaseBackend::MySql => Expr::value(id.to_string()),
     }
 }

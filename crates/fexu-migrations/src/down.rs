@@ -388,8 +388,8 @@ mod tests {
         let bound = values
             .iter()
             .map(|value| match backend {
-                DatabaseBackend::Postgres => fexu_db::driver::Value::Uuid(Some(Box::new(*value))),
-                _ => fexu_db::driver::Value::String(Some(Box::new(value.to_string()))),
+                DatabaseBackend::Postgres => fexu_db::driver::Value::Uuid(Some(*value)),
+                _ => fexu_db::driver::Value::String(Some(value.to_string())),
             })
             .collect::<Vec<_>>();
         db.execute(Statement::from_sql_and_values(

@@ -1,7 +1,9 @@
 //! Sitzungsgebundene Hinweise. Die Tabelle entsteht nur durch `create_flash_table`.
 
 use fexu_core::FexuError;
-use fexu_db::driver::sea_query::{Alias, Expr, PostgresQueryBuilder, Query, SqliteQueryBuilder};
+use fexu_db::driver::sea_query::{
+    Alias, Expr, ExprTrait, PostgresQueryBuilder, Query, SqliteQueryBuilder,
+};
 use fexu_db::driver::{ConnectionTrait, DatabaseBackend, DatabaseConnection, Statement, Value};
 use uuid::Uuid;
 
@@ -98,10 +100,10 @@ pub async fn push_flash(
             Alias::new("created_at"),
         ])
         .values_panic([
-            Value::String(Some(Box::new(Uuid::new_v4().to_string()))).into(),
-            Value::String(Some(Box::new(session_id.to_string()))).into(),
-            Value::String(Some(Box::new(level.as_str().to_owned()))).into(),
-            Value::String(Some(Box::new(text.to_owned()))).into(),
+            Value::String(Some(Uuid::new_v4().to_string())).into(),
+            Value::String(Some(session_id.to_string())).into(),
+            Value::String(Some(level.as_str().to_owned())).into(),
+            Value::String(Some(text.to_owned())).into(),
             Value::BigInt(Some(fexu_core::utc_now().timestamp())).into(),
         ]);
     db.execute(statement(db, &insert)?)
@@ -122,8 +124,7 @@ pub async fn take_flashes(
     delete
         .from_table(Alias::new(TABLE))
         .and_where(
-            Expr::col(Alias::new("session_id"))
-                .eq(Value::String(Some(Box::new(session_id.to_string())))),
+            Expr::col(Alias::new("session_id")).eq(Value::String(Some(session_id.to_string()))),
         )
         .returning(Query::returning().columns([
             Alias::new("id"),

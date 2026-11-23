@@ -5,7 +5,9 @@
 //! transaction. The caller supplies the object scope.
 
 use fexu_core::{ColumnKind, ColumnSpec, FexuError, QueryScope};
-use fexu_db::driver::sea_query::{Alias, Expr, PostgresQueryBuilder, Query, SqliteQueryBuilder};
+use fexu_db::driver::sea_query::{
+    Alias, Expr, ExprTrait, PostgresQueryBuilder, Query, SqliteQueryBuilder,
+};
 use fexu_db::driver::{
     ConnectionTrait, DatabaseBackend, DatabaseConnection, Statement, TransactionTrait, Value,
 };
@@ -165,9 +167,7 @@ pub async fn current_members(
     query
         .column(Alias::new(link.child_column))
         .from(Alias::new(link.join_table))
-        .and_where(
-            Expr::col(Alias::new(link.parent_column)).eq(Value::Uuid(Some(Box::new(parent)))),
-        )
+        .and_where(Expr::col(Alias::new(link.parent_column)).eq(Value::Uuid(Some(parent))))
         .limit(1001);
     let rows = db
         .query_all(statement(db, &query)?)
@@ -282,9 +282,9 @@ pub(crate) async fn replace_links_in(
         unique.push(*child);
     }
     let mut delete = Query::delete();
-    delete.from_table(Alias::new(link.join_table)).and_where(
-        Expr::col(Alias::new(link.parent_column)).eq(Value::Uuid(Some(Box::new(parent)))),
-    );
+    delete
+        .from_table(Alias::new(link.join_table))
+        .and_where(Expr::col(Alias::new(link.parent_column)).eq(Value::Uuid(Some(parent))));
     db.execute(statement(db, &delete)?)
         .await
         .map_err(FexuError::database)?;
@@ -297,8 +297,8 @@ pub(crate) async fn replace_links_in(
                 Alias::new(link.child_column),
             ])
             .values_panic([
-                Value::Uuid(Some(Box::new(parent))).into(),
-                Value::Uuid(Some(Box::new(child))).into(),
+                Value::Uuid(Some(parent)).into(),
+                Value::Uuid(Some(child)).into(),
             ]);
         db.execute(statement(db, &insert)?)
             .await
@@ -406,9 +406,9 @@ mod tests {
             "lookup_targets",
             &columns(),
             vec![
-                Value::Uuid(Some(Box::new(Uuid::from_u128(u128::from(index) + 1)))),
-                Value::String(Some(Box::new(format!("row-{index:04}")))),
-                Value::String(Some(Box::new(owner.to_owned()))),
+                Value::Uuid(Some(Uuid::from_u128(u128::from(index) + 1))),
+                Value::String(Some(format!("row-{index:04}"))),
+                Value::String(Some(owner.to_owned())),
             ],
         )
         .await
@@ -718,8 +718,8 @@ mod tests {
             backend,
             insert_sql,
             [
-                Value::Uuid(Some(Box::new(parent))),
-                Value::Uuid(Some(Box::new(Uuid::from_u128(9)))),
+                Value::Uuid(Some(parent)),
+                Value::Uuid(Some(Uuid::from_u128(9))),
             ],
         ))
         .await

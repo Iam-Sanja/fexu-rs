@@ -1,7 +1,7 @@
 //! SeaQuery-backed CRUD and DDL for SQLite and PostgreSQL.
 
 use crate::driver::sea_query::{
-    Alias, ColumnDef, Expr, ForeignKey, ForeignKeyAction, Func, Index, LikeExpr, Order,
+    Alias, ColumnDef, Expr, ExprTrait, ForeignKey, ForeignKeyAction, Func, Index, LikeExpr, Order,
     PostgresQueryBuilder, Query, SqliteQueryBuilder, Table,
 };
 use crate::driver::{
@@ -612,7 +612,7 @@ pub async fn date_buckets(
     let expression = bucket_expression(db.get_database_backend(), kind, column, width);
     let mut query = Query::select();
     query
-        .expr_as(Expr::cust(&expression), Alias::new("bucket"))
+        .expr_as(Expr::cust(expression.clone()), Alias::new("bucket"))
         .expr_as(
             Expr::col(Alias::new("id")).count(),
             Alias::new("bucket_count"),
@@ -628,7 +628,7 @@ pub async fn date_buckets(
         bounds,
         scope,
     )?;
-    query.add_group_by([Expr::cust(&expression)]);
+    query.add_group_by([Expr::cust(expression.clone())]);
     query.order_by_expr(Expr::cust("bucket"), Order::Asc);
     query.limit(101);
     let rows = db
@@ -778,10 +778,8 @@ pub(crate) fn scope_condition_in(
 
 fn qualified_col(alias: Option<&str>, name: &str) -> crate::driver::sea_query::SimpleExpr {
     match alias {
-        Some(alias) => {
-            crate::driver::sea_query::Expr::col((Alias::new(alias), Alias::new(name))).into()
-        }
-        None => crate::driver::sea_query::Expr::col(Alias::new(name)).into(),
+        Some(alias) => crate::driver::sea_query::Expr::col((Alias::new(alias), Alias::new(name))),
+        None => crate::driver::sea_query::Expr::col(Alias::new(name)),
     }
 }
 
@@ -1370,10 +1368,10 @@ mod tests {
                 "fexu_admin_search",
                 &columns(),
                 vec![
-                    Value::Uuid(Some(Box::new(Uuid::from_u128(id)))),
-                    Value::String(Some(Box::new(name.to_owned()))),
-                    Value::String(Some(Box::new(sku.to_owned()))),
-                    Value::Uuid(Some(Box::new(Uuid::from_u128(owner)))),
+                    Value::Uuid(Some(Uuid::from_u128(id))),
+                    Value::String(Some(name.to_owned())),
+                    Value::String(Some(sku.to_owned())),
+                    Value::Uuid(Some(Uuid::from_u128(owner))),
                 ],
             )
             .await

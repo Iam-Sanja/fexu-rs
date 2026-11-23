@@ -214,12 +214,12 @@ pub async fn exercise(db: &DatabaseConnection) -> Result<(), String> {
             Sale::descriptor().table,
             Sale::columns(),
             vec![
-                Value::Uuid(Some(Box::new(Uuid::from_u128(id)))),
-                Value::String(Some(Box::new(region.into()))),
+                Value::Uuid(Some(Uuid::from_u128(id))),
+                Value::String(Some(region.into())),
                 Value::BigInt(Some(units)),
-                Value::Uuid(Some(Box::new(owner))),
+                Value::Uuid(Some(owner)),
                 match label {
-                    Some(text) => Value::String(Some(Box::new(text.into()))),
+                    Some(text) => Value::String(Some(text.into())),
                     None => Value::String(None),
                 },
             ],
@@ -344,9 +344,9 @@ pub async fn exercise(db: &DatabaseConnection) -> Result<(), String> {
         Profile::descriptor().table,
         Profile::columns(),
         vec![
-            Value::Uuid(Some(Box::new(Uuid::from_u128(9)))),
-            Value::Uuid(Some(Box::new(user))),
-            Value::String(Some(Box::new("ada".into()))),
+            Value::Uuid(Some(Uuid::from_u128(9))),
+            Value::Uuid(Some(user)),
+            Value::String(Some("ada".into())),
         ],
     )
     .await
@@ -374,9 +374,9 @@ pub async fn exercise(db: &DatabaseConnection) -> Result<(), String> {
         Profile::descriptor().table,
         Profile::columns(),
         vec![
-            Value::Uuid(Some(Box::new(Uuid::from_u128(10)))),
-            Value::Uuid(Some(Box::new(user))),
-            Value::String(Some(Box::new("second".into()))),
+            Value::Uuid(Some(Uuid::from_u128(10))),
+            Value::Uuid(Some(user)),
+            Value::String(Some("second".into())),
         ],
     )
     .await
@@ -398,7 +398,7 @@ pub async fn exercise(db: &DatabaseConnection) -> Result<(), String> {
         Note::descriptor().table,
         Note::columns(),
         vec![
-            Value::Uuid(Some(Box::new(Uuid::from_u128(11)))),
+            Value::Uuid(Some(Uuid::from_u128(11))),
             Value::Json(Some(Box::new(parsed))),
         ],
     )
@@ -412,7 +412,7 @@ pub async fn exercise(db: &DatabaseConnection) -> Result<(), String> {
         Note::descriptor().table,
         Note::columns(),
         vec![
-            Value::Uuid(Some(Box::new(Uuid::from_u128(12)))),
+            Value::Uuid(Some(Uuid::from_u128(12))),
             Value::Json(Some(Box::new(serde_json::Value::Null))),
         ],
     )
@@ -425,10 +425,7 @@ pub async fn exercise(db: &DatabaseConnection) -> Result<(), String> {
         db,
         Note::descriptor().table,
         Note::columns(),
-        vec![
-            Value::Uuid(Some(Box::new(Uuid::from_u128(13)))),
-            Value::Json(None),
-        ],
+        vec![Value::Uuid(Some(Uuid::from_u128(13))), Value::Json(None)],
     )
     .await
     .map_err(|error| error.to_string())?;
@@ -442,8 +439,8 @@ pub async fn exercise(db: &DatabaseConnection) -> Result<(), String> {
         Note::descriptor().table,
         Note::columns(),
         vec![
-            Value::Uuid(Some(Box::new(Uuid::from_u128(14)))),
-            Value::String(Some(Box::new("not-json".into()))),
+            Value::Uuid(Some(Uuid::from_u128(14))),
+            Value::String(Some("not-json".into())),
         ],
     )
     .await
@@ -591,7 +588,7 @@ impl FexuModel for InvoiceLine {
 
 fn date_value(text: &str) -> Result<Value, String> {
     let date = fexu_core::parse_date(text).map_err(|code| code.to_owned())?;
-    Ok(Value::ChronoDate(Some(Box::new(date))))
+    Ok(Value::ChronoDate(Some(date)))
 }
 
 async fn insert_invoice(
@@ -607,14 +604,14 @@ async fn insert_invoice(
         Invoice::descriptor().table,
         Invoice::columns(),
         vec![
-            Value::Uuid(Some(Box::new(Uuid::from_u128(id)))),
+            Value::Uuid(Some(Uuid::from_u128(id))),
             match sold_on {
                 Some(text) => date_value(text)?,
                 None => Value::ChronoDate(None),
             },
-            Value::String(Some(Box::new(status.to_owned()))),
+            Value::String(Some(status.to_owned())),
             Value::BigInt(Some(cents)),
-            Value::Uuid(Some(Box::new(owner))),
+            Value::Uuid(Some(owner)),
         ],
     )
     .await
@@ -746,9 +743,9 @@ async fn exercise_monthly_revenue(db: &DatabaseConnection) -> Result<(), String>
             InvoiceLine::descriptor().table,
             InvoiceLine::columns(),
             vec![
-                Value::Uuid(Some(Box::new(Uuid::from_u128(id)))),
-                Value::Uuid(Some(Box::new(parent))),
-                Value::Uuid(Some(Box::new(line_owner))),
+                Value::Uuid(Some(Uuid::from_u128(id))),
+                Value::Uuid(Some(parent)),
+                Value::Uuid(Some(line_owner)),
             ],
         )
         .await
@@ -840,12 +837,12 @@ async fn insert_sale(
         Sale::descriptor().table,
         Sale::columns(),
         vec![
-            Value::Uuid(Some(Box::new(Uuid::from_u128(id)))),
-            Value::String(Some(Box::new(region.to_owned()))),
+            Value::Uuid(Some(Uuid::from_u128(id))),
+            Value::String(Some(region.to_owned())),
             Value::BigInt(Some(units)),
-            Value::Uuid(Some(Box::new(owner))),
+            Value::Uuid(Some(owner)),
             match label {
-                Some(text) => Value::String(Some(Box::new(text.to_owned()))),
+                Some(text) => Value::String(Some(text.to_owned())),
                 None => Value::String(None),
             },
         ],

@@ -3,7 +3,7 @@
 use crate::error::MigrationError;
 use fexu_core::{ColumnKind, DatabaseKind};
 use fexu_db::driver::sea_query::{
-    Alias, Expr, Order, PostgresQueryBuilder, Query, SimpleExpr, SqliteQueryBuilder,
+    Alias, Expr, ExprTrait, Order, PostgresQueryBuilder, Query, SimpleExpr, SqliteQueryBuilder,
 };
 use fexu_db::driver::{ConnectionTrait, DatabaseBackend, DatabaseConnection, Statement, Value};
 use fexu_db::{kind_of, render_create_table, PhysicalColumn};

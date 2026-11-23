@@ -2,7 +2,9 @@
 
 use fexu_auth::ADMIN_AUDIT;
 use fexu_core::{AdminFieldMeta, AdminModelMeta, FexuError};
-use fexu_db::driver::sea_query::{Alias, PostgresQueryBuilder, Query, SqliteQueryBuilder};
+use fexu_db::driver::sea_query::{
+    Alias, ExprTrait, PostgresQueryBuilder, Query, SqliteQueryBuilder,
+};
 use fexu_db::driver::{ConnectionTrait, DatabaseBackend, Statement, Value as DbValue};
 use serde_json::Value;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -269,8 +271,8 @@ pub fn fail_next_insert() {
 
 pub(crate) fn stored_uuid(backend: DatabaseBackend, id: Uuid) -> DbValue {
     match backend {
-        DatabaseBackend::Postgres => DbValue::Uuid(Some(Box::new(id))),
-        _ => DbValue::String(Some(Box::new(id.to_string()))),
+        DatabaseBackend::Postgres => DbValue::Uuid(Some(id)),
+        _ => DbValue::String(Some(id.to_string())),
     }
 }
 

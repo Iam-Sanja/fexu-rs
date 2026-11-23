@@ -609,7 +609,7 @@ fn bind_value(
             let bytes = encode_decimal(decimal, precision, scale).map_err(|error| {
                 MigrationError::new(format!("Field '{}': {error}", column.name))
             })?;
-            Ok(Value::Bytes(Some(Box::new(bytes.to_vec()))))
+            Ok(Value::Bytes(Some(bytes.to_vec())))
         }
         ColumnKind::BigInt => Ok(Value::BigInt(Some(value.as_i64().expect("validated")))),
         ColumnKind::Boolean => Ok(Value::Bool(Some(value.as_bool().expect("validated")))),
@@ -625,16 +625,16 @@ fn bind_value(
             })?;
             Ok(Value::Json(Some(Box::new(parsed))))
         }
-        ColumnKind::Text | ColumnKind::Choice => Ok(Value::String(Some(Box::new(
+        ColumnKind::Text | ColumnKind::Choice => Ok(Value::String(Some(
             value.as_str().expect("validated").to_owned(),
-        )))),
+        ))),
         ColumnKind::Date => {
             let date = parse_date(value.as_str().expect("validated")).map_err(|error| {
                 MigrationError::new(format!("Field '{}': {error}", column.name))
             })?;
             Ok(match backend {
-                DatabaseBackend::Postgres => Value::ChronoDate(Some(Box::new(date))),
-                _ => Value::String(Some(Box::new(fexu_core::temporal::format_date(date)))),
+                DatabaseBackend::Postgres => Value::ChronoDate(Some(date)),
+                _ => Value::String(Some(fexu_core::temporal::format_date(date))),
             })
         }
         ColumnKind::Time => {
@@ -642,8 +642,8 @@ fn bind_value(
                 MigrationError::new(format!("Field '{}': {error}", column.name))
             })?;
             Ok(match backend {
-                DatabaseBackend::Postgres => Value::ChronoTime(Some(Box::new(time))),
-                _ => Value::String(Some(Box::new(fexu_core::temporal::format_time(time)))),
+                DatabaseBackend::Postgres => Value::ChronoTime(Some(time)),
+                _ => Value::String(Some(fexu_core::temporal::format_time(time))),
             })
         }
         ColumnKind::DateTime => {
@@ -652,8 +652,8 @@ fn bind_value(
                     MigrationError::new(format!("Field '{}': {error}", column.name))
                 })?;
             Ok(match backend {
-                DatabaseBackend::Postgres => Value::ChronoDateTimeUtc(Some(Box::new(instant))),
-                _ => Value::String(Some(Box::new(canonical_datetime(instant)))),
+                DatabaseBackend::Postgres => Value::ChronoDateTimeUtc(Some(instant)),
+                _ => Value::String(Some(canonical_datetime(instant))),
             })
         }
     }
@@ -666,12 +666,12 @@ fn canonical_datetime(value: chrono::DateTime<chrono::Utc>) -> String {
 fn pk_value(backend: DatabaseBackend, pk: &str) -> Result<Value, MigrationError> {
     if let Ok(id) = uuid::Uuid::parse_str(pk) {
         return Ok(match backend {
-            DatabaseBackend::Postgres => Value::Uuid(Some(Box::new(id))),
-            _ => Value::String(Some(Box::new(id.to_string()))),
+            DatabaseBackend::Postgres => Value::Uuid(Some(id)),
+            _ => Value::String(Some(id.to_string())),
         });
     }
     if is_identifier(pk) {
-        return Ok(Value::String(Some(Box::new(pk.to_owned()))));
+        return Ok(Value::String(Some(pk.to_owned())));
     }
     Err(MigrationError::new(format!(
         "Primary key '{pk}' is not a UUID."

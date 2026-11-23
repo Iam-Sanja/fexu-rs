@@ -927,6 +927,9 @@ pub(crate) fn bind_value(value: &Value) -> Result<SqlValue, DbErr> {
             SqlValue::Text(value.to_rfc3339_opts(SecondsFormat::AutoSi, false))
         }
         Value::Uuid(Some(value)) => SqlValue::Blob(value.as_bytes().to_vec()),
+        Value::Enum(_) => {
+            return Err(exec_err("SQLite enum values are not supported by Fexu"));
+        }
         Value::Decimal(_) => {
             return Err(exec_err(
                 "SQLite stores Fexu decimals as 16-byte blobs, not NUMERIC",

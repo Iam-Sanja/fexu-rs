@@ -99,7 +99,7 @@ async fn sqlite_roundtrip_uses_blobs_transactions_and_foreign_keys() {
     db.execute(Statement::from_sql_and_values(
         DatabaseBackend::Sqlite,
         "INSERT INTO money (amount) VALUES (?)",
-        [Value::Bytes(Some(Box::new(amount.to_vec())))],
+        [Value::Bytes(Some(amount.to_vec()))],
     ))
     .await
     .unwrap();
@@ -118,7 +118,7 @@ async fn sqlite_roundtrip_uses_blobs_transactions_and_foreign_keys() {
         .execute(Statement::from_sql_and_values(
             DatabaseBackend::Sqlite,
             "INSERT INTO money (amount) VALUES (?)",
-            [Value::Decimal(Some(Box::new(Decimal::new(1999, 2))))],
+            [Value::Decimal(Some(Decimal::new(1999, 2)))],
         ))
         .await
         .unwrap_err();
@@ -201,18 +201,18 @@ async fn postgres_roundtrip(url: &str) -> Result<(), DbErr> {
         [
             Value::Int(Some(1)),
             Value::BigInt(Some(9_000_000_000)),
-            Value::String(Some(Box::new("alpha".to_owned()))),
+            Value::String(Some("alpha".to_owned())),
             Value::Bool(Some(true)),
-            Value::Bytes(Some(Box::new(vec![1, 2, 3]))),
+            Value::Bytes(Some(vec![1, 2, 3])),
             Value::Json(Some(Box::new(doc.clone()))),
             Value::Json(Some(Box::new(docb.clone()))),
-            Value::Uuid(Some(Box::new(uid))),
-            Value::ChronoDate(Some(Box::new(day))),
-            Value::ChronoTime(Some(Box::new(clock))),
-            Value::ChronoDateTime(Some(Box::new(stamp))),
-            Value::ChronoDateTimeUtc(Some(Box::new(stamptz))),
-            Value::Decimal(Some(Box::new(amount))),
-            Value::Bytes(Some(Box::new(fexu_decimal.to_vec()))),
+            Value::Uuid(Some(uid)),
+            Value::ChronoDate(Some(day)),
+            Value::ChronoTime(Some(clock)),
+            Value::ChronoDateTime(Some(stamp)),
+            Value::ChronoDateTimeUtc(Some(stamptz)),
+            Value::Decimal(Some(amount)),
+            Value::Bytes(Some(fexu_decimal.to_vec())),
             Value::String(None),
         ],
     ))
