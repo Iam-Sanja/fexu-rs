@@ -123,7 +123,9 @@ pub async fn take_flashes(
     let mut delete = Query::delete();
     delete
         .from_table(Alias::new(TABLE))
-        .and_where(Expr::col(Alias::new("session_id")).eq(Value::String(Some(session_id.to_string()))))
+        .and_where(
+            Expr::col(Alias::new("session_id")).eq(Value::String(Some(session_id.to_string()))),
+        )
         .returning(Query::returning().columns([
             Alias::new("id"),
             Alias::new("level"),
