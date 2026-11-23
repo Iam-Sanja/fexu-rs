@@ -1946,17 +1946,17 @@ fn stored_sql(
     }
     if type_name == "Decimal" {
         quote! {
-            ::fexu::sea_orm::Value::Bytes(Some(::std::boxed::Box::new(
+            ::fexu::sea_orm::Value::Bytes(Some(
                 ::fexu::core::encode_decimal(#expr, #precision, #scale)
                     .map_err(|error| ::fexu::core::FexuError::Validation(error.message.into()))?
                     .to_vec()
-            )))
+            ))
         }
     } else if choice {
         quote! {
-            ::fexu::sea_orm::Value::String(Some(::std::boxed::Box::new(
+            ::fexu::sea_orm::Value::String(Some(
                 ::fexu::core::FexuChoice::stored(#expr).to_owned()
-            )))
+            ))
         }
     } else {
         quote! { ::fexu::sea_orm::Value::from(#expr) }
