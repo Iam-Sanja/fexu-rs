@@ -6,7 +6,9 @@
 //! rules. A unique violation stays an error unless the insert explicitly
 //! ignores that conflict. Overwriting on conflict is not offered.
 
-use crate::driver::sea_query::{Alias, Expr, ExprTrait, LockType, OnConflict, Query, SimpleExpr, Value};
+use crate::driver::sea_query::{
+    Alias, Expr, ExprTrait, LockType, OnConflict, Query, SimpleExpr, Value,
+};
 use crate::driver::{ConnectionTrait, DatabaseBackend, DatabaseTransaction, Statement};
 use fexu_core::{ColumnKind, ColumnSpec, FexuError, FexuModel, NumericBound};
 use std::marker::PhantomData;
@@ -505,7 +507,7 @@ fn arithmetic_window(adding: bool, amount: i64, bound: Option<&NumericBound>) ->
         };
         match cap {
             Some(cap) => {
-                window.upper = Some(window.upper.map(|current| current.min(cap)).unwrap_or(cap))
+                window.upper = Some(window.upper.map(|current| std::cmp::Ord::min(current, cap)).unwrap_or(cap))
             }
             None if adding => window.impossible = true,
             None => {}
@@ -522,7 +524,7 @@ fn arithmetic_window(adding: bool, amount: i64, bound: Option<&NumericBound>) ->
                 window.lower = Some(
                     window
                         .lower
-                        .map(|current| current.max(floor))
+                        .map(|current| std::cmp::Ord::max(current, floor))
                         .unwrap_or(floor),
                 )
             }
@@ -1874,7 +1876,7 @@ mod tests {
                 .execute(Statement::from_sql_and_values(
                     DatabaseBackend::Sqlite,
                     "UPDATE fexu_write_notes SET stock = ? WHERE id = ?",
-                    [Value::BigInt(Some(1)), Value::Uuid(Some(Box::new(id(22))))],
+                    [Value::BigInt(Some(1)), Value::Uuid(Some(id(22)))],
                 ))
                 .await;
             let elapsed = started.elapsed();
@@ -1886,7 +1888,7 @@ mod tests {
                 .execute(Statement::from_sql_and_values(
                     DatabaseBackend::Sqlite,
                     "UPDATE fexu_write_notes SET stock = ? WHERE id = ?",
-                    [Value::BigInt(Some(1)), Value::Uuid(Some(Box::new(id(22))))],
+                    [Value::BigInt(Some(1)), Value::Uuid(Some(id(22)))],
                 ))
                 .await
                 .expect("the connection accepts a write after the lock is released");
