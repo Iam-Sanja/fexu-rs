@@ -262,7 +262,7 @@ fn bind(arguments: &mut PgArguments, value: &Value) -> Result<(), DbErr> {
         Value::ChronoDateTimeLocal(Some(value)) => arguments.add(value.with_timezone(&Utc)),
         Value::ChronoDateTimeWithTimeZone(Some(value)) => arguments.add(value.with_timezone(&Utc)),
         Value::Uuid(None) => arguments.add(None::<Uuid>),
-        Value::Uuid(Some(value)) => arguments.add(**value),
+        Value::Uuid(Some(value)) => arguments.add(*value),
         Value::Decimal(None) => arguments.add(None::<Decimal>),
         Value::Decimal(Some(value)) => arguments.add(*value.as_ref()),
     };
