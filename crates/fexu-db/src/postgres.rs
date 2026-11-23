@@ -18,6 +18,7 @@ use sqlx_core::error::ErrorKind;
 use sqlx_core::executor::Executor;
 use sqlx_core::query::{query_with, Query};
 use sqlx_core::row::Row;
+use sqlx_core::sql_str::AssertSqlSafe;
 use sqlx_core::type_info::TypeInfo;
 use sqlx_postgres::{
     PgArguments, PgConnectOptions, PgPool, PgPoolOptions, PgQueryResult, PgRow, PgSslMode, Postgres,
@@ -80,7 +81,7 @@ impl PgSession {
     }
 
     pub(crate) async fn execute_unprepared(&self, sql: &str) -> Result<u64, DbErr> {
-        let query = query_with::<Postgres, PgArguments>(sql.to_owned(), PgArguments::default());
+        let query = query_with::<Postgres, PgArguments>(AssertSqlSafe(sql.to_owned()), PgArguments::default());
         let result = run_query(query, &self.pool)
             .await
             .map_err(|error| map_sqlx(error, true))?;
@@ -146,7 +147,7 @@ impl PgTransaction {
         let mut transaction = guard
             .take()
             .ok_or_else(|| DbErr::exec("PostgreSQL transaction is closed"))?;
-        let query = query_with::<Postgres, PgArguments>(sql.to_owned(), PgArguments::default());
+        let query = query_with::<Postgres, PgArguments>(AssertSqlSafe(sql.to_owned()), PgArguments::default());
         let result = run_query(query, &mut *transaction)
             .await
             .map_err(|error| map_sqlx(error, true));
@@ -200,7 +201,10 @@ fn prepared<'a>(
     for value in values {
         bind(&mut arguments, value)?;
     }
-    Ok(query_with(sql.to_owned(), arguments))
+    // SQL text comes from Fexu's query compiler and migration planner;
+    // row values are never interpolated here, but bound separately as PgArguments.
+    // Reassess this assertion if SQL construction or identifier handling changes.
+    Ok(query_with(AssertSqlSafe(sql.to_owned()), arguments))
 }
 
 fn bind(arguments: &mut PgArguments, value: &Value) -> Result<(), DbErr> {
