@@ -12,10 +12,10 @@ Fexu is a Django-inspired, **experimental** web framework on **Axum**, **Tera**,
 ![MSRV: 1.89](https://img.shields.io/badge/MSRV-1.89-informational)
 ![Workspace: 16 crates](https://img.shields.io/badge/workspace-16%20crates-informational)
 
-[**Quick start**](#quick-start) · [**Features**](#features) · [**Install**](#install-fexu-020) · [**Upgrade from 0.1.2**](#upgrade-from-012) · [**Documentation**](docs/index.md) · [**Contributing**](#contributing) · [**License**](#license)
+[**Quick start**](#quick-start) · [**Features**](#features) · [**Install**](#install-fexu-020) · [**Roadmap 0.3.0**](docs/roadmap.md) · [**Upgrade from 0.1.2**](#upgrade-from-012) · [**Documentation**](docs/index.md) · [**Contributing**](#contributing) · [**License**](#license)
 
 > [!IMPORTANT]
-> **Workspace version is 0.2.0.** Dynamic crate badges below still report **crates.io**, which today remains **0.1.2** until an approved publish. **Do not run `cargo install fexu-cli --version 0.2.0` or `cargo add fexu@0.2.0` against crates.io before publish** — those commands are documented as the post-release install path and are verified only as a post-publish smoke test. Until then, build the CLI from this repository or wait for publish authorization.
+> **Latest published release: Fexu 0.2.0.** All 16 crates were released together. Fexu remains experimental and is not declared production-ready. **Next milestone: v0.3.0** ([roadmap](docs/roadmap.md)); planned features are not yet included in v0.2.0. Development changes and their documentation are reviewed together.
 
 ## Features
 
@@ -33,7 +33,7 @@ Documented limits: public model routes must be opted in; admin and API CSRF poli
 
 ## Workspace crates (16)
 
-Fexu ships as a **16-crate workspace**. Each row links to the crate source; the badge shows the version crates.io currently serves (0.1.2 until publish).
+Fexu ships as a **16-crate workspace**. Each row links to the crate source; its dynamic badge shows the **latest version actually available on crates.io**, independently of any future development version.
 
 | Crate | Role | crates.io |
 |---|---|---|
@@ -58,19 +58,12 @@ Fexu ships as a **16-crate workspace**. Each row links to the crate source; the 
 
 **Requires Rust 1.89.0+** (MSRV). SQLite needs no extra server; PostgreSQL needs a disposable database for experiments.
 
-### Build from source (today)
+### Install the published release
 
 ```bash
-git clone https://github.com/Iam-Sanja/fexu-rs.git
-cd fexu-rs
-cargo install --path crates/fexu-cli --locked
-fexu --version   # reports 0.2.0 when built from this workspace
-```
-
-Generated registry projects pin `fexu = "=0.2.0"` in `Cargo.toml`. Until crates.io serves 0.2.0, create projects against this checkout:
-
-```bash
-fexu new project demo --template fullstack --fexu-path .
+cargo install fexu-cli --version 0.2.0 --locked
+fexu --version
+fexu new project demo --template fullstack
 cd demo
 fexu migrate plan
 fexu migrate up
@@ -78,18 +71,11 @@ fexu admin create-user --email admin@example.com --staff --superuser
 fexu dev
 ```
 
-### After crates.io publish (smoke test only — not valid before publish)
-
-```bash
-cargo install fexu-cli --version 0.2.0 --locked
-cargo add fexu@0.2.0
-```
-
-Run these only after maintainers authorize publish and confirm the index lists 0.2.0.
+Generated registry projects pin `fexu = "=0.2.0"` in `Cargo.toml`. To work with **unreleased development source**, clone the repository and install the CLI via `cargo install --path crates/fexu-cli --locked`, then create projects with `--fexu-path` pointing to that checkout. Development source may have a different prerelease version and must not be confused with published crates.io packages.
 
 ## Quick start
 
-Try the in-repo **MyShop** example (workspace 0.2.0, not a crates.io install):
+Try the in-repo **MyShop** example (source checkout):
 
 ```bash
 cd fexu-rs
@@ -155,8 +141,8 @@ Published **0.1.2** consumers need explicit source edits; `fexu upgrade` reports
 ## Current status and limits
 
 - **Experimental** — not production-ready; APIs and migrations may change.
-- **0.2.0** is the workspace version; **crates.io may still show 0.1.2** until publish.
-- See [roadmap](docs/roadmap.md), [capability matrix](docs/django-capability-matrix.md), [release candidate gates](docs/release-candidate-0.2.md).
+- **Published stable release:** `v0.2.0` (all 16 crates). **Next planned milestone:** `v0.3.0`, not yet released. The source workspace starts from 0.2.0; future development version changes must be coordinated across all publishable crates and dependencies.
+- See [roadmap](docs/roadmap.md), [capability matrix](docs/django-capability-matrix.md), [release process](docs/crates-io-release.md).
 - Do not expose a demo on the public internet without hardening.
 
 ## Contributing
