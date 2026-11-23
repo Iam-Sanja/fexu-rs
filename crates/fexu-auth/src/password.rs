@@ -113,7 +113,10 @@ mod tests {
         // m=19456,t=2,p=1 parameters. The same stored string must still verify
         // after changing the RustCrypto argon2 crate version.
         const EXISTING_HASH: &str = "$argon2id$v=19$m=19456,t=2,p=1$Zml4ZWQtbGVnYWN5LXNhbHQ$6fianvDVhImJO9Ca4IlrLz6nEnYm1Q6Uafc5qKOFNag";
-        assert!(verify_password("Fexu-old-hash-compatibility", EXISTING_HASH).expect("existing hash parses"));
+        assert!(
+            verify_password("Fexu-old-hash-compatibility", EXISTING_HASH)
+                .expect("existing hash parses")
+        );
         assert!(!verify_password("not-the-password", EXISTING_HASH).expect("existing hash parses"));
     }
 
