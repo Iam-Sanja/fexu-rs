@@ -6,7 +6,7 @@
 //! rules. A unique violation stays an error unless the insert explicitly
 //! ignores that conflict. Overwriting on conflict is not offered.
 
-use crate::driver::sea_query::{Alias, Expr, LockType, OnConflict, Query, SimpleExpr, Value};
+use crate::driver::sea_query::{Alias, Expr, ExprTrait, LockType, OnConflict, Query, SimpleExpr, Value};
 use crate::driver::{ConnectionTrait, DatabaseBackend, DatabaseTransaction, Statement};
 use fexu_core::{ColumnKind, ColumnSpec, FexuError, FexuModel, NumericBound};
 use std::marker::PhantomData;
