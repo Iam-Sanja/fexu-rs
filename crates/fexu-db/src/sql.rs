@@ -778,10 +778,8 @@ pub(crate) fn scope_condition_in(
 
 fn qualified_col(alias: Option<&str>, name: &str) -> crate::driver::sea_query::SimpleExpr {
     match alias {
-        Some(alias) => {
-            crate::driver::sea_query::Expr::col((Alias::new(alias), Alias::new(name))).into()
-        }
-        None => crate::driver::sea_query::Expr::col(Alias::new(name)).into(),
+        Some(alias) => crate::driver::sea_query::Expr::col((Alias::new(alias), Alias::new(name))),
+        None => crate::driver::sea_query::Expr::col(Alias::new(name)),
     }
 }
 
