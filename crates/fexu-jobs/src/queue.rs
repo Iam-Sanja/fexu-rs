@@ -877,7 +877,7 @@ async fn conditional_status(
                 if clear_schedule {
                     null_text()
                 } else {
-                    Expr::col(Alias::new("schedule_key")).into()
+                    Expr::col(Alias::new("schedule_key"))
                 },
             ),
         ])
