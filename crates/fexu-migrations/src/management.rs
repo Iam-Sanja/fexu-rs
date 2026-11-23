@@ -456,8 +456,8 @@ mod tests {
                 backend,
                 "INSERT INTO markers (id, note) VALUES (?, ?)",
                 vec![
-                    fexu_db::driver::Value::String(Some(Box::new("one".into()))),
-                    fexu_db::driver::Value::String(Some(Box::new(note))),
+                    fexu_db::driver::Value::String(Some("one".into())),
+                    fexu_db::driver::Value::String(Some(note)),
                 ],
             ))
             .await
