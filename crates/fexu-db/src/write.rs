@@ -507,7 +507,12 @@ fn arithmetic_window(adding: bool, amount: i64, bound: Option<&NumericBound>) ->
         };
         match cap {
             Some(cap) => {
-                window.upper = Some(window.upper.map(|current| std::cmp::Ord::min(current, cap)).unwrap_or(cap))
+                window.upper = Some(
+                    window
+                        .upper
+                        .map(|current| std::cmp::Ord::min(current, cap))
+                        .unwrap_or(cap),
+                )
             }
             None if adding => window.impossible = true,
             None => {}
