@@ -2,10 +2,10 @@
 
 use crate::provider::IdentityProvider;
 use crate::{AuthConfig, AuthError, AuthService, RemoteProtocol};
-use argon2::password_hash::rand_core::{OsRng, RngCore};
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use axum::Router;
+use rand_core::{OsRng, RngCore};
 use tower::ServiceExt;
 use uuid::Uuid;
 

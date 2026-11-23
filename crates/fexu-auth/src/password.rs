@@ -2,15 +2,14 @@
 
 use crate::error::AuthError;
 use argon2::{
-    password_hash::{rand_core::OsRng, PasswordHash, PasswordHasher, PasswordVerifier, SaltString},
+    password_hash::{phc::PasswordHash, PasswordHasher, PasswordVerifier},
     Algorithm, Argon2, Params, Version,
 };
 use std::sync::OnceLock;
 
 pub fn hash_password(password: &str) -> Result<String, AuthError> {
-    let salt = SaltString::generate(&mut OsRng);
     let hash = hasher()?
-        .hash_password(password.as_bytes(), &salt)
+        .hash_password(password.as_bytes())
         .map_err(|_| AuthError::Validation("password could not be hashed".into()))?;
     Ok(hash.to_string())
 }
@@ -74,6 +73,7 @@ mod tests {
         dummy_hash, ephemeral_password, ephemeral_weak_password, hash_password,
         validate_new_password, verify_against_dummy, verify_password,
     };
+    use argon2::PasswordHasher;
 
     #[test]
     fn correct_and_wrong_passwords_use_different_salts() {
@@ -106,6 +106,27 @@ mod tests {
         assert!(verify_password(&current_password, &current).unwrap());
         assert!(!verify_password(&current_password, &updated).unwrap());
         assert!(verify_password(&updated_password, &updated).unwrap());
+    }
+
+    #[test]
+    fn verifies_phc_hash_with_previously_selected_parameters() {
+        // Simulate a stored PHC hash whose work factors differ from the
+        // active settings. No password or encoded credential is hard-coded.
+        let password = ephemeral_password();
+        let wrong = ephemeral_password();
+        let previous_params = super::Params::new(32_768, 3, 1, None).expect("params");
+        let previous_hasher = super::Argon2::new(
+            super::Algorithm::Argon2id,
+            super::Version::V0x13,
+            previous_params,
+        );
+        let stored = previous_hasher
+            .hash_password(password.as_bytes())
+            .expect("stored password hash")
+            .to_string();
+        assert!(stored.starts_with("$argon2id$v=19$m=32768,t=3,p=1$"));
+        assert!(verify_password(&password, &stored).expect("stored hash parses"));
+        assert!(!verify_password(&wrong, &stored).expect("stored hash parses"));
     }
 
     #[test]

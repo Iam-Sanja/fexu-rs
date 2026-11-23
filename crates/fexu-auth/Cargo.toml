@@ -26,6 +26,9 @@ sha1 = "0.11.0"
 sha2.workspace = true
 hmac = "0.13.0"
 getrandom = "0.2"
+# Keep RNG for MFA on the aes-gcm-compatible rand_core 0.6 API;
+# Argon2 0.6 no longer reexports rand_core through password-hash.
+rand_core = { version = "0.6", features = ["getrandom"] }
 thiserror.workspace = true
 tokio.workspace = true
 tracing.workspace = true
