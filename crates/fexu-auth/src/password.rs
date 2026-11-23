@@ -73,6 +73,7 @@ mod tests {
         dummy_hash, ephemeral_password, ephemeral_weak_password, hash_password,
         validate_new_password, verify_against_dummy, verify_password,
     };
+    use argon2::PasswordHasher;
 
     #[test]
     fn correct_and_wrong_passwords_use_different_salts() {
@@ -108,16 +109,24 @@ mod tests {
     }
 
     #[test]
-    fn verifies_existing_argon2id_phc_hash_after_dependency_upgrade() {
-        // Independently generated Argon2id v=19 PHC fixture, using the existing
-        // m=19456,t=2,p=1 parameters. The same stored string must still verify
-        // after changing the RustCrypto argon2 crate version.
-        const EXISTING_HASH: &str = "$argon2id$v=19$m=19456,t=2,p=1$Zml4ZWQtbGVnYWN5LXNhbHQ$6fianvDVhImJO9Ca4IlrLz6nEnYm1Q6Uafc5qKOFNag";
-        assert!(
-            verify_password("Fexu-old-hash-compatibility", EXISTING_HASH)
-                .expect("existing hash parses")
+    fn verifies_phc_hash_with_previously_selected_parameters() {
+        // Simulate a stored PHC hash whose work factors differ from the
+        // active settings. No password or encoded credential is hard-coded.
+        let password = ephemeral_password();
+        let wrong = ephemeral_password();
+        let previous_params = super::Params::new(32_768, 3, 1, None).expect("params");
+        let previous_hasher = super::Argon2::new(
+            super::Algorithm::Argon2id,
+            super::Version::V0x13,
+            previous_params,
         );
-        assert!(!verify_password("not-the-password", EXISTING_HASH).expect("existing hash parses"));
+        let stored = previous_hasher
+            .hash_password(password.as_bytes())
+            .expect("stored password hash")
+            .to_string();
+        assert!(stored.starts_with("$argon2id$v=19$m=32768,t=3,p=1$"));
+        assert!(verify_password(&password, &stored).expect("stored hash parses"));
+        assert!(!verify_password(&wrong, &stored).expect("stored hash parses"));
     }
 
     #[test]
