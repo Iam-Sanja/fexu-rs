@@ -1093,7 +1093,7 @@ fn filter_value(column: &ColumnSpec, value: &str) -> Result<DbValue, String> {
                 .map_err(|_| format!("filter {} must be a decimal", column.name))?;
             let bytes = fexu_core::encode_decimal(parsed, column.precision, column.scale)
                 .map_err(|_| format!("filter {} must be a decimal", column.name))?;
-            Ok(DbValue::Bytes(Some(Box::new(bytes.to_vec()))))
+            Ok(DbValue::Bytes(Some(bytes.to_vec())))
         }
         ColumnKind::Choice => {
             if !fexu_core::choice_is_known(column.choices, value) {
