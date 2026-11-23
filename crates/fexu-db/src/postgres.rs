@@ -263,7 +263,11 @@ fn bind(arguments: &mut PgArguments, value: &Value) -> Result<(), DbErr> {
         Value::ChronoDateTimeWithTimeZone(Some(value)) => arguments.add(value.with_timezone(&Utc)),
         Value::Uuid(None) => arguments.add(None::<Uuid>),
         Value::Uuid(Some(value)) => arguments.add(*value),
-        Value::Enum(_) => return Err(DbErr::exec("PostgreSQL enum values are not supported by Fexu")),
+        Value::Enum(_) => {
+            return Err(DbErr::exec(
+                "PostgreSQL enum values are not supported by Fexu",
+            ))
+        }
         Value::Decimal(None) => arguments.add(None::<Decimal>),
         Value::Decimal(Some(value)) => arguments.add(*value),
     };
