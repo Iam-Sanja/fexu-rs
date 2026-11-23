@@ -2,6 +2,8 @@
 
 Fexu supports SQLite for simple local projects and PostgreSQL for database-backed deployments. SQLite uses bundled `rusqlite`; PostgreSQL uses the SQLx PostgreSQL driver.
 
+**Version note:** Published v0.2.0 uses `rusqlite` 0.42.0. The v0.3.0 development branch is evaluating `rusqlite` 0.43.0; this is not part of the v0.2.0 tag. SQLite schema and migration behavior must pass CI before adoption.
+
 ## SQLite
 
 The generated project has:
