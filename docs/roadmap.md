@@ -9,14 +9,15 @@
 - **Latest published: [v0.2.0](https://github.com/Iam-Sanja/fexu-rs/releases/tag/v0.2.0)** (2026-11-23). All 16 crates published via the [successful release workflow](https://github.com/Iam-Sanja/fexu-rs/actions/runs/45090038609), with CI and the [release preflight](https://github.com/Iam-Sanja/fexu-rs/actions/runs/45086997959).
 - **Previous: [v0.1.2](https://github.com/Iam-Sanja/fexu-rs/releases/tag/v0.1.2)**. See the [upgrade guide](../manual/how-to/upgrade-0.1.2-to-0.2.md).
 - **Next planned: v0.3.0.** No release tag, registry packages or date yet.
-- **Development:** Cargo manifests currently reflect the most recent published `0.2.0` version, because no 0.3.0 code is merged yet. The **first actual 0.3.0 code change** should coordinate all 16 crate versions and internal dependency requirements (proposed `0.3.0-dev.1`) and update the lockfile, generator pins, README, manual, changelog and roadmap in a tested PR. An unpublished prerelease must not be presented as available on crates.io.
+- **Development:** Cargo manifests still use the published `0.2.0` Fexu crate version while post-release dependency upgrades are being merged toward v0.3.0. The **first actual 0.3.0 code change** should coordinate all 16 crate versions and internal dependency requirements (proposed `0.3.0-dev.1`) and update the lockfile, generator pins, README, manual, changelog and roadmap in a tested PR. An unpublished prerelease must not be presented as available on crates.io.
 - Old engineering milestone labels (for example `v0.13`) are not Cargo release tags.
 
 ## v0.3.0 dependency modernization
 
 - [Dependabot #237](https://github.com/Iam-Sanja/fexu-rs/pull/237) upgraded the SHA-pinned `actions/setup-python` action to 7.1.0 (merged).
-- [Dependabot #238](https://github.com/Iam-Sanja/fexu-rs/pull/238) proposes `rusqlite` 0.42 to 0.43; integration remains under CI review. SQLite migrations, schema behavior and MSRV compatibility must pass before acceptance.
-- **In review:** Argon2 0.6 from [Dependabot #240](https://github.com/Iam-Sanja/fexu-rs/pull/240), with existing-hash verification, password login, recovery flows, Windows and MSRV regressions required. SQLx 0.9.1 (core and PostgreSQL together) is under integration review, while SeaQuery 1.0 follows separately. Never merge failing cross-platform checks.
+- `rusqlite` 0.43 integrated and tested through [PR #256](https://github.com/Iam-Sanja/fexu-rs/pull/256); Dependabot #238 closed.
+- Argon2 0.6 integrated through [PR #257](https://github.com/Iam-Sanja/fexu-rs/pull/257); SQLx 0.9.1 (core and PostgreSQL) through [PR #258](https://github.com/Iam-Sanja/fexu-rs/pull/258). Both passed required CI. Dependabot #240/#241/#242 closed.
+- SeaQuery 1.0.2 from [Dependabot #239](https://github.com/Iam-Sanja/fexu-rs/pull/239) is the final dependency migration under review, requiring SQLite/PostgreSQL SQL-generation and migration compatibility. Never merge failing cross-platform checks.
 - Dependency updates on GitHub are not new published Fexu versions. Coordinate all 16 framework crates, generator pins, lockfile and documentation as part of the v0.3.0 development version bump.
 
 ## What v0.2.0 delivered
