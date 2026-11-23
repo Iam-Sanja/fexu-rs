@@ -1,7 +1,9 @@
 //! Hochgeladene Bilder eines Datensatzes. Die Admin-Datei bestimmt, welches Feld ein Bild ist.
 
 use fexu_core::FexuError;
-use fexu_db::driver::sea_query::{Alias, Expr, ExprTrait, PostgresQueryBuilder, Query, SqliteQueryBuilder};
+use fexu_db::driver::sea_query::{
+    Alias, Expr, ExprTrait, PostgresQueryBuilder, Query, SqliteQueryBuilder,
+};
 use fexu_db::driver::{
     ConnectionTrait, DatabaseBackend, DatabaseConnection, Statement, Value as DbValue,
 };
