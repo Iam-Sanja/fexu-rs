@@ -1,8 +1,18 @@
 # Changelog
 
-> **Release separation (2026-11-18):** `v0.1.2` remains the latest **published** crates.io release until an approved publish. The `## 0.2.0 — synchronized workspace version` section is a **candidate** workspace pin, not a registry release. Accumulated `Unreleased` headings before `## 0.1.2` still describe 0.2.0 source work not summarized there. Headings below `## 0.1.0 — initial crates.io rollout` are historical milestones.
+## Unreleased — toward v0.3.0
 
-## 0.2.0 — synchronized workspace version (candidate)
+- Dependency modernization: GitHub Actions `setup-python` 7.1.0 was merged in PR #237.
+- Candidate update `rusqlite` 0.42.0 to 0.43.0 for v0.3.0; SQLite schema, migrations and cross-platform CI must pass before it is accepted.
+- Future dependency upgrades, documentation and all 16 crate versions are reviewed together. v0.3.0 has not been released.
+
+## 0.2.0 — published 2026-11-23
+
+- [v0.2.0](https://github.com/Iam-Sanja/fexu-rs/releases/tag/v0.2.0) published all 16 Fexu crates to crates.io.
+- Release CI and preflight validated commit `b37918a26e04a4fbd32f98b65c8a0f18f1069dfc`.
+- Older headings marked `Unreleased` below this entry describe historical changes shipped before 0.2.0, not post-release development.
+
+### 0.2.0 coordinated workspace versions
 
 - All **16** publishable crates and every internal path dependency requirement are `0.2.0`. Examples stay `publish = false`.
 - `fexu new` writes `fexu = "=0.2.0"` unless `--fexu-path` is set. The fullstack template keeps `features = ["admin-ui"]` on that registry dependency.
