@@ -16,7 +16,7 @@
 
 - [Dependabot #237](https://github.com/Iam-Sanja/fexu-rs/pull/237) upgraded the SHA-pinned `actions/setup-python` action to 7.1.0 (merged).
 - [Dependabot #238](https://github.com/Iam-Sanja/fexu-rs/pull/238) proposes `rusqlite` 0.42 to 0.43; integration remains under CI review. SQLite migrations, schema behavior and MSRV compatibility must pass before acceptance.
-- **In review:** Argon2 0.6 from [Dependabot #240](https://github.com/Iam-Sanja/fexu-rs/pull/240), with existing-hash verification, password login, recovery flows, Windows and MSRV regressions required. SQLx 0.9 (core and PostgreSQL together) and SeaQuery 1.0 follow separately. Never merge failing cross-platform checks.
+- **In review:** Argon2 0.6 from [Dependabot #240](https://github.com/Iam-Sanja/fexu-rs/pull/240), with existing-hash verification, password login, recovery flows, Windows and MSRV regressions required. SQLx 0.9.1 (core and PostgreSQL together) is under integration review, while SeaQuery 1.0 follows separately. Never merge failing cross-platform checks.
 - Dependency updates on GitHub are not new published Fexu versions. Coordinate all 16 framework crates, generator pins, lockfile and documentation as part of the v0.3.0 development version bump.
 
 ## What v0.2.0 delivered

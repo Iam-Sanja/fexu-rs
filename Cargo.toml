@@ -31,8 +31,8 @@ readme = "README.md"
 axum = "0.8"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "signal"] }
 sea-query = { version = "=0.32.7", default-features = false, features = ["thread-safe", "backend-postgres", "backend-sqlite", "with-json", "with-chrono", "with-uuid", "with-rust_decimal"] }
-sqlx-core = { version = "=0.8.6", default-features = false, features = ["_rt-tokio", "_tls-rustls-ring-webpki", "json", "chrono", "uuid", "rust_decimal"] }
-sqlx-postgres = { version = "=0.8.6", default-features = false, features = ["json", "chrono", "uuid", "rust_decimal"] }
+sqlx-core = { version = "=0.9.1", default-features = false, features = ["_rt-tokio", "_tls-rustls-ring-webpki", "json", "chrono", "uuid", "rust_decimal"] }
+sqlx-postgres = { version = "=0.9.1", default-features = false, features = ["json", "chrono", "uuid", "rust_decimal"] }
 rusqlite = { version = "=0.43.0", features = ["bundled"] }
 chrono = { version = "0.4", default-features = false, features = ["std", "clock", "serde"] }
 serde = { version = "1", features = ["derive"] }
