@@ -1,7 +1,7 @@
 //! Hochgeladene Bilder eines Datensatzes. Die Admin-Datei bestimmt, welches Feld ein Bild ist.
 
 use fexu_core::FexuError;
-use fexu_db::driver::sea_query::{Alias, Expr, PostgresQueryBuilder, Query, SqliteQueryBuilder};
+use fexu_db::driver::sea_query::{Alias, Expr, ExprTrait, PostgresQueryBuilder, Query, SqliteQueryBuilder};
 use fexu_db::driver::{
     ConnectionTrait, DatabaseBackend, DatabaseConnection, Statement, Value as DbValue,
 };
@@ -53,7 +53,7 @@ pub(crate) async fn save_on(
             DbValue::from(record.to_string()).into(),
             DbValue::from(field).into(),
             DbValue::from(content_type).into(),
-            DbValue::Bytes(Some(Box::new(bytes.to_vec()))).into(),
+            DbValue::Bytes(Some(bytes.to_vec())).into(),
         ]);
     execute(db, backend, &insert).await
 }
