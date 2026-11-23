@@ -2,7 +2,9 @@
 
 use fexu_auth::ADMIN_AUDIT;
 use fexu_core::{AdminFieldMeta, AdminModelMeta, FexuError};
-use fexu_db::driver::sea_query::{Alias, ExprTrait, PostgresQueryBuilder, Query, SqliteQueryBuilder};
+use fexu_db::driver::sea_query::{
+    Alias, ExprTrait, PostgresQueryBuilder, Query, SqliteQueryBuilder,
+};
 use fexu_db::driver::{ConnectionTrait, DatabaseBackend, Statement, Value as DbValue};
 use serde_json::Value;
 use std::time::{SystemTime, UNIX_EPOCH};
