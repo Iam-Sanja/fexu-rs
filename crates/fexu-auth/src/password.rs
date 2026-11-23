@@ -109,6 +109,16 @@ mod tests {
     }
 
     #[test]
+    fn verifies_existing_argon2id_phc_hash_after_dependency_upgrade() {
+        // Existing standard Argon2id v=19 PHC hash, created with the established
+        // m=19456,t=2,p=1 parameters. The same stored string must still verify
+        // after changing the RustCrypto argon2 crate version.
+        const EXISTING_HASH: &str = "$argon2id$v=19$m=19456,t=2,p=1$YmFkIHNhbHQh$DqHGwv6NQV0VcaJi7jeF1E8IpfMXmXcpq4r2kKyqpXk";
+        assert!(verify_password("password", EXISTING_HASH).expect("existing hash parses"));
+        assert!(!verify_password("not-the-password", EXISTING_HASH).expect("existing hash parses"));
+    }
+
+    #[test]
     fn dummy_hash_stays_one_argon2id_value() {
         let first = dummy_hash();
         let second = dummy_hash();
