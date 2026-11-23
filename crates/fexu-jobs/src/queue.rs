@@ -483,8 +483,11 @@ impl Queue {
             record.cron_zone.clone(),
             record.schedule_key.clone(),
         ) {
-            let next_at =
-                crate::schedule::next_after(&expression, &zone, std::cmp::Ord::max(now, record.available_at))?;
+            let next_at = crate::schedule::next_after(
+                &expression,
+                &zone,
+                std::cmp::Ord::max(now, record.available_at),
+            )?;
             let idempotency = recur_key(&schedule_key, next_at)?;
             if find_by_column(&transaction, "idempotency_key", &idempotency)
                 .await?
