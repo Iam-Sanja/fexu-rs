@@ -6,7 +6,7 @@ use crate::schema::{
     PERMISSIONS, ROLES, ROLE_PERMISSIONS, SESSIONS, USERS, USER_ROLES,
 };
 use fexu_db::driver::sea_query::{
-    Alias, Expr, Order, PostgresQueryBuilder, Query, SqliteQueryBuilder,
+    Alias, Expr, ExprTrait, Order, PostgresQueryBuilder, Query, SqliteQueryBuilder,
 };
 use fexu_db::driver::{ConnectionTrait, DatabaseBackend, QueryResult, Statement, Value};
 use std::collections::HashMap;
@@ -1038,7 +1038,7 @@ fn text(value: &str) -> fexu_db::driver::sea_query::SimpleExpr {
 /// PostgreSQL UUID columns receive UUID parameters. SQLite stores the same column as TEXT.
 fn uuid_expr(backend: DatabaseBackend, id: Uuid) -> fexu_db::driver::sea_query::SimpleExpr {
     match backend {
-        DatabaseBackend::Postgres => Expr::value(Value::Uuid(Some(Box::new(id)))),
+        DatabaseBackend::Postgres => Expr::value(Value::Uuid(Some(id))),
         DatabaseBackend::Sqlite | DatabaseBackend::MySql => Expr::value(id.to_string()),
     }
 }
