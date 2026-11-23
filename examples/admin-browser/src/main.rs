@@ -405,8 +405,8 @@ mod link_schema_tests {
             .into_table(Alias::new("item_tags"))
             .columns([Alias::new("item_id"), Alias::new("tag_id")])
             .values_panic([
-                Expr::val(Value::Uuid(Some(Box::new(parent)))).into(),
-                Expr::val(Value::Uuid(Some(Box::new(child)))).into(),
+                Expr::val(Value::Uuid(Some(parent))),
+                Expr::val(Value::Uuid(Some(child))),
             ]);
         let backend = db.get_database_backend();
         let (sql, values) = match backend {
