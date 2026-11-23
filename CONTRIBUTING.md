@@ -1,6 +1,6 @@
 # Contributing to Fexu
 
-Fexu is a pre-release Rust full-stack web framework. The current name is Fexu. Workspace crates keep names such as `fexu`, `fexu-api`, and `fexu-cli`. The Cargo version is `0.1.2`. Milestone labels such as v0.27.1 describe internal progress. They are not Cargo releases and they are not an installable crate named `fexu`.
+Fexu is an experimental Rust full-stack web framework. **v0.2.0 is published** across all 16 crates; **v0.3.0 is the next planned milestone** and is not yet published. Milestone labels like v0.27.1 in historical notes are not Cargo releases.
 
 Developer documentation in `docs/` is written in English. `docs/orm-capability-matrix.md` remains a German historical comparison. German is a catalog language and the explicit `de` locale, not the language of the developer docs. New repository policy, GitHub templates, and contributor instructions are written in English.
 
@@ -78,7 +78,7 @@ Create a branch from `main`:
 - `release/<version>` only while preparing an actual release
 - `hotfix/<description>` for an urgent fix to a released version
 
-There is no stable release yet, so `hotfix/` and `release/` should be rare.
+The latest published release is v0.2.0. Use `hotfix/` and `release/` only for explicit, approved release work.
 
 ## Commits
 
@@ -91,6 +91,12 @@ docs: improve application registry guide
 test(cli): cover migration errors
 ci: add Windows and Linux checks
 ```
+
+## Documentation and crate versions (required on every PR)
+
+User-visible changes must update their `manual/` documentation in the same PR. Update `README.md` when advertised features, installation or quickstarts change; update `docs/roadmap.md` and `CHANGELOG.md` when features/fixes land or planned scope changes. For truly unaffected pages, provide an explicit, substantive `Docs-Impact: none — ...` or `README-Impact: none — ...` justification in the PR body. The CI gate verifies those obligations but cannot prove claims are correct.
+
+All **16 publishable crates** must use one coordinated Cargo version and internal dependency requirements. When actual 0.3.0 development begins, make a coordinated, tested prerelease-version change (for example `0.3.0-dev.1`) including `Cargo.lock`, generated project dependency pins, templates and docs. This is **not** a crates.io publication; published badges continue to show 0.2.0 until an explicitly authorized new release. See [version policy](docs/crates-io-release.md) and [documentation maintenance](docs/documentation-maintenance.md).
 
 ## Pull requests
 
