@@ -1870,15 +1870,11 @@ enum ChronoBound {
 fn bind_chrono(backend: DatabaseBackend, value: ChronoBound) -> Result<Value, FexuError> {
     let mysql = || Err(FexuError::Validation("MySQL is not supported".into()));
     Ok(match (backend, value) {
-        (DatabaseBackend::Postgres, ChronoBound::Date(date)) => {
-            Value::ChronoDate(Some(date))
-        }
+        (DatabaseBackend::Postgres, ChronoBound::Date(date)) => Value::ChronoDate(Some(date)),
         (DatabaseBackend::Sqlite, ChronoBound::Date(date)) => {
             Value::String(Some(fexu_core::temporal::format_date(date)))
         }
-        (DatabaseBackend::Postgres, ChronoBound::Time(time)) => {
-            Value::ChronoTime(Some(time))
-        }
+        (DatabaseBackend::Postgres, ChronoBound::Time(time)) => Value::ChronoTime(Some(time)),
         (DatabaseBackend::Sqlite, ChronoBound::Time(time)) => {
             Value::String(Some(fexu_core::temporal::format_time(time)))
         }
@@ -5468,7 +5464,7 @@ mod tests {
             Value::String(Some("2027-02-08T08:00:00+00:00".to_owned()))
         );
         match winter_postgres {
-            Value::ChronoDateTimeUtc(Some(value)) => assert_eq!(*value, winter),
+            Value::ChronoDateTimeUtc(Some(value)) => assert_eq!(value, winter),
             other => panic!("postgres bind {other:?}"),
         }
         let summer_sqlite =
