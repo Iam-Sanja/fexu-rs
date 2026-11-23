@@ -1793,7 +1793,7 @@ pub(crate) fn bind_for_column(
             column.scale,
         )
         .map_err(|error| FexuError::Validation(format!("{} {}", column.name, error.message)))?;
-        return Ok(Value::Bytes(Some(Box::new(bytes.to_vec()))));
+        return Ok(Value::Bytes(Some(bytes.to_vec())));
     }
     if column.kind == ColumnKind::Choice {
         let Bound::Text(text) = value else {
@@ -1871,19 +1871,19 @@ fn bind_chrono(backend: DatabaseBackend, value: ChronoBound) -> Result<Value, Fe
     let mysql = || Err(FexuError::Validation("MySQL is not supported".into()));
     Ok(match (backend, value) {
         (DatabaseBackend::Postgres, ChronoBound::Date(date)) => {
-            Value::ChronoDate(Some(Box::new(date)))
+            Value::ChronoDate(Some(date))
         }
         (DatabaseBackend::Sqlite, ChronoBound::Date(date)) => {
             Value::String(Some(fexu_core::temporal::format_date(date)))
         }
         (DatabaseBackend::Postgres, ChronoBound::Time(time)) => {
-            Value::ChronoTime(Some(Box::new(time)))
+            Value::ChronoTime(Some(time))
         }
         (DatabaseBackend::Sqlite, ChronoBound::Time(time)) => {
             Value::String(Some(fexu_core::temporal::format_time(time)))
         }
         (DatabaseBackend::Postgres, ChronoBound::DateTime(instant)) => {
-            Value::ChronoDateTimeUtc(Some(Box::new(instant)))
+            Value::ChronoDateTimeUtc(Some(instant))
         }
         (DatabaseBackend::Sqlite, ChronoBound::DateTime(instant)) => {
             Value::String(Some(sqlite_datetime_text(instant)))
@@ -4462,15 +4462,15 @@ mod tests {
     }
 
     fn date_value(text: &str) -> Value {
-        Value::ChronoDate(Some(Box::new(fexu_core::parse_date(text).unwrap())))
+        Value::ChronoDate(Some(fexu_core::parse_date(text).unwrap()))
     }
 
     fn time_value(text: &str) -> Value {
-        Value::ChronoTime(Some(Box::new(fexu_core::parse_time(text).unwrap())))
+        Value::ChronoTime(Some(fexu_core::parse_time(text).unwrap()))
     }
 
     fn instant_value(text: &str) -> Value {
-        Value::ChronoDateTimeUtc(Some(Box::new(fexu_core::parse_datetime_utc(text).unwrap())))
+        Value::ChronoDateTimeUtc(Some(fexu_core::parse_datetime_utc(text).unwrap()))
     }
 
     async fn insert_temporal(db: &impl ConnectionTrait, kind: DatabaseKind) {
