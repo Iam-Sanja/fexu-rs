@@ -1,7 +1,7 @@
 //! SeaQuery-backed CRUD and DDL for SQLite and PostgreSQL.
 
 use crate::driver::sea_query::{
-    Alias, ColumnDef, Expr, ForeignKey, ForeignKeyAction, Func, Index, LikeExpr, Order,
+    Alias, ColumnDef, Expr, ExprTrait, ForeignKey, ForeignKeyAction, Func, Index, LikeExpr, Order,
     PostgresQueryBuilder, Query, SqliteQueryBuilder, Table,
 };
 use crate::driver::{
@@ -1370,10 +1370,10 @@ mod tests {
                 "fexu_admin_search",
                 &columns(),
                 vec![
-                    Value::Uuid(Some(Box::new(Uuid::from_u128(id)))),
-                    Value::String(Some(Box::new(name.to_owned()))),
-                    Value::String(Some(Box::new(sku.to_owned()))),
-                    Value::Uuid(Some(Box::new(Uuid::from_u128(owner)))),
+                    Value::Uuid(Some(Uuid::from_u128(id)))),
+                    Value::String(Some(name.to_owned()))),
+                    Value::String(Some(sku.to_owned()))),
+                    Value::Uuid(Some(Uuid::from_u128(owner)))),
                 ],
             )
             .await
