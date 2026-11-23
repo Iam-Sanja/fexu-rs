@@ -3,7 +3,7 @@
 use crate::audit::stored_uuid;
 use fexu_auth::ADMIN_DRAFTS;
 use fexu_core::FexuError;
-use fexu_db::driver::sea_query::{Alias, Expr, PostgresQueryBuilder, Query, SqliteQueryBuilder};
+use fexu_db::driver::sea_query::{Alias, Expr, ExprTrait, PostgresQueryBuilder, Query, SqliteQueryBuilder};
 use fexu_db::driver::{ConnectionTrait, DatabaseBackend, Statement, Value as DbValue};
 use serde_json::{Map, Value};
 use std::time::{SystemTime, UNIX_EPOCH};
