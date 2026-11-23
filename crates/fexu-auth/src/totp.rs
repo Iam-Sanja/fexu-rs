@@ -7,7 +7,7 @@ use crate::error::AuthError;
 use crate::service::constant_eq;
 use aes_gcm::aead::{Aead, KeyInit as AeadKeyInit, Payload};
 use aes_gcm::{AeadCore, Aes256Gcm, Nonce};
-use argon2::password_hash::rand_core::{OsRng, RngCore};
+use rand_core::{OsRng, RngCore};
 use hmac::{Hmac, KeyInit, Mac};
 use sha1::Sha1;
 use sha2::Sha256;
@@ -369,7 +369,7 @@ mod tests {
     };
     use aes_gcm::aead::KeyInit as AeadKeyInit;
     use aes_gcm::Aes256Gcm;
-    use argon2::password_hash::rand_core::OsRng;
+    use rand_core::OsRng;
     use hmac::{KeyInit, Mac};
     use uuid::Uuid;
 
