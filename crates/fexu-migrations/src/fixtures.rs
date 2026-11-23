@@ -625,7 +625,9 @@ fn bind_value(
             })?;
             Ok(Value::Json(Some(Box::new(parsed))))
         }
-        ColumnKind::Text | ColumnKind::Choice => Ok(Value::String(Some(value.as_str().expect("validated").to_owned()))),
+        ColumnKind::Text | ColumnKind::Choice => Ok(Value::String(Some(
+            value.as_str().expect("validated").to_owned(),
+        ))),
         ColumnKind::Date => {
             let date = parse_date(value.as_str().expect("validated")).map_err(|error| {
                 MigrationError::new(format!("Field '{}': {error}", column.name))
