@@ -612,7 +612,7 @@ pub async fn date_buckets(
     let expression = bucket_expression(db.get_database_backend(), kind, column, width);
     let mut query = Query::select();
     query
-        .expr_as(Expr::cust(&expression), Alias::new("bucket"))
+        .expr_as(Expr::cust(expression.clone()), Alias::new("bucket"))
         .expr_as(
             Expr::col(Alias::new("id")).count(),
             Alias::new("bucket_count"),
@@ -628,7 +628,7 @@ pub async fn date_buckets(
         bounds,
         scope,
     )?;
-    query.add_group_by([Expr::cust(&expression)]);
+    query.add_group_by([Expr::cust(expression.clone())]);
     query.order_by_expr(Expr::cust("bucket"), Order::Asc);
     query.limit(101);
     let rows = db
