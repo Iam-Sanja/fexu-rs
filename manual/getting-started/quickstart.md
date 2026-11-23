@@ -1,17 +1,13 @@
 # Quickstart
 
-Create a Fexu **0.2.0** application from a source-built CLI, apply migrations, create an admin user, and start the development server. These commands were verified against the workspace at the documentation review commit (see `docs/audits/fexu-020-final-documentation-review.md`).
-
-**Registry note:** `fexu new` without `--fexu-path` pins `fexu = "=0.2.0"`. Until crates.io publishes 0.2.0, use `--fexu-path` as below or build dependencies from the framework checkout.
+Create a Fexu **0.2.0** application using the published CLI, apply migrations, create an admin user, and start the development server. For unreleased 0.3.0 development, follow the source instructions in [Installation](installation.md).
 
 Fexu requires Rust **1.89.0+**. New projects default to SQLite (`sqlite://db.sqlite3?mode=rwc`).
 
-## Install CLI from this repository
+## Install the published CLI
 
 ```bash
-git clone https://github.com/Iam-Sanja/fexu-rs.git
-cd fexu-rs
-cargo install --path crates/fexu-cli --locked
+cargo install fexu-cli --version 0.2.0 --locked
 fexu --version
 ```
 
@@ -19,7 +15,7 @@ fexu --version
 
 ```bash
 mkdir -p ~/fexu-apps && cd ~/fexu-apps
-fexu new project demo --template fullstack --fexu-path /path/to/fexu-rs
+fexu new project demo --template fullstack
 cd demo
 fexu doctor
 fexu check
@@ -56,7 +52,7 @@ Review generated migrations before `migrate up`. See [models](../topics/models.m
 ## API template
 
 ```sh
-fexu new project api-demo --template api --fexu-path /path/to/fexu-rs
+fexu new project api-demo --template api
 ```
 
 API projects pin `fexu = "=0.2.0"` without the `admin-ui` feature set.

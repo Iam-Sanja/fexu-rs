@@ -2,7 +2,7 @@
 
 **Build database-backed Rust web applications with models, migrations, server-rendered pages, an admin, authentication, jobs and an integrated CLI.**
 
-This manual describes **Fexu 0.2.0** workspace behavior. **crates.io may still serve 0.1.2** until publish; install from source or use published 0.1.2 docs when that matches your dependency. The website publishes frozen manuals by release rather than silently updating older versions.
+This manual documents **Fexu 0.2.0**, the latest published stable release, and may include explicitly labelled development updates toward **0.3.0** after they merge. Fexu remains experimental and is not declared production-ready. The GitHub Pages site reflects the current manual on `main`; the immutable 0.2.0 snapshot is in the [release tag](https://github.com/Iam-Sanja/fexu-rs/tree/v0.2.0/manual).
 
 ## Start here
 
@@ -32,6 +32,6 @@ This manual describes **Fexu 0.2.0** workspace behavior. **crates.io may still s
 - [Full CLI reference](reference/cli.md)
 - [Project configuration reference](reference/settings.md)
 - [Documentation versions](versions.md)
-- [Upgrade from 0.1.2 to the 0.2 development source](how-to/upgrade-0.1.2-to-0.2.md)
+- [Upgrade from 0.1.2 to 0.2.0](how-to/upgrade-0.1.2-to-0.2.md)
 
 This site intentionally excludes internal audits, issue timelines and engineering worklogs. Source history and contributor notes remain in the repository, separate from this user manual.

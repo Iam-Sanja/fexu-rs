@@ -6,7 +6,7 @@
 
 - All **16** publishable crates and every internal path dependency requirement are `0.2.0`. Examples stay `publish = false`.
 - `fexu new` writes `fexu = "=0.2.0"` unless `--fexu-path` is set. The fullstack template keeps `features = ["admin-ui"]` on that registry dependency.
-- `scripts/publish-workspace.py --version 0.2.0 --plan` validates publish order without uploading. This entry does **not** authorize crates.io publication.
+- `scripts/publish-workspace.py --version 0.2.0 --plan` validates publish order without uploading; the authorized release publishing workflow completed successfully.
 
 ## Unreleased — English-first diagnostics
 

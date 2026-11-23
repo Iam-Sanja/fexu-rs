@@ -30,7 +30,10 @@
 
 ## Documentation
 
-- [ ] Contributor or product docs updated, or not required
+- [ ] Updated the relevant `manual/` pages, or explained `Docs-Impact: none — ...` in the PR body
+- [ ] Updated `README.md` for public feature/quickstart changes, or explained `README-Impact: none — ...`
+- [ ] Updated roadmap/changelog for feature, fix or release status changes
+- [ ] Synchronized all 16 Cargo crate versions, internal dependencies, lockfile and generator pins if the declared version changed
 
 ## Migration impact
 

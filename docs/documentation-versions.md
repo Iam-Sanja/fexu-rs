@@ -1,36 +1,22 @@
 # Documentation versions
 
-Each published Fexu release gets its **own frozen manual**. Use the manual matching the Fexu version installed in your Cargo project, especially for CLI flags, API signatures and migration instructions.
+**Latest published stable version: 0.2.0.** Next planned milestone: **0.3.0** (not released). Fexu is experimental.
 
-## Choose the right version
+| Version | Status | Source |
+| --- | --- | --- |
+| **0.2.0** | Published on crates.io; all 16 crates | [GitHub Release](https://github.com/Iam-Sanja/fexu-rs/releases/tag/v0.2.0) and [immutable tagged manual](https://github.com/Iam-Sanja/fexu-rs/tree/v0.2.0/manual) |
+| **0.1.2** | Previous published release | [Upgrade guide](../manual/how-to/upgrade-0.1.2-to-0.2.md) |
+| **0.3.0** | Planned; development work may follow on main | [Roadmap](roadmap.md) |
 
-| Version | What it documents |
-| --- | --- |
-| **0.1.2** | Latest published release as of 21 November 2026. Installation: `cargo install fexu-cli --version 0.1.2 --locked` |
-| **0.2.0** | Next planned release. Its manual is published only after the 0.2.0 release itself is available. |
-| **Development source** | Unreleased `main`. Use a matching source checkout; public APIs may differ from published crates. |
+The [GitHub Pages documentation](https://iam-sanja.github.io/fexu-rs/) currently deploys the latest `manual/` from `main`, **not** an immutable tagged release or a `mike` version selector. Pages can show explicitly labelled newer development work. To read exactly the 0.2.0 source manual, use the tagged link above.
 
-When the documentation website is enabled, the version selector will let you switch between released versions. The `stable` URL will point to the latest **approved** release manual, not automatically to `main`.
-
-## Install the version you are reading about
-
-For the published 0.1.2 release:
+## Install published 0.2.0
 
 ```sh
-cargo install fexu-cli --version 0.1.2 --locked
-cargo add fexu@0.1.2
+cargo install fexu-cli --version 0.2.0 --locked
+cargo add fexu@0.2.0
 ```
 
-After a release, the matching version page will contain its exact installation commands. Code examples, flags and signatures on a versioned page apply to that version only.
+For work against unreleased development source, use a matching Git checkout and the `--fexu-path` CLI option rather than assuming that source-only changes are published.
 
-## Find the right instructions
-
-- [Quickstart](quickstart.md) — build your first project
-- [CLI reference](cli.md) — all subcommands, options and examples
-- [Configuration](configuration.md) — project and environment settings
-- [Database](database.md) — query interfaces and backend behavior
-- [Migrations](migrations.md) — schema changes
-- [Admin](admin.md) and [forms](forms.md) — interactive application features
-- [Deployment](deployment.md) — production-related setup
-
-A framework release before 1.0 may change Rust APIs between minor versions. When upgrading, use the release-specific upgrade guide and release notes instead of assuming that compiling against a new dependency requires no source updates.
+See [Quickstart](quickstart.md), [CLI](cli.md), [Database](database.md), [Migrations](migrations.md), [Admin](admin.md) and [Deployment](deployment.md). Pre-1.0 upgrades may require source-code changes; follow the release-specific upgrade guide.

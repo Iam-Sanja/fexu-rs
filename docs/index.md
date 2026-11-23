@@ -2,7 +2,7 @@
 
 Fexu is a Rust web framework for building database-backed web applications. It provides model declarations, SQLite/PostgreSQL access, migrations, HTML and JSON endpoints, authentication, forms, a server-rendered admin, and background jobs.
 
-**Choose the documentation version that matches your installed Fexu release.** The latest published workspace release is **0.1.2**; the next planned release is **0.2.0**. Development documentation can describe APIs not yet available in the published crates. See [documentation versions](documentation-versions.md).
+**Latest published Fexu release: 0.2.0** (all 16 crates). **Next planned milestone: 0.3.0**, not yet released. The public GitHub Pages manual reflects current `main` and must label post-release development behavior. Match CLI/API examples to your installed version; see [documentation versions](documentation-versions.md).
 
 ## Start building
 

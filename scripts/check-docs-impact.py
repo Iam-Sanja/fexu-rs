@@ -9,6 +9,7 @@ import subprocess
 import sys
 
 PUBLIC_DOCS = "manual/"
+README = "README.md"
 SOURCE_ROOTS = (
     "crates/", "examples/", "deploy/", "templates/",
 )
@@ -35,10 +36,10 @@ def affects_usage(path: str) -> bool:
     return False
 
 
-def docs_exemption(body: str) -> str | None:
+def explicit_exemption(body: str, key: str) -> str | None:
     # An explicit, substantive justification; no unreviewed checkbox alone.
     matches = re.findall(
-        r"(?im)^Docs-Impact:\s*none\s*[—–-]\s*(\S.{19,})\s*$", body or ""
+        rf"(?im)^{re.escape(key)}:\s*none\s*[—–-]\s*(\S.{{19,}})\s*$", body or ""
     )
     return matches[0].strip() if matches else None
 
@@ -52,21 +53,36 @@ def main() -> int:
     if not source:
         print("PASS: no code, CLI, project template, configuration, deployment or workflow changes.")
         return 0
+    body = os.environ.get("PR_BODY", "")
+    errors = []
     if manual:
-        print("PASS: public manual updated. Reviewers still need to verify the affected pages.")
+        print("PASS: public manual updated; reviewers still verify factual accuracy.")
         for path in manual:
             print(f"  manual: {path}")
-        return 0
-    exemption = docs_exemption(os.environ.get("PR_BODY", ""))
-    if exemption:
-        print(f"PASS: PR explicitly records no user-documentation impact: {exemption}")
-        return 0
-    print("FAIL: changes to user-facing source or tooling need corresponding files in manual/.")
-    print("If genuinely no user-visible change, explain why in the PR description:")
-    print("Docs-Impact: none — <at least 20 characters of concrete reasoning>")
-    for path in source[:25]:
-        print(f"  changed: {path}")
-    return 1
+    else:
+        exemption = explicit_exemption(body, "Docs-Impact")
+        if exemption:
+            print(f"PASS: PR records no public manual impact: {exemption}")
+        else:
+            errors.append("manual/ update or Docs-Impact: none — <20+ characters of reasoning>")
+
+    if README in paths:
+        print("PASS: README updated in the same PR.")
+    else:
+        exemption = explicit_exemption(body, "README-Impact")
+        if exemption:
+            print(f"PASS: PR records no README impact: {exemption}")
+        else:
+            errors.append("README.md update or README-Impact: none — <20+ characters of reasoning>")
+
+    if errors:
+        print("FAIL: source or tooling changes need current public docs and README review.")
+        for error in errors:
+            print(f"  required: {error}")
+        for path in source[:25]:
+            print(f"  changed: {path}")
+        return 1
+    return 0
 
 
 if __name__ == "__main__":

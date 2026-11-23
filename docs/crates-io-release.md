@@ -1,9 +1,8 @@
-# crates.io release preparation
+# crates.io release and versioning policy
 
-> For the proposed 0.2.0 candidate (not yet published), see [the tokenless release preflight and outstanding compatibility gates](release-candidate-0.2.md). Published 0.1.2 instructions below are not approval to publish a new version.
+**Latest published:** [v0.2.0](https://github.com/Iam-Sanja/fexu-rs/releases/tag/v0.2.0) (2026-11-23), all 16 crates, successful [publish workflow](https://github.com/Iam-Sanja/fexu-rs/actions/runs/45090038609). **Next planned:** v0.3.0 (not published). Fexu remains experimental.
 
-> **Current status (2026-11-18):** `v0.1.2` was released on 2026-11-15 and all 16 publishable crates have a `0.1.2` registry version. The `0.1.2` commands and steps below are retained as the **historical release procedure**, not instructions to republish that version. For the next release, first choose and synchronize an approved version (proposed `0.2.0`), review [roadmap gates](roadmap.md), and adjust the planner, tag and consumer smoke-test commands accordingly. **Publishing a GitHub Release triggers the publishing workflow** when the configured environment allows it; do not create a tag/release for documentation checks.
-
+**Do not alter the v0.2.0 release tag.** Publishing a stable GitHub Release triggers crates.io publishing; code pushes and documentation updates do not.
 
 This repository intentionally does **not** publish on pushes to `main` or on pull requests.
 Publishing requires a stable GitHub Release (`vX.Y.Z`), a tag pointing to the
@@ -33,26 +32,18 @@ automatically without a separate environment approval**.
    GitHub Release before using this workflow. The environment tag restriction
    does not itself provide a human approval gate.
 
-## Version policy
+## Coordinated versioning
 
-This branch sets every publishable crate and every internal path dependency
-to `0.1.2`. `0.1.0` and `fexu-cli` `0.1.1` stay on crates.io and are not
-overwritten. `0.1.2` is the common next version, not a version Cargo derives.
-`publishable_crates_share_one_version_and_examples_stay_private` locks those
-sixteen crates to the workspace version and keeps the example packages
-`publish = false`. It does not upload anything.
+All **16 publishable crates** and their internal workspace dependency requirements must share the same version. The 0.2.0 tag is immutable. When 0.3.0 development code begins, prepare one reviewed, tested version-coordination PR (for example `0.3.0-dev.1`) updating crate versions, internal dependency requirements, lockfile, CLI generator, template pins, README, manual and changelog together. **A prerelease version in GitHub source is not published to crates.io automatically.** Do not bump versions for a roadmap-only change.
 
-Inspect the publishing graph before making a release:
+Verify version consistency and package metadata before a future publication:
 
 ```bash
-python3 scripts/publish-workspace.py --version 0.1.2 --plan
+python3 scripts/publish-workspace.py --version VERSION --plan
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets --locked -- -D warnings
 cargo test --workspace --locked
 ```
-
-The planner errors if versions are inconsistent, internal dependencies are
-unpublishable, or the local dependency graph has a cycle.
 
 ## Release steps
 
@@ -60,7 +51,7 @@ unpublishable, or the local dependency graph has a cycle.
    PostgreSQL and browser integration tests, at the final commit.
 2. Confirm all crates to be published have valid crates.io owners and trusted
    publisher configurations; confirm the `release` environment exists.
-3. Create a tag `v0.1.2` at the **current main HEAD** and publish the GitHub
+3. Create a newly approved stable tag (for example `v0.3.0`) at the **current main HEAD** and publish the GitHub
    Release for that tag. The publishing workflow starts automatically.
 4. Monitor the `release` environment deployment and the publishing workflow.
    With no required reviewers configured, the job runs automatically after the

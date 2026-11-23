@@ -1,6 +1,14 @@
-name: Publish documentation preview (manual)
+name: Publish Fexu documentation
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - "manual/**"
+      - "mkdocs.yml"
+      - "requirements-docs.txt"
+      - "scripts/audit-documentation.py"
+      - ".github/workflows/docs-pages-preview.yml"
   workflow_dispatch:
 
 permissions:
@@ -14,7 +22,7 @@ concurrency:
 
 jobs:
   deploy:
-    name: Build and deploy unreleased manual
+    name: Build and deploy current manual
     runs-on: ubuntu-latest
     timeout-minutes: 20
     environment:
@@ -42,10 +50,10 @@ jobs:
         uses: actions/upload-pages-artifact@v4
         with:
           path: site
-      - name: Deploy development preview
+      - name: Deploy current manual
         id: deployment
         uses: actions/deploy-pages@v4
       - name: Explain publication status
         run: |
-          echo "Deployed the current unreleased `main` manual as a DEVELOPMENT PREVIEW." >> "$GITHUB_STEP_SUMMARY"
-          echo "This did not publish crates, create a release tag, or set a stable release alias." >> "$GITHUB_STEP_SUMMARY"
+          echo "Deployed the current `main` manual. This is a moving development site, not a frozen release tag." >> "$GITHUB_STEP_SUMMARY"
+          echo "This did not publish crates, create a release tag, or set a versioned-docs alias." >> "$GITHUB_STEP_SUMMARY"
