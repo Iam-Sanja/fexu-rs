@@ -3,7 +3,9 @@
 use crate::error::AuthError;
 use crate::schema::{LOGIN_CHALLENGES, MFA_TOTP, RECOVERY_CODES, SESSIONS};
 use crate::store::SessionRow;
-use fexu_db::driver::sea_query::{Alias, Expr, PostgresQueryBuilder, Query, SqliteQueryBuilder};
+use fexu_db::driver::sea_query::{
+    Alias, Expr, ExprTrait, PostgresQueryBuilder, Query, SqliteQueryBuilder,
+};
 use fexu_db::driver::{ConnectionTrait, DatabaseBackend, QueryResult, Statement, Value};
 use uuid::Uuid;
 
@@ -377,7 +379,7 @@ pub async fn list_open_sessions(
 
 fn uuid_expr(db: &impl ConnectionTrait, id: Uuid) -> fexu_db::driver::sea_query::SimpleExpr {
     match db.get_database_backend() {
-        DatabaseBackend::Postgres => Expr::value(Value::Uuid(Some(Box::new(id)))),
+        DatabaseBackend::Postgres => Expr::value(Value::Uuid(Some(id))),
         DatabaseBackend::Sqlite | DatabaseBackend::MySql => Expr::value(id.to_string()),
     }
 }
