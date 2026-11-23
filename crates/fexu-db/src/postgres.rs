@@ -81,7 +81,10 @@ impl PgSession {
     }
 
     pub(crate) async fn execute_unprepared(&self, sql: &str) -> Result<u64, DbErr> {
-        let query = query_with::<Postgres, PgArguments>(AssertSqlSafe(sql.to_owned()), PgArguments::default());
+        let query = query_with::<Postgres, PgArguments>(
+            AssertSqlSafe(sql.to_owned()),
+            PgArguments::default(),
+        );
         let result = run_query(query, &self.pool)
             .await
             .map_err(|error| map_sqlx(error, true))?;
@@ -147,7 +150,10 @@ impl PgTransaction {
         let mut transaction = guard
             .take()
             .ok_or_else(|| DbErr::exec("PostgreSQL transaction is closed"))?;
-        let query = query_with::<Postgres, PgArguments>(AssertSqlSafe(sql.to_owned()), PgArguments::default());
+        let query = query_with::<Postgres, PgArguments>(
+            AssertSqlSafe(sql.to_owned()),
+            PgArguments::default(),
+        );
         let result = run_query(query, &mut *transaction)
             .await
             .map_err(|error| map_sqlx(error, true));
