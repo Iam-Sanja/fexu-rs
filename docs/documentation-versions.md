@@ -6,7 +6,7 @@
 | --- | --- | --- |
 | **0.2.0** | Published on crates.io; all 16 crates | [GitHub Release](https://github.com/Iam-Sanja/fexu-rs/releases/tag/v0.2.0) and [immutable tagged manual](https://github.com/Iam-Sanja/fexu-rs/tree/v0.2.0/manual) |
 | **0.1.2** | Previous published release | [Upgrade guide](../manual/how-to/upgrade-0.1.2-to-0.2.md) |
-| **0.3.0** | Planned; development work may follow on main | [Roadmap](roadmap.md) |
+| **0.3.0** | In development (`0.3.0-dev.1` source only); not published | [Roadmap](roadmap.md) |
 
 The [GitHub Pages documentation](https://iam-sanja.github.io/fexu-rs/) currently deploys the latest `manual/` from `main`, **not** an immutable tagged release or a `mike` version selector. Pages can show explicitly labelled newer development work. To read exactly the 0.2.0 source manual, use the tagged link above.
 

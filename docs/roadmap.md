@@ -9,7 +9,7 @@
 - **Latest published: [v0.2.0](https://github.com/Iam-Sanja/fexu-rs/releases/tag/v0.2.0)** (2026-11-23). All 16 crates published via the [successful release workflow](https://github.com/Iam-Sanja/fexu-rs/actions/runs/45090038609), with CI and the [release preflight](https://github.com/Iam-Sanja/fexu-rs/actions/runs/45086997959).
 - **Previous: [v0.1.2](https://github.com/Iam-Sanja/fexu-rs/releases/tag/v0.1.2)**. See the [upgrade guide](../manual/how-to/upgrade-0.1.2-to-0.2.md).
 - **Next planned: v0.3.0.** No release tag, registry packages or date yet.
-- **Development:** Cargo manifests still use the published `0.2.0` Fexu crate version after the post-release dependency upgrades merged. Before the next feature change, coordinate all 16 crate versions and internal dependency requirements (proposed `0.3.0-dev.1`) and update the lockfile, generator pins, README, manual, changelog and roadmap in a tested PR. An unpublished prerelease must not be presented as available on crates.io.
+- **Development:** Workspace source is coordinated at `0.3.0-dev.1` (unpublished). Registry scaffolding remains pinned to 0.2.0; use `--fexu-path` for development. The version change requires locked cross-platform CI. No release tag or registry publication is implied.
 - Old engineering milestone labels (for example `v0.13`) are not Cargo release tags.
 
 ## v0.3.0 dependency modernization
@@ -18,7 +18,7 @@
 - `rusqlite` 0.43 integrated and tested through [PR #256](https://github.com/Iam-Sanja/fexu-rs/pull/256); Dependabot #238 closed.
 - Argon2 0.6 integrated through [PR #257](https://github.com/Iam-Sanja/fexu-rs/pull/257); SQLx 0.9.1 (core and PostgreSQL) through [PR #258](https://github.com/Iam-Sanja/fexu-rs/pull/258). Both passed required CI. Dependabot #240/#241/#242 closed.
 - SeaQuery 1.0.2 merged in [PR #259](https://github.com/Iam-Sanja/fexu-rs/pull/259); Dependabot #239 closed as superseded. Linux, Windows, MSRV 1.89, PostgreSQL, browser, published 0.1.2 upgrade, security and documentation checks passed on the PR.
-- Dependency updates on GitHub are not new published Fexu versions. Coordinate all 16 framework crates, generator pins, lockfile and documentation as part of the v0.3.0 development version bump.
+- Dependency updates on GitHub are not new published Fexu versions. Keep all 16 framework crates, internal requirements, lockfile and documentation coordinated; keep registry scaffolding on the latest published version.
 
 ## What v0.2.0 delivered
 
@@ -40,6 +40,8 @@
 
 
 ## Next: v0.3.0 — production foundations
+
+See the [0.3.0 acceptance plan](release-candidate-0.3.md) for release gates.
 
 **Goal:** optional services and operational reliability appropriate for more demanding deployments, with evidence-based limits.
 

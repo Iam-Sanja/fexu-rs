@@ -96,7 +96,7 @@ ci: add Windows and Linux checks
 
 User-visible changes must update their `manual/` documentation in the same PR. Update `README.md` when advertised features, installation or quickstarts change; update `docs/roadmap.md` and `CHANGELOG.md` when features/fixes land or planned scope changes. For truly unaffected pages, provide an explicit, substantive `Docs-Impact: none — ...` or `README-Impact: none — ...` justification in the PR body. The CI gate verifies those obligations but cannot prove claims are correct.
 
-All **16 publishable crates** must use one coordinated Cargo version and internal dependency requirements. When actual 0.3.0 development begins, make a coordinated, tested prerelease-version change (for example `0.3.0-dev.1`) including `Cargo.lock`, generated project dependency pins, templates and docs. This is **not** a crates.io publication; published badges continue to show 0.2.0 until an explicitly authorized new release. See [version policy](docs/crates-io-release.md) and [documentation maintenance](docs/documentation-maintenance.md).
+All **16 publishable crates** must use one coordinated Cargo version and internal dependency requirements. Development source uses coordinated `0.3.0-dev.1`, with matching internal requirements and lockfile. Registry project generation intentionally stays on the published 0.2.0 version; source development uses `--fexu-path`. This is **not** a crates.io publication; published badges continue to show 0.2.0 until an explicitly authorized new release. See [version policy](docs/crates-io-release.md) and [documentation maintenance](docs/documentation-maintenance.md).
 
 ## Pull requests
 

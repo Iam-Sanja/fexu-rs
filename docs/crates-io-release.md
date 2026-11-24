@@ -34,7 +34,7 @@ automatically without a separate environment approval**.
 
 ## Coordinated versioning
 
-All **16 publishable crates** and their internal workspace dependency requirements must share the same version. The 0.2.0 tag is immutable. When 0.3.0 development code begins, prepare one reviewed, tested version-coordination PR (for example `0.3.0-dev.1`) updating crate versions, internal dependency requirements, lockfile, CLI generator, template pins, README, manual and changelog together. **A prerelease version in GitHub source is not published to crates.io automatically.** Do not bump versions for a roadmap-only change.
+All **16 publishable crates** and their internal workspace dependency requirements must share the same version. The 0.2.0 tag is immutable. Development source uses the coordinated `0.3.0-dev.1` version; registry scaffolding remains pinned to published 0.2.0. The publication planner intentionally accepts only stable numeric versions; do not relax that guard to validate a development prerelease. **A prerelease version in GitHub source is not published to crates.io automatically.** Do not bump versions for a roadmap-only change.
 
 Verify version consistency and package metadata before a future publication:
 

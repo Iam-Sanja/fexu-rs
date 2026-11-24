@@ -1,4 +1,4 @@
-# Fexu 0.2.0
+# Fexu
 
 **Build model-driven web applications in Rust.**
 
@@ -15,7 +15,7 @@ Fexu is a Django-inspired, **experimental** web framework on **Axum**, **Tera**,
 [**Quick start**](#quick-start) · [**Features**](#features) · [**Install**](#install-fexu-020) · [**Roadmap 0.3.0**](docs/roadmap.md) · [**Upgrade from 0.1.2**](#upgrade-from-012) · [**Documentation**](https://iam-sanja.github.io/fexu-rs/) · [**Contributing**](#contributing) · [**License**](#license)
 
 > [!IMPORTANT]
-> **Latest published release: Fexu 0.2.0.** All 16 crates were released together. Fexu remains experimental and is not declared production-ready. **Next milestone: v0.3.0** ([roadmap](docs/roadmap.md)); planned features are not yet included in v0.2.0. Development changes and their documentation are reviewed together. The current main branch includes the merged SeaQuery, SQLx, rusqlite and Argon2 upgrades for v0.3.0; these are not part of published v0.2.0.
+> **Latest published release: Fexu 0.2.0.** All 16 crates were released together. Fexu remains experimental and is not declared production-ready. **Next milestone: v0.3.0** ([roadmap](docs/roadmap.md)); planned features are not yet included in v0.2.0. Development changes and their documentation are reviewed together. The development workspace uses `0.3.0-dev.1` (unpublished). The development source includes the merged SeaQuery, SQLx, rusqlite and Argon2 upgrades for v0.3.0; these are not part of published v0.2.0.
 
 ## Features
 
@@ -141,7 +141,7 @@ Published **0.1.2** consumers need explicit source edits; `fexu upgrade` reports
 ## Current status and limits
 
 - **Experimental** — not production-ready; APIs and migrations may change.
-- **Published stable release:** `v0.2.0` (all 16 crates). **Next planned milestone:** `v0.3.0`, not yet released. The source workspace starts from 0.2.0; future development version changes must be coordinated across all publishable crates and dependencies.
+- **Published stable release:** `v0.2.0` (all 16 crates). **Next planned milestone:** `v0.3.0`, not yet released. The development workspace uses `0.3.0-dev.1`; the registry generator intentionally pins published 0.2.0. Future version changes must be coordinated across all publishable crates and dependencies.
 - See [roadmap](docs/roadmap.md), [capability matrix](docs/django-capability-matrix.md), [release process](docs/crates-io-release.md).
 - Do not expose a demo on the public internet without hardening.
 
