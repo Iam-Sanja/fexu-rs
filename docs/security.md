@@ -1,6 +1,6 @@
 # Security – threat model and security boundaries
 
-[Overview](index.md) · **Implemented security mechanisms and required safeguards. The published Fexu version is `0.1.2`; current `main` is unreleased work toward `0.2.0` and is not ready for unrestricted production use.**
+[Overview](index.md) · **Implemented security mechanisms and required safeguards. The published Fexu version is `0.2.0`; current `main` is unreleased work toward `0.3.0` and is not ready for unrestricted production use.**
 
 ## Implemented protection mechanisms
 

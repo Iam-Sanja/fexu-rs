@@ -2,7 +2,7 @@
 
 Fexu generates typed repositories for structs deriving `FexuModel`, and also exposes a composable query builder with `ModelQuery`.
 
-**Internal query-builder version:** Published v0.2.0 uses SeaQuery 0.32.7. The upcoming v0.3.0 development source is evaluating SeaQuery 1.0.2. Fexu's public `ModelQuery` API should remain stable; its SQLite and PostgreSQL SQL generation, migration operations and parameter binding must pass CI before the new dependency is accepted.
+**Internal query-builder version:** Published v0.2.0 uses SeaQuery 0.32.7. Unreleased development source toward v0.3.0 uses SeaQuery 1.0.2 after [PR #259](https://github.com/Iam-Sanja/fexu-rs/pull/259) passed CI. Public model queries and both database backends were regression-tested; direct use of the re-exported SeaQuery API may require source changes.
 
 This guide assumes the `Book` model introduced in [the first-project tutorial](../tutorial/first-project.md), already registered in the `catalog` app.
 

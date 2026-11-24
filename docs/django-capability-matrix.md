@@ -1,5 +1,7 @@
 # Django 6.1 vs Fexu — capability and evidence matrix
 
+**Release status update (2026-11-24):** v0.2.0 is published; main at `20aee5b` includes the merged dependency modernization toward v0.3.0. The detailed historical matrix below has not been revalidated row by row; its older version statements are snapshots, not current release facts. See [roadmap](roadmap.md) for current priorities.
+
 > **Evidence warning (2026-11-18):** Reviewed against `main` at `d4e2fb2`. The detailed row-by-row evidence below was originally compiled against `a39c952` (2026-11-14). Older **In PR** labels are historical and are not current absence. HTML list/detail/create/update/delete helpers, `sitemap_xml`, `robots_txt` and `conditional_response` are on `main` (PR #166) and are used by `examples/board`. They stay **Partial**. [Issue #70](https://github.com/Iam-Sanja/fexu-rs/issues/70) tracks the full per-capability revalidation; [roadmap.md](roadmap.md) records proposed 0.2/0.3 gates. Source presence and CI success are not a blanket assertion of complete Django parity.
 
 

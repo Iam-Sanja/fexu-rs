@@ -2,7 +2,9 @@
 
 **Build database-backed Rust web applications with models, migrations, server-rendered pages, an admin, authentication, jobs and an integrated CLI.**
 
-This manual documents **Fexu 0.2.0**, the latest published stable release, and may include explicitly labelled development updates toward **0.3.0** after they merge. Fexu remains experimental and is not declared production-ready. The GitHub Pages site reflects the current manual on `main`; the immutable 0.2.0 snapshot is in the [release tag](https://github.com/Iam-Sanja/fexu-rs/tree/v0.2.0/manual).
+This manual documents **Fexu 0.2.0**, the latest published release, and may include explicitly labelled development updates toward **0.3.0** after they merge. Fexu remains experimental and is not declared production-ready. The GitHub Pages site reflects the current manual on `main`; the immutable 0.2.0 snapshot is in the [release tag](https://github.com/Iam-Sanja/fexu-rs/tree/v0.2.0/manual).
+
+The dependency modernization for 0.3.0 is merged into development source, not published. For exact installed APIs consult the release snapshot; see [documentation versions](versions.md).
 
 ## Start here
 
