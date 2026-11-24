@@ -70,6 +70,7 @@ python3 - "$root/scripts" "$base" "$work/session" <<'PY'
 import json
 import os
 import sys
+import urllib.parse
 from pathlib import Path
 sys.path.insert(0, sys.argv[1])
 from v012_fullstack_upgrade_lib import HttpClient
@@ -85,10 +86,21 @@ status, _, _ = client.request("POST", "/auth/login", headers={
 }, body=body)
 assert status == 403 and not client.cookie("fexu_session"), "foreign origin accepted"
 client = HttpClient(base)
+status, _, _ = client.request("GET", "/admin/login")
+assert status == 200 and client.cookie("fexu_login_csrf"), "missing native login proof"
+invalid_body = urllib.parse.urlencode({
+    "csrf_token": "incorrect", "email": email, "password": password, "next": "/admin",
+}).encode()
+status, _, _ = client.request("POST", "/admin/login", headers={
+    "Content-Type": "application/x-www-form-urlencoded", "Origin": base, "Referer": base + "/admin/login",
+}, body=invalid_body)
+assert status == 403 and not client.cookie("fexu_session"), "incorrect login CSRF accepted"
+client = HttpClient(base)
 session = client.login(email, password, base)
 assert any(c.name == "fexu_session" and c.secure for c in client.jar), "session cookie not Secure"
 Path(sys.argv[3]).write_text(session, encoding="utf-8")
 PY
+python3 "$root/scripts/v012_fullstack_upgrade_runner.py" session-check "$base" "$(cat "$work/session")" deploy-admin@example.test
 # A writable media volume must survive application container recreation.
 "${compose[@]}" exec -T app sh -c 'test "$(id -u)" -ne 0 && printf fixture > /home/fexu/media/.deployment-probe'
 "${compose[@]}" stop db
@@ -100,9 +112,9 @@ test "$status" = 503
 app_id="$("${compose[@]}" ps -q app)"
 "${compose[@]}" stop -t 30 app
 test "$(docker inspect "$app_id" --format '{{.State.ExitCode}}')" = 0
-"${compose[@]}" up -d --force-recreate --wait app
+"${compose[@]}" up -d --no-deps --force-recreate --wait app
 # Recreate proxy to avoid any stale upstream connection or DNS cache.
-"${compose[@]}" up -d --force-recreate --wait proxy
+"${compose[@]}" up -d --no-deps --force-recreate --wait proxy
 for _ in $(seq 1 60); do
   if curl --noproxy '*' --cacert "$SSL_CERT_FILE" -fsS --max-time 5 "$base/readyz" >/dev/null; then
     break

@@ -68,9 +68,10 @@ network. Do not publish port 5432 to reach it.
 ```powershell
 $env:FEXU_CSRF_SECRET = "<64 hexadecimal characters>"
 $env:FEXU_MFA_KEY = "<different 64 hexadecimal characters>"
+docker compose -f deploy/compose.yaml build app
 docker compose -f deploy/compose.yaml up -d --wait db
 docker compose -f deploy/compose.yaml run --rm --no-deps -e DATABASE_URL="postgres://fexu:fexu_dev_only@db:5432/fexu_test_deploy" app fexu migrate up --migrations-dir /home/fexu/migrations
-docker compose -f deploy/compose.yaml up --build
+docker compose -f deploy/compose.yaml up -d --wait app proxy
 ```
 
 Generate the secret outside the shell history when you can. The example
@@ -108,7 +109,7 @@ issuer; it is **not** a production template.
 # Provide a 64-character hexadecimal test secret through a safe secret
 # mechanism before running this example.
 docker compose -f deploy/compose.yaml config --quiet
-docker compose -f deploy/compose.yaml up --build -d
+docker compose -f deploy/compose.yaml up -d --wait app proxy
 docker compose -f deploy/compose.yaml ps
 docker compose -f deploy/compose.yaml port proxy 443
 docker compose -f deploy/compose.yaml port db 5432

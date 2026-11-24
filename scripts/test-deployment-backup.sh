@@ -17,6 +17,8 @@ done
 port="$(docker port "$container" 5432/tcp | sed -n 's/^127\.0\.0\.1://p')"
 test -n "$port"
 base="postgres://fexu:$password@127.0.0.1:$port"
+# Do not inherit libpq host/service/options overrides from a developer shell.
+psql() { env -i PATH="$PATH" HOME="$HOME" psql --no-password "$@"; }
 psql -X -v ON_ERROR_STOP=1 "$base/postgres" -c 'CREATE DATABASE fexu_test_source'
 psql -X -v ON_ERROR_STOP=1 "$base/postgres" -c 'CREATE DATABASE fexu_test_target'
 psql -X -v ON_ERROR_STOP=1 "$base/fexu_test_source" <<'SQL'
