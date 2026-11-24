@@ -78,6 +78,9 @@ jobs:
       - name: Run Clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
 
+      - name: Check optional Redis feature (all targets)
+        run: cargo check --locked -p fexu-cache --features redis-cache --all-targets
+
       - name: Run tests
         run: cargo test --workspace
 

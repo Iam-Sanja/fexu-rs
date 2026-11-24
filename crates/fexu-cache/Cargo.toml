@@ -19,11 +19,12 @@ thiserror.workspace = true
 tokio = { workspace = true, features = ["sync"] }
 
 redis = { version = "=1.8.2", optional = true, default-features = false, features = ["tokio-rustls-comp"] }
+rustls = { version = "0.23", optional = true, default-features = false, features = ["ring", "std"] }
 uuid = { workspace = true, optional = true }
 
 [features]
 default = []
-redis-cache = ["dep:redis", "dep:uuid", "tokio/time"]
+redis-cache = ["dep:redis", "dep:rustls", "dep:uuid", "tokio/time"]
 
 [dev-dependencies]
 serde.workspace = true
