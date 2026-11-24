@@ -13,6 +13,25 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  redis_cache:
+    name: Redis cache (optional feature)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install Rust 1.89
+        uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8
+        with:
+          toolchain: 1.89.0
+      - name: Verify optional dependency lockfile
+        run: cargo metadata --locked --format-version 1 --features fexu/redis-cache >/dev/null
+      - name: Check facade feature and run Redis tests
+        run: |
+          cargo check --locked -p fexu --features redis-cache
+          bash scripts/test-redis-cache.sh
+          git diff --exit-code -- Cargo.lock
+
   deployment_runtime:
     name: Docker deployment and recovery
     runs-on: ubuntu-24.04
@@ -407,7 +426,9 @@ jobs:
             fi
             ready=0
             for attempt in $(seq 1 90); do
-              if docker exec "$container" pg_isready -U fexu -d fexu >/dev/null 2>&1; then
+              # The entrypoint starts a temporary socket-only server during init.
+              # Wait for the final TCP listener, not that temporary server.
+              if docker exec "$container" pg_isready -h 127.0.0.1 -U fexu -d fexu >/dev/null 2>&1; then
                 ready=1
                 break
               fi

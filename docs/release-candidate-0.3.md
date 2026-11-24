@@ -28,7 +28,7 @@ The first CI slice extends the existing fullstack fixture to the actual registry
 
 - [ ] #94: readiness, shutdown, redacted logging, least privilege, isolated backup/restore drills. PR #264 passed actual Compose HTTPS, runtime role, DB outage, normal SIGTERM exit, volume/session persistence and real PostgreSQL restore. The next slice adds stricter deployment checks and structured access-log regression coverage; these new results remain pending. Worker outage, media restore, checkout recovery and live LAN/NPM remain separate.
 - [ ] #96: local and optional S3 storage lifecycle, authorization, quotas and recovery.
-- [ ] #87/#88: #266 passed lease-expiry and attempt-budget regression tests on both backends. The next slice adds a real Unix SQLite worker crash/restart/SIGTERM test and overlapping PostgreSQL handlers; await CI. Optional shared cache and final consistency tests remain open.
+- [ ] #87/#88: #266 passed lease-expiry and attempt-budget regression tests on both backends. The next slice adds a real Unix SQLite worker crash/restart/SIGTERM test and overlapping PostgreSQL handlers; await CI. PR #267 passed all 12 checks, including the real Unix SQLite process recovery and overlapping PostgreSQL handlers. Optional Redis cache implementation and isolated multi-client/outage CI are in the next slice; acceptance and dependency lock verification remain pending.
 - [ ] #85/#172–174: opt-in OIDC, explicit account linking and mandatory negative/mock/browser tests.
 - [ ] #86/#148: minimum reusable-app and locale contracts with runnable examples.
 - [ ] #80/#84/#91: acceptance of existing admin/forms and clean-room CLI workflow.
