@@ -149,6 +149,7 @@ pub struct AbortReport {
 pub struct CommitReport {
     pub bound: Vec<BoundMedia>,
     pub removed: Vec<MediaRef>,
+    /// Old files not removed, including removals deferred after a retain failure.
     pub removal_failed: Vec<MediaRef>,
     pub retain_failed: Vec<MediaRef>,
 }
@@ -275,7 +276,8 @@ impl StagedMedia {
     /// Keeps the staged files and deletes the previous ones.
     ///
     /// Call this only after the database transaction has committed. A delete
-    /// failure does not undo that transaction.
+    /// failure does not undo that transaction. If any retain fails, defer all
+    /// old-file removals and report them in `removal_failed` for reconciliation.
     pub async fn commit<S: Storage + ?Sized>(self, storage: &S) -> CommitReport {
         let mut report = CommitReport {
             bound: self.kept,
@@ -297,6 +299,10 @@ impl StagedMedia {
             });
         }
         for media in self.removals {
+            if !report.retain_failed.is_empty() {
+                report.removal_failed.push(media);
+                continue;
+            }
             if storage.delete(media.owner, media.id).await.is_ok() {
                 report.removed.push(media);
             } else {
@@ -1161,6 +1167,59 @@ mod tests {
         assert_ne!(left.created()[0].file.id, right.created()[0].file.id);
         left.commit(storage.as_ref()).await;
         right.commit(storage.as_ref()).await;
+        let _ = std::fs::remove_dir_all(directory);
+    }
+
+    #[tokio::test]
+    async fn retain_failure_preserves_previous_media_for_reconciliation() {
+        let directory = root();
+        let inner = LocalStorage::open(&directory, 64_000, &["text/plain"]).unwrap();
+        let owner = Uuid::new_v4();
+        let old = inner.save(owner, "old.txt", b"old").await.unwrap();
+        let previous = MediaRef { owner, id: old.id };
+        // Flaky implements staging but uses the default failing retain.
+        let storage = Flaky {
+            inner,
+            remaining: AtomicUsize::new(1),
+        };
+        let plan = prepare_media(
+            owner,
+            owner,
+            &OwnerAccess,
+            &policy(),
+            &[FieldSpec {
+                name: "notes",
+                kind: MediaKind::File,
+                required: true,
+                readonly: false,
+                existing: Some(previous),
+                clear: false,
+                image_limits: None,
+                incoming: Some(IncomingFile {
+                    original_name: "new.txt",
+                    declared_type: None,
+                    bytes: b"new",
+                }),
+            }],
+        )
+        .unwrap();
+        let staged = plan.stage(&storage, 100, 30).await.unwrap();
+        let new = MediaRef {
+            owner,
+            id: staged.created()[0].file.id,
+        };
+        let report = staged.commit(&storage).await;
+        assert_eq!(report.retain_failed, vec![new]);
+        assert_eq!(report.removal_failed, vec![previous]);
+        assert!(report.removed.is_empty());
+        assert_eq!(report.bound[0].media, Some(new));
+        assert_eq!(storage.read(owner, old.id).await.unwrap().1, b"old");
+        assert_eq!(
+            storage.metadata(owner, new.id).await.unwrap().expires_at,
+            Some(130)
+        );
+        assert_eq!(storage.inner.cleanup_orphans(130).unwrap().removed_expired, 1);
+        assert_eq!(storage.read(owner, old.id).await.unwrap().1, b"old");
         let _ = std::fs::remove_dir_all(directory);
     }
 

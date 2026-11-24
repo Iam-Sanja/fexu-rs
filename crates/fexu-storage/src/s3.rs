@@ -41,10 +41,27 @@ pub fn prepare(
     access_key_env: &str,
     secret_key_env: &str,
 ) -> Result<S3Plan, StorageError> {
-    let endpoint = endpoint.trim().trim_end_matches('/').to_owned();
-    if !endpoint.starts_with("https://") || endpoint.contains([' ', '?', '#']) {
+    // Accept an HTTPS origin only, not credentials, paths, or redirect-like
+    // syntax. A remote client must validate again when consuming a public plan.
+    if !endpoint.starts_with("https://")
+        || endpoint.contains(['@', '\\', '?', '#'])
+        || endpoint.chars().any(|c| c.is_whitespace() || c.is_control())
+    {
         return Err(StorageError::Failed);
     }
+    let parsed = url::Url::parse(endpoint).map_err(|_| StorageError::Failed)?;
+    let authority = endpoint.trim_end_matches('/');
+    if parsed.host().is_none()
+        || !parsed.username().is_empty()
+        || parsed.password().is_some()
+        || parsed.port() == Some(0)
+        || parsed.path() != "/"
+        || authority["https://".len()..].contains('/')
+        || endpoint.ends_with("//")
+    {
+        return Err(StorageError::Failed);
+    }
+    let endpoint = parsed.origin().ascii_serialization();
     if region.len() < 2
         || region.len() > 32
         || !region
@@ -56,6 +73,9 @@ pub fn prepare(
     if bucket.len() < 3
         || bucket.len() > 63
         || bucket.contains("..")
+        || !bucket.as_bytes()[0].is_ascii_alphanumeric()
+        || !bucket.as_bytes()[bucket.len() - 1].is_ascii_alphanumeric()
+        || bucket.parse::<std::net::IpAddr>().is_ok()
         || bucket.contains(['/', '\\', ' '])
         || !bucket.chars().all(|char| {
             char.is_ascii_lowercase() || char.is_ascii_digit() || char == '-' || char == '.'
@@ -104,6 +124,47 @@ mod tests {
     use std::sync::Mutex;
 
     static ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    #[test]
+    fn remote_plan_accepts_only_https_origins_and_bucket_names() {
+        let plan = |endpoint, bucket| {
+            prepare(
+                endpoint,
+                "eu-central-1",
+                bucket,
+                "FEXU_S3_ACCESS_KEY",
+                "FEXU_S3_SECRET_KEY",
+            )
+        };
+        for endpoint in [
+            "https://",
+            "https://user:secret@storage.example",
+            "https://storage.example/bucket",
+            "https://storage.example/a/..",
+            "https://storage.example//",
+            "https://storage.example:0",
+            "https://storage.example:65536",
+            "https://storage.example?query",
+            "https://storage.example#fragment",
+            "https://storage.example\\other",
+            "https://storage.example\n",
+        ] {
+            assert!(plan(endpoint, "app-media").is_err(), "{endpoint:?}");
+        }
+        for bucket in ["-media", "media-", ".media", "media.", "192.0.2.1"] {
+            assert!(plan("https://storage.example", bucket).is_err());
+        }
+        assert_eq!(
+            plan("https://storage.example:9443/", "app-media")
+                .unwrap()
+                .endpoint,
+            "https://storage.example:9443"
+        );
+        assert_eq!(
+            plan("https://[::1]:9443", "app-media").unwrap().endpoint,
+            "https://[::1]:9443"
+        );
+    }
 
     #[test]
     fn remote_plan_rejects_plaintext_endpoints_and_does_not_connect() {

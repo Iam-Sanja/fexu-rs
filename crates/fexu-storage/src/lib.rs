@@ -77,8 +77,8 @@ pub trait Storage: Send + Sync {
 
     /// Stores bytes that expire unless [`Storage::retain`] clears the deadline.
     ///
-    /// The default ignores `expires_at` and calls [`Storage::save`]. A backend that
-    /// stages uploads has to keep the deadline and honor `retain`.
+    /// The default rejects a deadline rather than silently storing permanent data.
+    /// A backend that stages uploads must persist the deadline and honor `retain`.
     async fn save_expiring(
         &self,
         owner: Uuid,
@@ -86,7 +86,9 @@ pub trait Storage: Send + Sync {
         bytes: &[u8],
         expires_at: Option<i64>,
     ) -> Result<StoredFile, StorageError> {
-        let _ = expires_at;
+        if expires_at.is_some() {
+            return Err(StorageError::Failed);
+        }
         self.save(owner, original_name, bytes).await
     }
 

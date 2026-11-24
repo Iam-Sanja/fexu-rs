@@ -163,24 +163,18 @@ impl LocalStorage {
             .gate
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
-        if bytes.len() as u64 > self.max_bytes {
-            return Err(StorageError::TooLarge);
-        }
-        if let Some(check) = &self.check {
-            check.check(original_name, bytes)?;
-        }
-        let Some(content_type) = detect_type(bytes) else {
-            return Err(StorageError::TypeRejected);
-        };
-        if !self.allow.iter().any(|allowed| allowed == content_type) {
-            return Err(StorageError::TypeRejected);
-        }
-        if !extension_matches(original_name, content_type) {
-            return Err(StorageError::TypeRejected);
-        }
+        let stored = prepare_file(
+            owner,
+            original_name,
+            bytes,
+            expires_at,
+            self.max_bytes,
+            &self.allow,
+            self.check.as_deref(),
+        )?;
         let directory = self.rooted_owner(owner, true)?;
         self.enforce_quota(&directory, bytes.len() as u64)?;
-        let id = Uuid::new_v4();
+        let id = stored.id;
         let partial = directory.join(format!("{id}.partial"));
         let target = directory.join(id.to_string());
         let meta_path = directory.join(format!("{id}.json"));
@@ -193,16 +187,6 @@ impl LocalStorage {
             return Err(StorageError::Failed);
         }
         ensure_regular_inside(&self.root, &target)?;
-        let stored = StoredFile {
-            id,
-            owner,
-            original_name: sanitize_name(original_name),
-            content_type: content_type.to_owned(),
-            size: bytes.len() as u64,
-            created_at: unix_now(),
-            expires_at,
-            sha256: hex(Sha256::digest(bytes)),
-        };
         let json = serde_json::to_vec(&stored).map_err(|_| StorageError::Failed)?;
         write_new(&meta_path, &json)?;
         ensure_regular_inside(&self.root, &meta_path)?;
@@ -527,7 +511,42 @@ impl Drop for PendingFiles {
     }
 }
 
-fn bytes_match(meta: &StoredFile, bytes: &[u8]) -> bool {
+// Shared upload validation and metadata construction for local and future
+// remote storage. This function performs no I/O.
+pub(crate) fn prepare_file(
+    owner: Uuid,
+    original_name: &str,
+    bytes: &[u8],
+    expires_at: Option<i64>,
+    max_bytes: u64,
+    allow: &[String],
+    check: Option<&dyn BeforeSave>,
+) -> Result<StoredFile, StorageError> {
+    if bytes.len() as u64 > max_bytes {
+        return Err(StorageError::TooLarge);
+    }
+    if let Some(check) = check {
+        check.check(original_name, bytes)?;
+    }
+    let content_type = detect_type(bytes).ok_or(StorageError::TypeRejected)?;
+    if !allow.iter().any(|allowed| allowed == content_type)
+        || !extension_matches(original_name, content_type)
+    {
+        return Err(StorageError::TypeRejected);
+    }
+    Ok(StoredFile {
+        id: Uuid::new_v4(),
+        owner,
+        original_name: sanitize_name(original_name),
+        content_type: content_type.to_owned(),
+        size: bytes.len() as u64,
+        created_at: unix_now(),
+        expires_at,
+        sha256: hex(Sha256::digest(bytes)),
+    })
+}
+
+pub(crate) fn bytes_match(meta: &StoredFile, bytes: &[u8]) -> bool {
     if bytes.len() as u64 != meta.size {
         return false;
     }
