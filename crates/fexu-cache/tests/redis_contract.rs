@@ -279,18 +279,10 @@ async fn redis_restart_contract() {
     );
     first.set("app", "old", &"before", None).await.unwrap();
     assert_eq!(
-        second
-            .get::<String>("app", "old")
-            .await
-            .unwrap()
-            .as_deref(),
+        second.get::<String>("app", "old").await.unwrap().as_deref(),
         Some("before")
     );
-    let token = first
-        .backend()
-        .current_token("app", "old")
-        .await
-        .unwrap();
+    let token = first.backend().current_token("app", "old").await.unwrap();
     std::fs::write(root.join("ready"), b"ready").unwrap();
     wait_for_marker(&root, "stopped").await;
     assert_eq!(
@@ -316,11 +308,7 @@ async fn redis_restart_contract() {
     );
     assert_eq!(first.get::<String>("app", "old").await.unwrap(), None);
     assert_eq!(
-        first
-            .get::<String>("app", "new")
-            .await
-            .unwrap()
-            .as_deref(),
+        first.get::<String>("app", "new").await.unwrap().as_deref(),
         Some("after")
     );
 }

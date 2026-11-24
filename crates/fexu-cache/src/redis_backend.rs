@@ -137,10 +137,7 @@ impl Connections {
 impl RedisCache {
     pub fn new(url: &str, prefix: &str, limits: RedisLimits) -> Result<Self, CacheError> {
         validate_namespace(prefix)?;
-        if limits.max_value_bytes == 0
-            || limits.timeout.is_zero()
-            || limits.timeout > MAX_TIMEOUT
-        {
+        if limits.max_value_bytes == 0 || limits.timeout.is_zero() || limits.timeout > MAX_TIMEOUT {
             return Err(CacheError::InvalidLimits);
         }
         ttl_ms(limits.default_ttl)?;

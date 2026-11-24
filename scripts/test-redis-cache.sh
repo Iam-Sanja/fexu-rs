@@ -17,8 +17,26 @@ cleanup() {
 }
 trap cleanup EXIT
 wait_plain() {
+  local mapping
+  mapping="$(docker port "$container" 6379/tcp)"
+  if [[ "$mapping" != "127.0.0.1:$port" ]]; then
+    echo "Redis fixture port changed: expected 127.0.0.1:$port, got $mapping" >&2
+    return 1
+  fi
+  # Probe through the same published TCP endpoint used by the Rust clients.
   for _ in $(seq 1 60); do
-    if docker exec "$container" redis-cli ping | grep -Fxq PONG; then return 0; fi
+    if python3 - "$port" <<'PY'
+import socket
+import sys
+try:
+    with socket.create_connection(("127.0.0.1", int(sys.argv[1])), timeout=1) as sock:
+        sock.sendall(b"*1\r\n$4\r\nPING\r\n")
+        with sock.makefile("rb") as response:
+            sys.exit(0 if response.readline(64) == b"+PONG\r\n" else 1)
+except OSError:
+    sys.exit(1)
+PY
+    then return 0; fi
     sleep 1
   done
   docker logs "$container" >&2
@@ -27,17 +45,20 @@ wait_plain() {
 run_test() {
   cargo test --locked -p fexu-cache --features redis-cache --test redis_contract "$1" -- --ignored --exact
 }
-container="$(docker run -d --name "$name" -p 127.0.0.1::6379 redis:7-alpine --save '' --appendonly no)"
-port="$(docker port "$container" 6379/tcp | sed -n 's/^127\.0\.0\.1://p')"
-test -n "$port"
+# Request an unused loopback port from the OS, then pin it for every restart.
+# Docker must fail rather than reuse an occupied port.
+port="$(python3 - <<'PY'
+import socket
+with socket.socket() as sock:
+    sock.bind(("127.0.0.1", 0))
+    print(sock.getsockname()[1])
+PY
+)"
+container="$(docker run -d --name "$name" -p "127.0.0.1:$port:6379" redis:7-alpine --save '' --appendonly no)"
 wait_plain
 export FEXU_TEST_REDIS_URL="redis://127.0.0.1:$port/"
 run_test redis_shared_contract
 run_test redis_connection_reuse_contract
-docker stop "$container"
-run_test redis_outage_contract
-docker start "$container"
-wait_plain
 
 # Keep the same Rust process and handles alive while Docker stops/restarts.
 export FEXU_TEST_REDIS_MARKERS="$work/markers"
@@ -63,6 +84,8 @@ touch "$FEXU_TEST_REDIS_MARKERS/restarted"
 if ! wait "$restart_pid"; then cat "$work/restart.log" >&2; exit 1; fi
 restart_pid=""
 cat "$work/restart.log"
+docker stop "$container"
+run_test redis_outage_contract
 
 # A private test CA, a server certificate for loopback, and a separate untrusted CA.
 mkdir "$work/tls" "$work/empty-certs"
