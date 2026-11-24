@@ -106,16 +106,16 @@ impl Connections {
     fn discard(&self, failed: &Arc<MultiplexedConnection>) {
         if let Ok(mut guard) = self.cached.lock() {
             // A late error from an old connection must not remove a replacement.
-            if guard.as_ref().is_some_and(|current| Arc::ptr_eq(current, failed)) {
+            let matches = guard
+                .as_ref()
+                .is_some_and(|current| Arc::ptr_eq(current, failed));
+            if matches {
                 *guard = None;
             }
         }
     }
 
-    async fn get(
-        &self,
-        client: &redis::Client,
-    ) -> Result<Arc<MultiplexedConnection>, CacheError> {
+    async fn get(&self, client: &redis::Client) -> Result<Arc<MultiplexedConnection>, CacheError> {
         if let Some(connection) = self.cached()? {
             return Ok(connection);
         }
@@ -206,12 +206,12 @@ impl RedisCache {
             .arg(bytes)
             .arg(format!("{expected:016x}"))
             .arg(META_TTL_MS);
-        match timeout_at(
+        let result = timeout_at(
             deadline,
             command.query_async::<Option<Vec<u8>>>(&mut connection),
         )
-        .await
-        {
+        .await;
+        match result {
             Ok(Ok(result)) => Ok(result),
             _ => {
                 // The server might have executed the command even if the caller

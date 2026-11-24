@@ -193,7 +193,6 @@ async fn redis_outage_contract() {
     );
 }
 
-
 async fn connections_received(observer: &mut redis::aio::MultiplexedConnection) -> u64 {
     let stats: String = redis::cmd("INFO")
         .arg("stats")
@@ -239,10 +238,17 @@ async fn redis_connection_reuse_contract() {
     assert_eq!(connections_received(&mut observer).await, before + 1);
     // A separate backend has its own connection, but sees the same data.
     let first = TypedCache::new(backend, 1);
-    let second = TypedCache::new(RedisCache::new(&url, &prefix, RedisLimits::default()).unwrap(), 1);
+    let second = TypedCache::new(
+        RedisCache::new(&url, &prefix, RedisLimits::default()).unwrap(),
+        1,
+    );
     first.set("shared", "key", &"value", None).await.unwrap();
     assert_eq!(
-        second.get::<String>("shared", "key").await.unwrap().as_deref(),
+        second
+            .get::<String>("shared", "key")
+            .await
+            .unwrap()
+            .as_deref(),
         Some("value")
     );
     assert_eq!(connections_received(&mut observer).await, before + 2);
@@ -267,29 +273,54 @@ async fn redis_restart_contract() {
     );
     let backend = RedisCache::new(&url, &prefix, RedisLimits::default()).unwrap();
     let first = TypedCache::new(backend.clone(), 1);
-    let second = TypedCache::new(RedisCache::new(&url, &prefix, RedisLimits::default()).unwrap(), 1);
+    let second = TypedCache::new(
+        RedisCache::new(&url, &prefix, RedisLimits::default()).unwrap(),
+        1,
+    );
     first.set("app", "old", &"before", None).await.unwrap();
     assert_eq!(
-        second.get::<String>("app", "old").await.unwrap().as_deref(),
+        second
+            .get::<String>("app", "old")
+            .await
+            .unwrap()
+            .as_deref(),
         Some("before")
     );
-    let token = first.backend().current_token("app", "old").await.unwrap();
+    let token = first
+        .backend()
+        .current_token("app", "old")
+        .await
+        .unwrap();
     std::fs::write(root.join("ready"), b"ready").unwrap();
     wait_for_marker(&root, "stopped").await;
-    assert_eq!(first.get::<String>("app", "old").await, Err(CacheError::Backend));
-    assert_eq!(second.set("app", "old", &"failed", None).await, Err(CacheError::Backend));
+    assert_eq!(
+        first.get::<String>("app", "old").await,
+        Err(CacheError::Backend)
+    );
+    assert_eq!(
+        second.set("app", "old", &"failed", None).await,
+        Err(CacheError::Backend)
+    );
     std::fs::write(root.join("observed"), b"observed").unwrap();
     wait_for_marker(&root, "restarted").await;
     // Keep the original handles alive across the whole outage.
     assert_eq!(first.get::<String>("app", "old").await.unwrap(), None);
     second.set("app", "new", &"after", None).await.unwrap();
     assert_eq!(
-        first.backend().put_raw_if_current("app", "old", b"stale".to_vec(), None, token).await.unwrap(),
+        first
+            .backend()
+            .put_raw_if_current("app", "old", b"stale".to_vec(), None, token)
+            .await
+            .unwrap(),
         Publish::Superseded
     );
     assert_eq!(first.get::<String>("app", "old").await.unwrap(), None);
     assert_eq!(
-        first.get::<String>("app", "new").await.unwrap().as_deref(),
+        first
+            .get::<String>("app", "new")
+            .await
+            .unwrap()
+            .as_deref(),
         Some("after")
     );
 }
@@ -300,15 +331,27 @@ async fn redis_tls_contract() {
     let url = std::env::var("FEXU_TEST_REDIS_TLS_URL").expect("TLS fixture URL");
     assert!(url.starts_with("rediss://127.0.0.1:"));
     let prefix = format!("test-{}", Uuid::new_v4().simple());
-    let cache = TypedCache::new(RedisCache::new(&url, &prefix, RedisLimits::default()).unwrap(), 1);
+    let cache = TypedCache::new(
+        RedisCache::new(&url, &prefix, RedisLimits::default()).unwrap(),
+        1,
+    );
     let trusted = std::env::var("FEXU_TEST_REDIS_TLS_TRUSTED").unwrap();
     if trusted == "yes" {
         cache.set("app", "key", &"tls", None).await.unwrap();
-        assert_eq!(cache.get::<String>("app", "key").await.unwrap().as_deref(), Some("tls"));
+        assert_eq!(
+            cache.get::<String>("app", "key").await.unwrap().as_deref(),
+            Some("tls")
+        );
     } else {
         assert_eq!(trusted, "no");
-        assert_eq!(cache.get::<String>("app", "key").await, Err(CacheError::Backend));
-        assert_eq!(cache.set("app", "key", &"no", None).await, Err(CacheError::Backend));
+        assert_eq!(
+            cache.get::<String>("app", "key").await,
+            Err(CacheError::Backend)
+        );
+        assert_eq!(
+            cache.set("app", "key", &"no", None).await,
+            Err(CacheError::Backend)
+        );
     }
 }
 
