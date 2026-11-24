@@ -148,6 +148,11 @@ impl RedisCache {
             return Err(CacheError::Backend);
         }
         let client = redis::Client::open(url).map_err(|_| CacheError::Backend)?;
+        if url.starts_with("rediss://") && rustls::crypto::CryptoProvider::get_default().is_none() {
+            // Keep the application's provider if already installed. Concurrent
+            // initializers may race; the first successful installation wins.
+            let _ = rustls::crypto::ring::default_provider().install_default();
+        }
         Ok(Self {
             client,
             connections: Arc::new(Connections::default()),
