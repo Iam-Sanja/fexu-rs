@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import importlib
+import json
 import sqlite3
 import sys
 from pathlib import Path
@@ -52,6 +53,7 @@ def main() -> int:
     p = sub.add_parser("session-check")
     p.add_argument("base")
     p.add_argument("session")
+    p.add_argument("email")
 
     p = sub.add_parser("post-upgrade-db")
     p.add_argument("db")
@@ -136,9 +138,25 @@ def main() -> int:
         return 0
     if args.cmd == "session-check":
         client = lib.HttpClient(args.base)
-        status = client.admin_get("/admin", args.session)
+        # /admin can redirect even for authenticated users. Prove the exact
+        # identity using a fresh client and the original cookie only.
+        status, _, body = client.request(
+            "GET", "/auth/me", headers={"Cookie": f"fexu_session={args.session}"}
+        )
         if status != 200:
-            raise SystemExit(f"old session invalid after upgrade: {status}")
+            raise SystemExit(f"original session authentication failed: HTTP {status}")
+        user = json.loads(body)
+        if user.get("email") != args.email or not all(
+            user.get(flag) is True for flag in ("is_active", "is_staff", "is_superuser")
+        ):
+            raise SystemExit("original session returned the wrong identity or privileges")
+        invalid = lib.HttpClient(args.base)
+        status, _, _ = invalid.request(
+            "GET", "/auth/me", headers={"Cookie": "fexu_session=invalid-regression-cookie"}
+        )
+        if status not in (401, 403):
+            raise SystemExit(f"invalid session was not rejected: HTTP {status}")
+        print("PASS: original session identity and privileges verified; invalid cookie rejected")
         return 0
     if args.cmd == "post-upgrade-db":
         snap = lib.sqlite_snapshot(Path(args.db))

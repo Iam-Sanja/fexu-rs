@@ -143,6 +143,7 @@ for _ in $(seq 1 180); do
   sleep 0.5
 done
 session_before="$(python3 "$runner" login "$base" "$admin_email" "$admin_password")"
+python3 "$runner" session-check "$base" "$session_before" "$admin_email"
 cleanup_server
 
 python3 "$runner" rewrite "$project_native/Cargo.toml" "$repo_native/crates/fexu" "$project_native/src/project/mod.rs" --baseline "$baseline"
@@ -179,8 +180,8 @@ for _ in $(seq 1 180); do
   curl -fsS "$base/admin/login" >/dev/null 2>&1 && break
   sleep 0.5
 done
+python3 "$runner" session-check "$base" "$session_before" "$admin_email"
 python3 "$runner" http-matrix "$base" "$admin_email" "$admin_password" "wrong-password-please"
-python3 "$runner" session-check "$base" "$session_before"
 cleanup_server
 
 python3 "$runner" failed-migration "$project_native" "$new_cli" "db.sqlite3"
