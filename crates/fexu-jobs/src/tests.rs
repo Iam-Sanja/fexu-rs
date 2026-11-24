@@ -1458,6 +1458,72 @@ async fn schedule_errors_and_long_keys_leave_a_consistent_queue() {
     let _ = std::fs::remove_file(path);
 }
 
+struct OverlapProbe {
+    entered: Arc<AtomicU32>,
+    stop: Arc<std::sync::atomic::AtomicBool>,
+}
+
+#[async_trait]
+impl JobHandler for OverlapProbe {
+    const NAME: &'static str = "notes_overlap_probe";
+    const VERSION: u32 = 1;
+    type Payload = Label;
+
+    fn timeout(&self) -> std::time::Duration {
+        std::time::Duration::from_secs(3)
+    }
+
+    async fn run(&self, _payload: Self::Payload, _ctx: &JobContext) -> Result<(), JobError> {
+        self.entered.fetch_add(1, Ordering::SeqCst);
+        while self.entered.load(Ordering::SeqCst) < 2 {
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+        self.stop.store(true, Ordering::SeqCst);
+        Ok(())
+    }
+}
+
+async fn postgres_handlers_overlap(queue: &Queue) {
+    let mut ids = Vec::new();
+    for _ in 0..2 {
+        let outcome = queue
+            .enqueue_json(
+                OverlapProbe::NAME,
+                1,
+                &Label {
+                    label: "overlap".into(),
+                },
+                When::now(),
+            )
+            .await
+            .expect("enqueue");
+        let EnqueueOutcome::Created(id) = outcome else {
+            panic!("new job");
+        };
+        ids.push(id);
+    }
+    let stop = crate::stop_flag();
+    let entered = Arc::new(AtomicU32::new(0));
+    let mut registry = JobRegistry::new();
+    registry
+        .register(OverlapProbe {
+            entered: entered.clone(),
+            stop: stop.clone(),
+        })
+        .expect("register");
+    let worker = Worker::new(queue.clone(), registry, 60, 50, 2);
+    tokio::time::timeout(std::time::Duration::from_secs(10), worker.run(&stop))
+        .await
+        .expect("worker did not stop")
+        .expect("worker");
+    assert_eq!(entered.load(Ordering::SeqCst), 2);
+    for id in ids {
+        let row = queue.get(id).await.expect("job");
+        assert_eq!(row.status, JobStatus::Succeeded);
+        assert_eq!(row.attempts, 1);
+    }
+}
+
 #[tokio::test]
 #[ignore = "requires DATABASE_URL and a running PostgreSQL database"]
 async fn postgres_job_claim_and_rollback() {
@@ -1796,6 +1862,7 @@ async fn postgres_job_claim_and_rollback() {
         .await
         .expect("connection recovered");
     crash_exhausts_attempt_budget(&queue, &clock).await;
+    postgres_handlers_overlap(&queue).await;
     clock.advance(8 * 24 * 60 * 60);
     let removed = queue.retain().await.expect("retain");
     assert!(
