@@ -2,6 +2,8 @@
 
 ## Unreleased — toward v0.3.0
 
+- Run bounded concurrent handler futures on PostgreSQL while keeping SQLite serial; drain active claim batches on shutdown or error. Add a real Unix subprocess crash/restart/SIGTERM regression and PostgreSQL overlap acceptance.
+
 - Enforce the configured attempt budget when reclaiming jobs after worker crashes; exhausted eligible jobs become dead letters without an extra delivery. Stop standalone workers gracefully on Unix SIGTERM as well as Ctrl+C.
 
 - Harden deployment checks for exact HTTPS origin syntax, independent CSRF/MFA keys, canonical proxy IPs and missing databases. Standard access logging uses matched route templates or an unmatched marker instead of raw paths; duplicate inbound request IDs are ignored. Verify structured log redaction in Docker CI.

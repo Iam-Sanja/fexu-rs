@@ -3,6 +3,7 @@
 use crate::error::JobError;
 use crate::queue::{Finish, Queue};
 use crate::registry::{JobContext, JobRegistry};
+use fexu_db::driver::{ConnectionTrait, DatabaseBackend};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
@@ -25,13 +26,18 @@ impl Worker {
         poll_ms: u64,
         concurrency: u16,
     ) -> Self {
+        let concurrency = if queue.database().get_database_backend() == DatabaseBackend::Sqlite {
+            1
+        } else {
+            usize::from(concurrency.clamp(1, 4))
+        };
         Self {
             queue,
             registry,
             id: Uuid::new_v4().to_string(),
             lease_secs: lease_secs.clamp(5, 600),
             poll: Duration::from_millis(poll_ms.clamp(50, 60_000)),
-            concurrency: usize::from(concurrency.clamp(1, 4)),
+            concurrency,
         }
     }
 
@@ -39,22 +45,26 @@ impl Worker {
         &self.id
     }
 
-    /// Polls for jobs until `stop` is set. An already fetched handler completes
-    /// or reaches its timeout. No new jobs are fetched afterward.
+    /// Polls until `stop` is set. PostgreSQL runs up to four handlers concurrently;
+    /// SQLite runs one. In-flight handlers finish or reach their timeouts.
     pub async fn run(&self, stop: &AtomicBool) -> Result<(), JobError> {
         self.queue.ready().await?;
         while !stop.load(Ordering::SeqCst) {
             let mut progressed = false;
-            for _ in 0..self.concurrency {
-                if stop.load(Ordering::SeqCst) {
-                    break;
-                }
-                match self.run_once().await {
+            // Join all active slots before returning an error or polling again.
+            // Dropping a sibling handler early could abandon an external effect.
+            let (first, second, third, fourth) = tokio::join!(
+                self.run_slot(stop, 0),
+                self.run_slot(stop, 1),
+                self.run_slot(stop, 2),
+                self.run_slot(stop, 3)
+            );
+            for result in [first, second, third, fourth] {
+                match result {
                     Ok(true) => progressed = true,
-                    Ok(false) => break,
+                    Ok(false) => {}
                     Err(error) if error.code() == "job.locked" => {
                         tracing::warn!(code = "job.locked", "job claim deferred");
-                        break;
                     }
                     Err(error) => return Err(error),
                 }
@@ -68,6 +78,13 @@ impl Worker {
             wait_for_poll(stop, self.poll).await;
         }
         Ok(())
+    }
+
+    async fn run_slot(&self, stop: &AtomicBool, slot: usize) -> Result<bool, JobError> {
+        if slot >= self.concurrency || stop.load(Ordering::SeqCst) {
+            return Ok(false);
+        }
+        self.run_once().await
     }
 
     pub async fn run_once(&self) -> Result<bool, JobError> {

@@ -18,7 +18,7 @@ host.run_until_ctrl_c()?;
 
 The API neither migrates the database nor mounts a router. A missing SQLite file returns `job.database` without creating a file. A missing jobs table returns `job.migration.missing`; `jobs.enabled = false` returns `job.disabled`.
 
-SQLite uses the existing pool with a connection. `effective_concurrency` is then 1, even if `[jobs].concurrency` is higher. For PostgreSQL, the upper limit remains 4. The loop claims this number successively on the same connection. Simultaneous workers are separate processes.
+SQLite uses the existing pool with a connection. `effective_concurrency` is then 1, even if `[jobs].concurrency` is higher. For PostgreSQL, the upper limit remains 4. A PostgreSQL worker polls up to that many handler futures concurrently. The batch drains before the next poll or before returning an error. Multiple separate worker processes are also supported.
 
 `fexu generate worker` writes `src/bin/worker.rs`. The file contains a compilable example `app_example`, which is replaced by `register_jobs` of its own app. An existing file is not overwritten. Windows and Linux use the same source code and `tokio::signal::ctrl_c`. A worker can also set up on `WorkerHost` by hand, without the generator.
 
@@ -41,7 +41,7 @@ The claim is a conditional `UPDATE`. The new line gets `lease_owner`, a new `lea
 
 Job completion checks `lease_token`, `status = running` and `lease_expires_at >= now`. A mismatch returns `Finish::LostLease`, preventing the old worker from marking the job `succeeded`. A lease lasts at least the handler timeout plus five seconds, up to 600 seconds. Handler timeouts range from 1 to 120 seconds.
 
-SQLite serializes write accesses. A locked write attempt provides `job.locked`. The worker tries the next run instead of saving the job as a success. The parallelism of a SQLite worker remains 1. PostgreSQL accepts 1 to 4 consecutive claims per pass. The standard is 1.
+SQLite serializes write accesses. A locked write attempt provides `job.locked`. The worker tries the next run instead of saving the job as a success. The parallelism of a SQLite worker remains 1. PostgreSQL accepts 1 to 4 concurrent handlers per pass. The standard is 1.
 
 ## Limitations of execution
 
@@ -51,7 +51,7 @@ After the timeout, the worker saves `retry` with `job.timeout`. If the attempts 
 
 If the worker loses the lease, `finish_success` provides `Finish::LostLease`. The old token does not set the job on `succeeded`. The handler may have already executed the external effect. The new owner executes it again.
 
-Ctrl+C or Unix SIGTERM sets the stop flag between two claims. The current `run_once` runs until the result or until the timeout. The current effect is not rolled back.
+Ctrl+C or Unix SIGTERM sets the stop flag between two claims. Already-started claims and handlers drain until their result or timeout. The current effect is not rolled back.
 
 Delivery is at least once. An Exactly-once guarantee does not provide Fexu. Two processes cannot have the same due job both as a valid claim. After an expired lease, a second run can repeat the same effect.
 
