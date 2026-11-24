@@ -2,7 +2,7 @@
 
 [Overview](index.md) · Worker: [workers.md](workers.md) · Retries: [job-retries.md](job-retries.md) · Mail: [job-mail-integration.md](job-mail-integration.md)
 
-**Implemented.** Milestone v0.27.1. Cargo version `0.1.2`. The queue is in `crates/fexu-jobs`. There is no redis and no second database engine.
+**Current development:** 0.3.0-dev.1. Published: 0.2.0. The queue is in `crates/fexu-jobs`. There is no redis and no second database engine.
 
 ## Delivery
 
@@ -56,7 +56,7 @@ queue.enqueue::<PulseHandler>(&Pulse { label: "wieder".into() }, When::every("no
 | `failed` | Permanent failure or attempts exhausted |
 | `cancelled` |Aborted by the operator|
 
-Workers claim due `pending` and `retry` jobs, and may reclaim `running` jobs whose leases expired. They do not automatically resume succeeded, failed or cancelled jobs. CLI retry and cancellation follow the allowed state transitions; see [job-retries.md](job-retries.md) and [workers.md](workers.md).
+Workers claim due `pending` and `retry` jobs, and may reclaim `running` jobs whose leases expired only while the attempt budget remains. On discovery, exhausted eligible jobs become `failed` with `job.attempts` without executing the handler again. The operator may explicitly retry them. They do not automatically resume succeeded, failed or cancelled jobs. CLI retry and cancellation follow the allowed state transitions; see [job-retries.md](job-retries.md) and [workers.md](workers.md).
 
 ## Schema
 

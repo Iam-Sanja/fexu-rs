@@ -382,7 +382,11 @@ impl Queue {
         let now = self.clock.unix()?;
         let mut query = Query::select();
         query
-            .column(Alias::new("id"))
+            .columns([
+                Alias::new("id"),
+                Alias::new("attempts"),
+                Alias::new("max_attempts"),
+            ])
             .from(Alias::new(JOBS))
             .and_where(Expr::col(Alias::new("handler")).is_in(handlers.iter().copied()))
             .and_where(Expr::expr(due(now)).or(expired(now)))
@@ -392,6 +396,31 @@ impl Queue {
         let candidates = all(&self.db, &query).await?;
         for row in candidates {
             let id = required_uuid(&row, "id")?;
+            let id_match =
+                Expr::col(Alias::new("id")).eq(id_expr(self.db.get_database_backend(), id));
+            let attempts = Expr::col(Alias::new("attempts"));
+            let maximum = Expr::col(Alias::new("max_attempts"));
+            if u32_column(&row, "attempts")? >= u32_column(&row, "max_attempts")? {
+                // A crashed final attempt must not be delivered again. Recheck
+                // eligibility and budget atomically, including operator retries.
+                let mut exhausted = Query::update();
+                exhausted
+                    .table(Alias::new(JOBS))
+                    .values([
+                        (Alias::new("status"), text(JobStatus::Failed.as_str())),
+                        (Alias::new("lease_owner"), null_text()),
+                        (Alias::new("lease_token"), null_text()),
+                        (Alias::new("lease_expires_at"), null_number()),
+                        (Alias::new("next_attempt_at"), null_number()),
+                        (Alias::new("error_code"), text("job.attempts")),
+                        (Alias::new("finished_at"), number(now)),
+                    ])
+                    .and_where(id_match)
+                    .and_where(Expr::expr(due(now)).or(expired(now)))
+                    .and_where(attempts.gte(maximum));
+                execute_rows(&self.db, &exhausted).await?;
+                continue;
+            }
             let token = Uuid::new_v4().to_string();
             let expires = now.saturating_add(std::cmp::Ord::max(lease_secs, 1));
             let mut update = Query::update();
@@ -407,10 +436,9 @@ impl Queue {
                         Expr::col(Alias::new("attempts")).add(1),
                     ),
                 ])
-                .and_where(
-                    Expr::col(Alias::new("id")).eq(id_expr(self.db.get_database_backend(), id)),
-                )
-                .and_where(Expr::expr(due(now)).or(expired(now)));
+                .and_where(id_match)
+                .and_where(Expr::expr(due(now)).or(expired(now)))
+                .and_where(attempts.lt(maximum));
             if execute_rows(&self.db, &update).await? == 1 {
                 let record = load(&self.db, id).await?.ok_or_else(|| {
                     JobError::message("job.database", "Der beanspruchte Job ist nicht lesbar.")

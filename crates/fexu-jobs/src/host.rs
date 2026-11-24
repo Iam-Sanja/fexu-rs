@@ -121,7 +121,7 @@ impl WorkerHost {
         ))
     }
 
-    /// Runs until Ctrl+C. The active handler is not interrupted in the middle of its effects.
+    /// Runs until Ctrl+C or Unix SIGTERM. The active handler finishes or times out.
     pub fn run_until_ctrl_c(self) -> Result<(), JobError> {
         let runtime = tokio::runtime::Runtime::new().map_err(|_| {
             JobError::message("job.runtime", "Die Laufzeitumgebung konnte nicht starten.")
@@ -130,13 +130,35 @@ impl WorkerHost {
             let stop = stop_flag();
             let flag = stop.clone();
             tokio::spawn(async move {
-                if tokio::signal::ctrl_c().await.is_ok() {
-                    flag.store(true, Ordering::SeqCst);
-                }
+                shutdown_signal().await;
+                flag.store(true, Ordering::SeqCst);
             });
             let worker = self.prepare().await?;
             worker.run(&stop).await
         })
+    }
+}
+
+async fn shutdown_signal() {
+    let ctrl_c = tokio::signal::ctrl_c();
+    #[cfg(unix)]
+    {
+        let mut terminate =
+            tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()).ok();
+        tokio::select! {
+            _ = ctrl_c => {}
+            _ = async {
+                if let Some(signal) = terminate.as_mut() {
+                    signal.recv().await;
+                } else {
+                    std::future::pending::<()>().await;
+                }
+            } => {}
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = ctrl_c.await;
     }
 }
 

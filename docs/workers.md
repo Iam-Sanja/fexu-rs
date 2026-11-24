@@ -14,7 +14,7 @@ NotesApp.register_jobs(host.registry_mut())?;
 host.run_until_ctrl_c()?;
 ```
 
-`WorkerHost::new` accepts a `WorkerConfig`; `from_project` reads `[jobs]` and the resolved database URL. `register` and `registry_mut` add handlers to the shared `JobRegistry`; duplicate `NAME` values return `job.handler`. `with_mail` adds `fexu_mail_notice` if absent. `prepare` checks the SQLite file and `_fexu_jobs`, then returns a `Worker`. `run_until_ctrl_c` creates the Tokio runtime and runs until Ctrl+C.
+`WorkerHost::new` accepts a `WorkerConfig`; `from_project` reads `[jobs]` and the resolved database URL. `register` and `registry_mut` add handlers to the shared `JobRegistry`; duplicate `NAME` values return `job.handler`. `with_mail` adds `fexu_mail_notice` if absent. `prepare` checks the SQLite file and `_fexu_jobs`, then returns a `Worker`. `run_until_ctrl_c` creates the Tokio runtime and runs until Ctrl+C or Unix SIGTERM.
 
 The API neither migrates the database nor mounts a router. A missing SQLite file returns `job.database` without creating a file. A missing jobs table returns `job.migration.missing`; `jobs.enabled = false` returns `job.disabled`.
 
@@ -33,7 +33,7 @@ The CLI worker only registers `fexu_mail_notice`. Handlers of an app start `src/
 
 If the SQLite file is missing, it is not created. If `_fexu_jobs` is missing, the process ends with Exitcode 2 and `job.migration.missing`. `jobs.enabled = false` also terminates the worker with Exitcode 2. A clean stop signal ends with 0. A database error ends with 1.
 
-Ctrl+C sets a stop flag on Windows and Linux. The worker does not claim a new job afterwards and ends the current execution. A poll wait notices the flag within 50ms and does not sit out the full `poll_ms`. A handler is not rolled back in the middle of an external effect. A killed process keeps its lease until `lease_expires_at`; the next worker claims that row and `JobContext::is_redelivery` is true. The previous token cannot mark the job succeeded.
+Ctrl+C sets a stop flag on Windows and Linux; SIGTERM also does so on Unix. The worker does not claim a new job afterwards and ends the current execution. A poll wait notices the flag within 50ms and does not sit out the full `poll_ms`. A handler is not rolled back in the middle of an external effect. A killed process keeps its lease until `lease_expires_at`; a worker with the registered handler may reclaim that row only within the remaining attempt budget, and `JobContext::is_redelivery` is true. An exhausted expired lease becomes a dead letter instead. The previous token cannot mark the job succeeded.
 
 ## Lease
 
@@ -51,7 +51,7 @@ After the timeout, the worker saves `retry` with `job.timeout`. If the attempts 
 
 If the worker loses the lease, `finish_success` provides `Finish::LostLease`. The old token does not set the job on `succeeded`. The handler may have already executed the external effect. The new owner executes it again.
 
-Ctrl+C sets the stop flag between two claims. The current `run_once` runs until the result or until the timeout. The current effect is not rolled back.
+Ctrl+C or Unix SIGTERM sets the stop flag between two claims. The current `run_once` runs until the result or until the timeout. The current effect is not rolled back.
 
 Delivery is at least once. An Exactly-once guarantee does not provide Fexu. Two processes cannot have the same due job both as a valid claim. After an expired lease, a second run can repeat the same effect.
 
