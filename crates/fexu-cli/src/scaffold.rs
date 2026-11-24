@@ -72,10 +72,7 @@ pub fn new_project(
         MANAGEMENT_SOURCE,
     )?;
     write(&destination.join("src/apps.rs"), APPS_REGISTRY)?;
-    write(
-        &destination.join("src/project/mod.rs"),
-        &project_source(template),
-    )?;
+    write(&destination.join("src/project/mod.rs"), &project_source(template))?;
     write(&destination.join("src/project/settings.rs"), settings_rs())?;
     write(&destination.join("src/project/urls.rs"), URLS_SOURCE)?;
     write(&destination.join("migrations/.gitkeep"), "")?;
