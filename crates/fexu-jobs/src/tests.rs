@@ -733,7 +733,6 @@ async fn retention_removes_old_finished_jobs_only() {
         ),
     );
     runner.run_once().await.expect("done");
-    crash_exhausts_attempt_budget(&queue, &clock).await;
     clock.advance(8 * 24 * 60 * 60);
     let removed = queue.retain().await.expect("retain");
     assert_eq!(removed, 1);
@@ -1795,6 +1794,7 @@ async fn postgres_job_claim_and_rollback() {
         )
         .await
         .expect("connection recovered");
+    crash_exhausts_attempt_budget(&queue, &clock).await;
     clock.advance(8 * 24 * 60 * 60);
     let removed = queue.retain().await.expect("retain");
     assert!(
