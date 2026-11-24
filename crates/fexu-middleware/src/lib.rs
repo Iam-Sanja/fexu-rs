@@ -198,7 +198,8 @@ pub fn logged_path(uri: &axum::http::Uri) -> String {
 /// Multiple header values or malformed tokens are ignored. A syntactically
 /// valid inbound token is still untrusted caller data, not an identity.
 pub fn incoming_request_id(request: &Request) -> Option<String> {
-    let mut values = request.headers().get_all("x-request-id").iter();
+    let headers = request.headers().get_all("x-request-id");
+    let mut values = headers.iter();
     let value = values.next()?.to_str().ok()?;
     if values.next().is_some() {
         return None;
