@@ -345,6 +345,110 @@ async fn expired_lease_can_be_reclaimed_and_the_old_token_cannot_finish() {
 }
 
 #[tokio::test]
+async fn sqlite_crash_exhausts_attempt_budget() {
+    let (queue, clock, path) = started().await;
+    crash_exhausts_attempt_budget(&queue, &clock).await;
+    let _ = std::fs::remove_file(path);
+}
+
+async fn crash_exhausts_attempt_budget(queue: &Queue, clock: &ManualClock) {
+    let handler = "notes_crash_budget";
+    let outcome = queue
+        .enqueue_json(
+            handler,
+            1,
+            &Label {
+                label: "crash budget".into(),
+            },
+            When {
+                max_attempts: Some(2),
+                idempotency_key: Some("crash-budget-fixture".into()),
+                ..When::now()
+            },
+        )
+        .await
+        .expect("enqueue");
+    let EnqueueOutcome::Created(id) = outcome else {
+        panic!("expected new job");
+    };
+    let first = queue
+        .claim("crashed-first", &[handler], 30)
+        .await
+        .expect("first claim")
+        .expect("first attempt");
+    assert_eq!(first.0.attempts, 1);
+    clock.advance(31);
+    let last = queue
+        .claim("crashed-last", &[handler], 30)
+        .await
+        .expect("reclaim")
+        .expect("last attempt");
+    assert_eq!(last.0.attempts, 2);
+    assert_ne!(first.1, last.1);
+    assert!(queue
+        .claim("another-worker", &[handler], 30)
+        .await
+        .expect("live lease")
+        .is_none());
+    clock.advance(31);
+    let (left, right) = tokio::join!(
+        queue.claim("recovery-a", &[handler], 30),
+        queue.claim("recovery-b", &[handler], 30)
+    );
+    assert!(left.expect("first recovery").is_none());
+    assert!(right.expect("second recovery").is_none());
+
+    let failed = queue.get(id).await.expect("dead letter");
+    assert_eq!(failed.status, JobStatus::Failed);
+    assert_eq!(failed.attempts, 2);
+    assert_eq!(failed.error_code.as_deref(), Some("job.attempts"));
+    assert!(failed.finished_at.is_some());
+    assert!(failed.lease_owner.is_none());
+    assert!(failed.lease_token.is_none());
+    assert!(failed.lease_expires_at.is_none());
+    assert!(failed.next_attempt_at.is_none());
+    assert_eq!(
+        failed.idempotency_key.as_deref(),
+        Some("crash-budget-fixture")
+    );
+    assert_eq!(
+        queue
+            .finish_success(id, &last.1, &last.0)
+            .await
+            .expect("stale completion"),
+        Finish::LostLease
+    );
+    assert!(queue
+        .dead_letters(50)
+        .await
+        .expect("dead letters")
+        .iter()
+        .any(|job| job.id == id && job.attempts == 2));
+    assert!(queue
+        .claim("later", &[handler], 30)
+        .await
+        .expect("dead remains terminal")
+        .is_none());
+
+    // Only an explicit operator retry opens a fresh attempt budget.
+    queue.retry(id).await.expect("operator retry");
+    let reopened = queue
+        .claim("operator-retry", &[handler], 30)
+        .await
+        .expect("claim after retry")
+        .expect("reopened");
+    assert_eq!(reopened.0.id, id);
+    assert_eq!(reopened.0.attempts, 1);
+    assert_eq!(
+        queue
+            .finish_success(id, &reopened.1, &reopened.0)
+            .await
+            .expect("finish"),
+        Finish::Stored
+    );
+}
+
+#[tokio::test]
 async fn idempotency_key_returns_the_same_job() {
     let (queue, _clock, path) = started().await;
     let mut when = When::now();
@@ -629,6 +733,7 @@ async fn retention_removes_old_finished_jobs_only() {
         ),
     );
     runner.run_once().await.expect("done");
+    crash_exhausts_attempt_budget(&queue, &clock).await;
     clock.advance(8 * 24 * 60 * 60);
     let removed = queue.retain().await.expect("retain");
     assert_eq!(removed, 1);
