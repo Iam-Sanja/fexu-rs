@@ -3,8 +3,8 @@
 
 use async_trait::async_trait;
 use fexu_jobs::{
-    apply_migrations, EnqueueOutcome, JobContext, JobError, JobHandler, JobPolicy, JobStatus, Queue,
-    SystemClock, When, WorkerConfig, WorkerHost,
+    apply_migrations, EnqueueOutcome, JobContext, JobError, JobHandler, JobPolicy, JobStatus,
+    Queue, SystemClock, When, WorkerConfig, WorkerHost,
 };
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command};
