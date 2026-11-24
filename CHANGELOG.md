@@ -2,7 +2,8 @@
 
 ## Unreleased — toward v0.3.0
 
-- Add an opt-in standalone Redis typed cache backend with bounded TTL and value size, namespace generation invalidation, atomic publication fences and redacted connection errors. The local cache remains the default. Redis CI acceptance and optional dependency lock resolution are required before merge.
+- Reuse a multiplexed Redis connection across cache clones; reconnect on a later operation after failure without automatically replaying commands. Add concurrent connection-count, real restart and TLS trust acceptance tests.
+- Add an opt-in standalone Redis typed cache backend with bounded TTL and value size, namespace generation invalidation, atomic publication fences and redacted connection errors. The local cache remains the default. The initial Redis shared/outage CI and dependency lock verification passed in #268.
 
 - Run bounded concurrent handler futures on PostgreSQL while keeping SQLite serial; drain active claim batches on shutdown or error. Add a real Unix subprocess crash/restart/SIGTERM regression and PostgreSQL overlap acceptance.
 

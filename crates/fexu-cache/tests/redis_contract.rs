@@ -192,3 +192,147 @@ async fn redis_outage_contract() {
         Err(CacheError::Backend)
     );
 }
+
+
+async fn connections_received(observer: &mut redis::aio::MultiplexedConnection) -> u64 {
+    let stats: String = redis::cmd("INFO")
+        .arg("stats")
+        .query_async(observer)
+        .await
+        .unwrap();
+    stats
+        .lines()
+        .find_map(|line| line.strip_prefix("total_connections_received:"))
+        .expect("connection counter")
+        .trim()
+        .parse()
+        .unwrap()
+}
+
+#[tokio::test]
+#[ignore = "requires isolated Redis fixture"]
+async fn redis_connection_reuse_contract() {
+    let (url, prefix) = fixture();
+    let mut observer = redis::Client::open(url.as_str())
+        .unwrap()
+        .get_multiplexed_async_connection()
+        .await
+        .unwrap();
+    let before = connections_received(&mut observer).await;
+    let backend = RedisCache::new(&url, &prefix, RedisLimits::default()).unwrap();
+    let mut tasks = Vec::new();
+    for index in 0..16 {
+        let cache = TypedCache::new(backend.clone(), 1);
+        tasks.push(tokio::spawn(async move {
+            let namespace = format!("worker-{index}");
+            cache.set(&namespace, "key", &index, None).await.unwrap();
+            assert_eq!(
+                cache.get::<i32>(&namespace, "key").await.unwrap(),
+                Some(index)
+            );
+            cache.invalidate_namespace(&namespace).await.unwrap();
+        }));
+    }
+    for task in tasks {
+        task.await.unwrap();
+    }
+    assert_eq!(connections_received(&mut observer).await, before + 1);
+    // A separate backend has its own connection, but sees the same data.
+    let first = TypedCache::new(backend, 1);
+    let second = TypedCache::new(RedisCache::new(&url, &prefix, RedisLimits::default()).unwrap(), 1);
+    first.set("shared", "key", &"value", None).await.unwrap();
+    assert_eq!(
+        second.get::<String>("shared", "key").await.unwrap().as_deref(),
+        Some("value")
+    );
+    assert_eq!(connections_received(&mut observer).await, before + 2);
+}
+
+async fn wait_for_marker(root: &std::path::Path, name: &str) {
+    tokio::time::timeout(Duration::from_secs(60), async {
+        while !root.join(name).is_file() {
+            tokio::time::sleep(Duration::from_millis(25)).await;
+        }
+    })
+    .await
+    .expect("fixture coordination timed out");
+}
+
+#[tokio::test]
+#[ignore = "requires the isolated Redis restart shell fixture"]
+async fn redis_restart_contract() {
+    let (url, prefix) = fixture();
+    let root = std::path::PathBuf::from(
+        std::env::var_os("FEXU_TEST_REDIS_MARKERS").expect("fixture markers"),
+    );
+    let backend = RedisCache::new(&url, &prefix, RedisLimits::default()).unwrap();
+    let first = TypedCache::new(backend.clone(), 1);
+    let second = TypedCache::new(RedisCache::new(&url, &prefix, RedisLimits::default()).unwrap(), 1);
+    first.set("app", "old", &"before", None).await.unwrap();
+    assert_eq!(
+        second.get::<String>("app", "old").await.unwrap().as_deref(),
+        Some("before")
+    );
+    let token = first.backend().current_token("app", "old").await.unwrap();
+    std::fs::write(root.join("ready"), b"ready").unwrap();
+    wait_for_marker(&root, "stopped").await;
+    assert_eq!(first.get::<String>("app", "old").await, Err(CacheError::Backend));
+    assert_eq!(second.set("app", "old", &"failed", None).await, Err(CacheError::Backend));
+    std::fs::write(root.join("observed"), b"observed").unwrap();
+    wait_for_marker(&root, "restarted").await;
+    // Keep the original handles alive across the whole outage.
+    assert_eq!(first.get::<String>("app", "old").await.unwrap(), None);
+    second.set("app", "new", &"after", None).await.unwrap();
+    assert_eq!(
+        first.backend().put_raw_if_current("app", "old", b"stale".to_vec(), None, token).await.unwrap(),
+        Publish::Superseded
+    );
+    assert_eq!(first.get::<String>("app", "old").await.unwrap(), None);
+    assert_eq!(
+        first.get::<String>("app", "new").await.unwrap().as_deref(),
+        Some("after")
+    );
+}
+
+#[tokio::test]
+#[ignore = "requires isolated TLS Redis fixture"]
+async fn redis_tls_contract() {
+    let url = std::env::var("FEXU_TEST_REDIS_TLS_URL").expect("TLS fixture URL");
+    assert!(url.starts_with("rediss://127.0.0.1:"));
+    let prefix = format!("test-{}", Uuid::new_v4().simple());
+    let cache = TypedCache::new(RedisCache::new(&url, &prefix, RedisLimits::default()).unwrap(), 1);
+    let trusted = std::env::var("FEXU_TEST_REDIS_TLS_TRUSTED").unwrap();
+    if trusted == "yes" {
+        cache.set("app", "key", &"tls", None).await.unwrap();
+        assert_eq!(cache.get::<String>("app", "key").await.unwrap().as_deref(), Some("tls"));
+    } else {
+        assert_eq!(trusted, "no");
+        assert_eq!(cache.get::<String>("app", "key").await, Err(CacheError::Backend));
+        assert_eq!(cache.set("app", "key", &"no", None).await, Err(CacheError::Backend));
+    }
+}
+
+#[test]
+fn redis_configuration_rejects_insecure_urls_and_unbounded_timeout() {
+    for url in [
+        "http://127.0.0.1:6379/",
+        "rediss://127.0.0.1:6379/#insecure",
+        "rediss://127.0.0.1:6379/?insecure=true",
+    ] {
+        assert!(matches!(
+            RedisCache::new(url, "app", RedisLimits::default()),
+            Err(CacheError::Backend)
+        ));
+    }
+    assert!(matches!(
+        RedisCache::new(
+            "redis://127.0.0.1:6379/",
+            "app",
+            RedisLimits {
+                timeout: Duration::from_secs(61),
+                ..RedisLimits::default()
+            }
+        ),
+        Err(CacheError::InvalidLimits)
+    ));
+}
