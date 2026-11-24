@@ -2,6 +2,12 @@
 # Published fexu-cli 0.1.2 fullstack -> current-checkout upgrade on disposable PostgreSQL 16.
 set -euo pipefail
 
+baseline="${FEXU_UPGRADE_BASELINE:-0.1.2}"
+case "$baseline" in
+  0.1.2|0.2.0) ;;
+  *) echo "Unsupported published upgrade baseline: $baseline" >&2; exit 2 ;;
+esac
+
 python3() {
   if command -v py >/dev/null 2>&1 && py -3 -c 'pass' >/dev/null 2>&1; then
     py -3 "$@"
@@ -67,12 +73,16 @@ chmod 700 "$work"
 dbname="fexu_fullstack_$(python3 -c 'import secrets; print(secrets.token_hex(16))')"
 created=0
 cleanup() {
-  if [[ -n "${docker_container:-}" ]]; then
-    docker rm -f "$docker_container" >/dev/null 2>&1 || true
+  if [[ -n "${server_pid:-}" ]]; then
+    kill "$server_pid" 2>/dev/null || true
+    wait "$server_pid" 2>/dev/null || true
   fi
   if [[ "$created" -eq 1 && -n "${FEXU_POSTGRES_ADMIN:-}" ]]; then
     psql "$FEXU_POSTGRES_ADMIN" -v ON_ERROR_STOP=1 -c "DROP DATABASE IF EXISTS \"$dbname\" WITH (FORCE);" \
       || echo "ERROR: temporary PostgreSQL database $dbname could not be dropped" >&2
+  fi
+  if [[ -n "${docker_container:-}" ]]; then
+    docker rm -f "$docker_container" >/dev/null 2>&1 || true
   fi
   rm -rf "$work"
 }
@@ -106,7 +116,12 @@ resolve_v012_cli() {
   fi
 }
 
-if [[ -n "${FEXU_V012_CLI_PATH:-}" && ( -x "${FEXU_V012_CLI_PATH}" || -f "${FEXU_V012_CLI_PATH}" ) ]]; then
+if [[ "$baseline" == "0.2.0" ]]; then
+  # Prove the actual registry baseline; do not use a cached or supplied binary.
+  cargo install --locked --version "=0.2.0" --root "$old_root" fexu-cli
+  old_cli="$old_root/bin/fexu"
+  [[ -x "$old_cli" ]] || old_cli="$old_root/bin/fexu.exe"
+elif [[ -n "${FEXU_V012_CLI_PATH:-}" && ( -x "${FEXU_V012_CLI_PATH}" || -f "${FEXU_V012_CLI_PATH}" ) ]]; then
   old_cli="${FEXU_V012_CLI_PATH}"
 elif old_cli="$(resolve_v012_cli)"; then
   :
@@ -117,12 +132,17 @@ else
     exit 1
   }
 fi
-"$old_cli" --version | grep -F '0.1.2'
+"$old_cli" --version | grep -F "$baseline"
 
 cd "$work"
 "$old_cli" new project V012FullstackPg --template fullstack
 cd V012FullstackPg
 project="$(pwd)"
+if [[ "$baseline" == "0.2.0" ]]; then
+  # Published 0.2.0 scaffolding omits error propagation for a Result.
+  # Explicitly repair the disposable generated project before building the baseline.
+  python3 "$runner" repair-v020-resolver "$project/src/project/mod.rs"
+fi
 if project_native="$(pwd -W 2>/dev/null)"; then
   project_native="${project_native//\\//}"
 else
@@ -189,9 +209,10 @@ for _ in $(seq 1 180); do
   sleep 0.5
 done
 session_before="$(python3 "$runner" login "$base" "$admin_email" "$admin_password")"
+python3 "$runner" session-check "$base" "$session_before" "$admin_email"
 cleanup_server
 
-python3 "$runner" rewrite "$project_native/Cargo.toml" "$repo_native/crates/fexu" "$project_native/src/project/mod.rs"
+python3 "$runner" rewrite "$project_native/Cargo.toml" "$repo_native/crates/fexu" "$project_native/src/project/mod.rs" --baseline "$baseline"
 cargo check
 
 set +e
@@ -223,10 +244,10 @@ for _ in $(seq 1 180); do
   curl -fsS "$base/admin/login" >/dev/null 2>&1 && break
   sleep 0.5
 done
+python3 "$runner" session-check "$base" "$session_before" "$admin_email"
 python3 "$runner" http-matrix "$base" "$admin_email" "$admin_password" "wrong-password-please"
-python3 "$runner" session-check "$base" "$session_before"
 cleanup_server
 
 python3 "$runner" failed-migration "$project_native" "$new_cli" --database-url "$DATABASE_URL"
 
-echo "PASS: published 0.1.2 fullstack project upgraded on PostgreSQL with auth, sessions, HTTP and catalog data ($before_snap)"
+echo "PASS: published $baseline fullstack project upgraded on PostgreSQL with auth, sessions, HTTP and catalog data ($before_snap)"

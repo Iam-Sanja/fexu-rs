@@ -11,6 +11,16 @@ cargo install fexu-cli --version 0.2.0 --locked
 fexu --version
 ```
 
+## Published 0.2.0 generator compatibility
+
+If you use the published 0.2.0 CLI, inspect `src/project/mod.rs` in the generated project. The tagged registry generator omits the `?` from a fallible database URL resolver. Before compiling, use:
+
+```rust
+let database_url = settings.resolved_database_url()?;
+```
+
+The development generator emits this form directly. The published 0.2.0 packages are unchanged.
+
 ## New fullstack project
 
 ```bash
