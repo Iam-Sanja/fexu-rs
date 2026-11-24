@@ -642,7 +642,9 @@ fn exact_https_origin(origin: &str) -> bool {
         {
             return false;
         }
-        if host.bytes().all(|byte| byte.is_ascii_digit() || byte == b'.')
+        if host
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || byte == b'.')
             && host.parse::<std::net::Ipv4Addr>().is_err()
         {
             return false;
@@ -1168,7 +1170,9 @@ mod tests {
         ));
         assert!(!origins_are_https("http://shop.example"));
         assert!(!origins_are_https(""));
-        assert!(origins_are_https("https://localhost:8443,https://[::1]:8443"));
+        assert!(origins_are_https(
+            "https://localhost:8443,https://[::1]:8443"
+        ));
         for invalid in [
             "https://",
             "https://*",
