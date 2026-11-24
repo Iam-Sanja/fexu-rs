@@ -1,6 +1,8 @@
 //! Opt-in standalone Redis cache. All mutations and fences are atomic on Redis.
 
-use crate::{validate_key, validate_namespace, CacheBackend, CacheError, Publish, RawLookup, WriteToken};
+use crate::{
+    validate_key, validate_namespace, CacheBackend, CacheError, Publish, RawLookup, WriteToken,
+};
 use async_trait::async_trait;
 use std::time::Duration;
 use uuid::Uuid;
@@ -157,7 +159,7 @@ fn ttl_ms(ttl: Duration) -> Result<u64, CacheError> {
     if ttl.is_zero() || ttl > Duration::from_millis(MAX_TTL_MS) {
         return Err(CacheError::InvalidTtl);
     }
-    Ok(u64::try_from(ttl.as_nanos().div_ceil(1_000_000)).map_err(|_| CacheError::InvalidTtl)?)
+    u64::try_from(ttl.as_nanos().div_ceil(1_000_000)).map_err(|_| CacheError::InvalidTtl)
 }
 
 fn stored(result: Option<Vec<u8>>) -> Result<(), CacheError> {
@@ -222,7 +224,14 @@ impl CacheBackend for RedisCache {
     ) -> Result<Publish, CacheError> {
         self.check_bytes(&bytes)?;
         let result = self
-            .execute(namespace, key, "publish", &bytes, self.ttl(ttl)?, token.observed)
+            .execute(
+                namespace,
+                key,
+                "publish",
+                &bytes,
+                self.ttl(ttl)?,
+                token.observed,
+            )
             .await?;
         match result.as_deref() {
             Some(b"1") => Ok(Publish::Stored),

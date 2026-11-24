@@ -1,6 +1,8 @@
 #![cfg(feature = "redis-cache")]
 
-use fexu_cache::{CacheBackend, CacheError, CacheLookup, Publish, RedisCache, RedisLimits, TypedCache};
+use fexu_cache::{
+    CacheBackend, CacheError, CacheLookup, Publish, RedisCache, RedisLimits, TypedCache,
+};
 use std::time::Duration;
 use uuid::Uuid;
 
@@ -21,6 +23,31 @@ async fn redis_shared_contract() {
     };
     let first = TypedCache::new(RedisCache::new(&url, &prefix, limits).unwrap(), 1);
     let second = TypedCache::new(RedisCache::new(&url, &prefix, limits).unwrap(), 1);
+    let computed: String = first
+        .get_or_set("tenant", "computed", None, || async {
+            Ok("computed".to_owned())
+        })
+        .await
+        .unwrap();
+    assert_eq!(computed, "computed");
+    assert_eq!(
+        second
+            .get::<String>("tenant", "computed")
+            .await
+            .unwrap()
+            .as_deref(),
+        Some("computed")
+    );
+    let pending = first.get_or_set("tenant", "pending", None, || async {
+        second.invalidate_namespace("tenant").await?;
+        Ok("stale".to_owned())
+    });
+    assert_eq!(pending.await, Err(CacheError::Superseded));
+    assert!(second
+        .get::<String>("tenant", "pending")
+        .await
+        .unwrap()
+        .is_none());
     first.set("tenant", "key", &"old", None).await.unwrap();
     first.set("tenant.a", "key", &"other", None).await.unwrap();
     assert_eq!(second.get::<String>("tenant", "key").await.unwrap().as_deref(), Some("old"));
