@@ -1,7 +1,7 @@
-# Upgrade from Fexu 0.1.2 to the 0.2.0 development source
+# Upgrade from Fexu 0.1.2 to 0.2.0
 
 !!! warning "Source upgrade — not automatic"
-    Published crates.io is still **0.1.2** until authorize publish. Workspace **0.2.0** requires source edits or path dependencies; `fexu upgrade` does **not** fully rewrite application code or guarantee production migration.
+    Fexu **0.2.0 was published on 2026-11-23**. A pre-1.0 upgrade may require source edits; `fexu upgrade` does **not** fully rewrite application code or guarantee production migration.
 
 ## Before you upgrade
 
@@ -90,9 +90,9 @@ cargo check --all-targets
 
 Do not use destructive migration options merely to make a failed plan pass.
 
-## Required release acceptance before recommending 0.2.0 upgrades
+## Historical 0.2.0 release acceptance criteria
 
-The following are **not yet proven** by the existing published-to-source SQLite regression:
+The original release gate required more than the minimal SQLite regression:
 
 - A published 0.1.2 **fullstack** project's prior user and staff/admin accounts still authenticate against the exact candidate build.
 - Existing session identities, role assignments, permissions and login state survive a real old-binary-to-new-binary transition with the intended session-secret configuration.
@@ -100,6 +100,6 @@ The following are **not yet proven** by the existing published-to-source SQLite 
 - Rejected and accepted schema evolutions, rollback, browser login, admin access and CSRF behavior pass on the final candidate SHA.
 - Windows authentication stability is understood sufficiently to approve the candidate.
 
-The release team must run these tests with disposable data on the **final pinned candidate**, record exact versions and results, and obtain explicit maintainer sign-off. Until then, the release remains **NO-GO**.
+The v0.2.0 release passed its recorded acceptance and publication workflow. These criteria remain relevant to independent upgrades; they are not a blanket guarantee for arbitrary projects. The upcoming v0.3.0 requires new acceptance from published 0.2.0.
 
 See [documentation versions](../versions.md), [migrations](../topics/migrations.md), [authentication and admin](../topics/auth-and-admin.md), and the repository [release candidate gate](https://github.com/Iam-Sanja/fexu-rs/blob/main/docs/release-candidate-0.2.md).

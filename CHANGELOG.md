@@ -2,6 +2,8 @@
 
 ## Unreleased — toward v0.3.0
 
+- Coordinate all 16 framework crate versions and internal requirements at `0.3.0-dev.1` for source development; the seven unpublished examples inherit the workspace version. Default registry scaffolding remains pinned to published 0.2.0; use `--fexu-path` for development. No prerelease package or tag is published.
+
 - Dependency modernization: GitHub Actions `setup-python` 7.1.0 was merged in PR #237.
 - Merged `rusqlite` 0.42.0 to 0.43.0 in #256.
 - Merged Argon2 0.5.3 to 0.6.0 in #257, preserving existing hash verification.

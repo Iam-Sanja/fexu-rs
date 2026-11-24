@@ -10,7 +10,7 @@ checksum = "320119579fcad9c21884f5c4861d16174d0e06250625266f50fe6898340abefa"
 
 [[package]]
 name = "admin-browser"
-version = "0.2.0"
+version = "0.3.0-dev.1"
 dependencies = [
  "axum",
  "fexu",
@@ -292,7 +292,7 @@ dependencies = [
 
 [[package]]
 name = "board"
-version = "0.2.0"
+version = "0.3.0-dev.1"
 dependencies = [
  "axum",
  "fexu",
@@ -599,7 +599,7 @@ dependencies = [
 
 [[package]]
 name = "desk"
-version = "0.2.0"
+version = "0.3.0-dev.1"
 dependencies = [
  "axum",
  "fexu",
@@ -734,7 +734,7 @@ checksum = "da7c62ceae207dd37ea5b845da6a0696c799f85e97da1ab5b7910be3c1c80223"
 
 [[package]]
 name = "fexu"
-version = "0.2.0"
+version = "0.3.0-dev.1"
 dependencies = [
  "async-trait",
  "axum",
@@ -761,7 +761,7 @@ dependencies = [
 
 [[package]]
 name = "fexu-admin"
-version = "0.2.0"
+version = "0.3.0-dev.1"
 dependencies = [
  "async-trait",
  "axum",
@@ -782,7 +782,7 @@ dependencies = [
 
 [[package]]
 name = "fexu-api"
-version = "0.2.0"
+version = "0.3.0-dev.1"
 dependencies = [
  "axum",
  "fexu-admin",
@@ -808,7 +808,7 @@ dependencies = [
 
 [[package]]
 name = "fexu-auth"
-version = "0.2.0"
+version = "0.3.0-dev.1"
 dependencies = [
  "aes-gcm",
  "argon2",
@@ -835,7 +835,7 @@ dependencies = [
 
 [[package]]
 name = "fexu-bench-baseline"
-version = "0.2.0"
+version = "0.3.0-dev.1"
 dependencies = [
  "axum",
  "fexu",
@@ -847,7 +847,7 @@ dependencies = [
 
 [[package]]
 name = "fexu-cache"
-version = "0.2.0"
+version = "0.3.0-dev.1"
 dependencies = [
  "async-trait",
  "serde",
@@ -858,7 +858,7 @@ dependencies = [
 
 [[package]]
 name = "fexu-cli"
-version = "0.2.0"
+version = "0.3.0-dev.1"
 dependencies = [
  "clap",
  "ctrlc",
@@ -877,7 +877,7 @@ dependencies = [
 
 [[package]]
 name = "fexu-contract"
-version = "0.2.0"
+version = "0.3.0-dev.1"
 dependencies = [
  "axum",
  "fexu",
@@ -887,7 +887,7 @@ dependencies = [
 
 [[package]]
 name = "fexu-core"
-version = "0.2.0"
+version = "0.3.0-dev.1"
 dependencies = [
  "chrono",
  "chrono-tz",
@@ -900,7 +900,7 @@ dependencies = [
 
 [[package]]
 name = "fexu-db"
-version = "0.2.0"
+version = "0.3.0-dev.1"
 dependencies = [
  "async-trait",
  "chrono",
@@ -919,7 +919,7 @@ dependencies = [
 
 [[package]]
 name = "fexu-forms"
-version = "0.2.0"
+version = "0.3.0-dev.1"
 dependencies = [
  "chrono",
  "fexu-core",
@@ -932,7 +932,7 @@ dependencies = [
 
 [[package]]
 name = "fexu-jobs"
-version = "0.2.0"
+version = "0.3.0-dev.1"
 dependencies = [
  "async-trait",
  "chrono",
@@ -951,7 +951,7 @@ dependencies = [
 
 [[package]]
 name = "fexu-macros"
-version = "0.2.0"
+version = "0.3.0-dev.1"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -960,7 +960,7 @@ dependencies = [
 
 [[package]]
 name = "fexu-mail"
-version = "0.2.0"
+version = "0.3.0-dev.1"
 dependencies = [
  "async-trait",
  "fexu-core",
@@ -973,7 +973,7 @@ dependencies = [
 
 [[package]]
 name = "fexu-middleware"
-version = "0.2.0"
+version = "0.3.0-dev.1"
 dependencies = [
  "axum",
  "tokio",
@@ -984,7 +984,7 @@ dependencies = [
 
 [[package]]
 name = "fexu-migrations"
-version = "0.2.0"
+version = "0.3.0-dev.1"
 dependencies = [
  "async-trait",
  "chrono",
@@ -1000,7 +1000,7 @@ dependencies = [
 
 [[package]]
 name = "fexu-static"
-version = "0.2.0"
+version = "0.3.0-dev.1"
 dependencies = [
  "axum",
  "sha2",
@@ -1009,7 +1009,7 @@ dependencies = [
 
 [[package]]
 name = "fexu-storage"
-version = "0.2.0"
+version = "0.3.0-dev.1"
 dependencies = [
  "async-trait",
  "axum",
@@ -1736,7 +1736,7 @@ dependencies = [
 
 [[package]]
 name = "myshop"
-version = "0.2.0"
+version = "0.3.0-dev.1"
 dependencies = [
  "axum",
  "chrono",
@@ -1774,7 +1774,7 @@ dependencies = [
 
 [[package]]
 name = "notes"
-version = "0.2.0"
+version = "0.3.0-dev.1"
 dependencies = [
  "axum",
  "fexu",

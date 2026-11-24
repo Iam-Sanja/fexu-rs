@@ -19,7 +19,7 @@ members = [
 edition = "2021"
 license = "MIT"
 rust-version = "1.89.0"
-version = "0.2.0"
+version = "0.3.0-dev.1"
 description = "Experimental model-first web framework"
 repository = "https://github.com/Iam-Sanja/fexu-rs"
 homepage = "https://github.com/Iam-Sanja/fexu-rs"
@@ -50,19 +50,19 @@ argon2 = "0.6"
 rpassword = "7"
 
 # Path keeps workspace builds. The version is what cargo package writes into a published manifest.
-fexu = { path = "crates/fexu", version = "0.2.0" }
-fexu-admin = { path = "crates/fexu-admin", version = "0.2.0" }
-fexu-api = { path = "crates/fexu-api", version = "0.2.0" }
-fexu-auth = { path = "crates/fexu-auth", version = "0.2.0" }
-fexu-cache = { path = "crates/fexu-cache", version = "0.2.0" }
-fexu-cli = { path = "crates/fexu-cli", version = "0.2.0" }
-fexu-core = { path = "crates/fexu-core", version = "0.2.0" }
-fexu-db = { path = "crates/fexu-db", version = "0.2.0" }
-fexu-forms = { path = "crates/fexu-forms", version = "0.2.0" }
-fexu-jobs = { path = "crates/fexu-jobs", version = "0.2.0" }
-fexu-macros = { path = "crates/fexu-macros", version = "0.2.0" }
-fexu-mail = { path = "crates/fexu-mail", version = "0.2.0" }
-fexu-middleware = { path = "crates/fexu-middleware", version = "0.2.0" }
-fexu-migrations = { path = "crates/fexu-migrations", version = "0.2.0" }
-fexu-static = { path = "crates/fexu-static", version = "0.2.0" }
-fexu-storage = { path = "crates/fexu-storage", version = "0.2.0" }
+fexu = { path = "crates/fexu", version = "0.3.0-dev.1" }
+fexu-admin = { path = "crates/fexu-admin", version = "0.3.0-dev.1" }
+fexu-api = { path = "crates/fexu-api", version = "0.3.0-dev.1" }
+fexu-auth = { path = "crates/fexu-auth", version = "0.3.0-dev.1" }
+fexu-cache = { path = "crates/fexu-cache", version = "0.3.0-dev.1" }
+fexu-cli = { path = "crates/fexu-cli", version = "0.3.0-dev.1" }
+fexu-core = { path = "crates/fexu-core", version = "0.3.0-dev.1" }
+fexu-db = { path = "crates/fexu-db", version = "0.3.0-dev.1" }
+fexu-forms = { path = "crates/fexu-forms", version = "0.3.0-dev.1" }
+fexu-jobs = { path = "crates/fexu-jobs", version = "0.3.0-dev.1" }
+fexu-macros = { path = "crates/fexu-macros", version = "0.3.0-dev.1" }
+fexu-mail = { path = "crates/fexu-mail", version = "0.3.0-dev.1" }
+fexu-middleware = { path = "crates/fexu-middleware", version = "0.3.0-dev.1" }
+fexu-migrations = { path = "crates/fexu-migrations", version = "0.3.0-dev.1" }
+fexu-static = { path = "crates/fexu-static", version = "0.3.0-dev.1" }
+fexu-storage = { path = "crates/fexu-storage", version = "0.3.0-dev.1" }

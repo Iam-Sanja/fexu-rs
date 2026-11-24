@@ -1,14 +1,14 @@
 # Fexu CLI reference
 
-The `fexu` executable is installed by the `fexu-cli` crate. Commands below are cross-checked against `crates/fexu-cli/src/main.rs` on the development branch. For a published version, choose that version in the documentation selector: **0.1.2 is published; 0.2.0 is not yet published**.
+The `fexu` executable is installed by the `fexu-cli` crate. Commands below are cross-checked against `crates/fexu-cli/src/main.rs` on the development branch. For a published version, choose that version in the documentation selector: **0.2.0 is published; 0.3.0 development is unreleased**.
 
 ```sh
-cargo install fexu-cli --version 0.1.2 --locked
+cargo install fexu-cli --version 0.2.0 --locked
 fexu --version
 fexu --help
 ```
 
-Run `fexu new project` from a directory in which you want a new project. Run project commands inside the directory containing `fexu.toml`. `fexu <command> --help` shows the options supported by your installed binary. An installed 0.1.2 CLI may differ from unreleased development source.
+Run `fexu new project` from a directory in which you want a new project. Run project commands inside the directory containing `fexu.toml`. `fexu <command> --help` shows the options supported by your installed binary. An installed 0.2.0 CLI may differ from unreleased development source.
 
 ## Command overview
 

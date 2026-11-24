@@ -2,14 +2,14 @@
 
 This hands-on tutorial creates **bookstore**, adds a **catalog** app with a **Book** model, serves HTML using a Tera template, exposes a named URL and shows the model in the Fexu admin. It follows Fexu's generated layout-2 project structure, not Django's Python file layout.
 
-**Version:** The commands are based on the current development generator on `main`, which still targets published Fexu **0.1.2** by default. Use the matching version of this tutorial when 0.2.0 is published. Newer generator APIs in unreleased `main` may differ from those in the installed registry version.
+**Version boundary:** Start with the published 0.2.0 CLI. The source excerpts are based on the development generator and have not been independently re-executed end-to-end against the published 0.2.0 package in this review. Compare generated files with the exact installed release; for development APIs, use the matching checkout and `--fexu-path`.
 
 ## 1. Generate a project
 
 Install the published CLI:
 
 ```sh
-cargo install fexu-cli --version 0.1.2 --locked
+cargo install fexu-cli --version 0.2.0 --locked
 fexu new project bookstore --template fullstack
 cd bookstore
 fexu doctor
