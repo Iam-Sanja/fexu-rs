@@ -28,13 +28,17 @@ services:
       FEXU_ENV: production
       FEXU_COOKIE_SECURE: "1"
       FEXU_CSRF_SECRET: ${FEXU_CSRF_SECRET:?set 64 hex characters}
+      FEXU_MFA_KEY: ${FEXU_MFA_KEY:?set a separate 64 hex character key}
       FEXU_ALLOWED_ORIGINS: https://localhost:8443
       FEXU_LOG_FORMAT: json
     depends_on:
       db:
         condition: service_healthy
+    volumes:
+      - fexu_deploy_media:/home/fexu/media
     networks:
       - internal
+      - proxy_net
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/readyz"]
       interval: 10s
@@ -47,15 +51,20 @@ services:
       - "127.0.0.1:8443:443"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - fexu_deploy_caddy:/data
     depends_on:
       app:
         condition: service_healthy
     networks:
-      - internal
+      - proxy_net
 
 networks:
   internal:
     driver: bridge
+  proxy_net:
+    driver: bridge
 
 volumes:
   fexu_deploy_pg:
+  fexu_deploy_media:
+  fexu_deploy_caddy:

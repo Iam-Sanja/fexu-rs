@@ -22,6 +22,8 @@ Review migrations and create a verified, restorable backup before `fexu migrate 
 - Start the app only after compatible migrations have been applied.
 - Validate login, logout, admin permissions, uploads and session persistence after a container restart.
 
+The repository's disposable Myshop Compose example separates the runtime and migration roles, supplies both independent secrets, and mounts persistent media. See [the deployment example](https://github.com/Iam-Sanja/fexu-rs/tree/main/deploy) for the isolated smoke-test procedure. It is not a production backup or deployment template.
+
 The generated project provides Rust application source, not a universal production Compose manifest for every infrastructure layout. Build a Compose file appropriate to your infrastructure and test it in an isolated environment before deploying to a live shop.
 
 See [settings](../reference/settings.md), [migrations](../topics/migrations.md) and [auth/admin](../topics/auth-and-admin.md).

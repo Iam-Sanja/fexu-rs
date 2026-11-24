@@ -2,6 +2,8 @@
 
 ## Unreleased — toward v0.3.0
 
+- Make the disposable Myshop image use explicit runtime static/media paths, include the migration CLI and application migrations, require the separate MFA key, persist media and the local TLS CA, and separate the proxy and database networks. Add Docker CI for HTTPS, recovery and real PostgreSQL backup/restore.
+
 - Restrict the disposable backup/restore rehearsal to distinct local PostgreSQL test database names, explicit loopback TCP endpoints and no connection overrides; restore atomically and cover the URL policy with mock-client tests.
 
 - Correct registry-generated API and fullstack database URL error propagation while retaining the published 0.2.0 dependency pin. Add published 0.2.0 fullstack upgrade CI on disposable SQLite and PostgreSQL, with the explicit one-line repair of the historical generated source before baseline compilation. Retain the 0.1.2 regressions.
