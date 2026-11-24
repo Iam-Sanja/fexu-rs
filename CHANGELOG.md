@@ -2,6 +2,8 @@
 
 ## Unreleased — toward v0.3.0
 
+- Add an opt-in standalone Redis typed cache backend with bounded TTL and value size, namespace generation invalidation, atomic publication fences and redacted connection errors. The local cache remains the default. Redis CI acceptance and optional dependency lock resolution are required before merge.
+
 - Run bounded concurrent handler futures on PostgreSQL while keeping SQLite serial; drain active claim batches on shutdown or error. Add a real Unix subprocess crash/restart/SIGTERM regression and PostgreSQL overlap acceptance.
 
 - Enforce the configured attempt budget when reclaiming jobs after worker crashes; exhausted eligible jobs become dead letters without an extra delivery. Stop standalone workers gracefully on Unix SIGTERM as well as Ctrl+C.

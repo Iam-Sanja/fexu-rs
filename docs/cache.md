@@ -2,7 +2,7 @@
 
 [Overview](index.md) · **Implemented files:** `crates/fexu-cache`, `examples/notes/src/cache_page.rs`.
 
-**Implemented** as an optional, process-local cache. The facade re-exports it as `fexu::cache`. There is no Redis client and no required extra service. An in-process cache is not a distributed cache.
+The default is the process-local cache, re-exported as `fexu::cache`. The development `redis-cache` feature enables an optional standalone Redis backend. No extra service is required for the default build.
 
 `MemoryCache::new` and `MemoryCache::with_now` each own a store. A second value does not see the first, and a second OS process does not either. `MemoryCache` is `Clone` because the store sits behind `Arc`: clones share bytes inside that one process only. Cloning the handle does not share the stampede lock. That lock lives on one `TypedCache`. Share `Arc<TypedCache<_>>` when concurrent `get_or_set` must run the producer once.
 
@@ -63,15 +63,13 @@ Error text does not repeat the value. That is not a reason to store the value.
 
 ## Shared backend
 
-`CacheBackend` is the extension point: `lookup_raw`, `get_raw`, `put_raw`, `delete_raw`, `invalidate_namespace`, `current_token` and `put_raw_if_current`. `get_raw` has a default that collapses `Expired` and `Miss`. The other methods are required. Fexu 0.1 is experimental. Adding `lookup_raw`, `current_token` and `put_raw_if_current`, and adding `UnauthenticatedViewer` and `Superseded`, breaks an out-of-tree `CacheBackend` and an exhaustive `match` on `CacheError`. `get`, `set`, `delete` and `get_or_set` keep their signatures. Inside this workspace only `MemoryCache` implements the trait.
+`CacheBackend` is the extension point: `lookup_raw`, `get_raw`, `put_raw`, `delete_raw`, `invalidate_namespace`, `current_token` and `put_raw_if_current`. `get_raw` has a default that collapses `Expired` and `Miss`. The other methods are required. Fexu 0.1 is experimental. Adding `lookup_raw`, `current_token` and `put_raw_if_current`, and adding `UnauthenticatedViewer` and `Superseded`, breaks an out-of-tree `CacheBackend` and an exhaustive `match` on `CacheError`. `get`, `set`, `delete` and `get_or_set` keep their signatures. Inside this workspace `MemoryCache` and the optional `RedisCache` implement the trait.
 
-A later Redis crate would implement that trait, store the `FXC1` bytes unchanged, and address keys as a namespace plus a length-prefixed key. It would use the server TTL for `put_raw` and an exact namespace delete for `invalidate_namespace`. It would not treat `tenant` as a prefix of `tenant.a`. `lookup_raw` may return `Miss` for a key Redis has already deleted; `Expired` is guaranteed for `MemoryCache`, not for every backend. The stale-write fence is also not implied: that crate must check `WriteToken` and write in one Redis transaction or script.
-
-That crate is not part of this tree. A Redis client would add a network service and a deployment requirement, and the process-local default would still be the one that must not be described as shared. No Redis dependency is declared.
+The optional `RedisCache` implements the same trait. See the [public cache guide](https://iam-sanja.github.io/fexu-rs/topics/cache/) for configuration, failure semantics and operational boundaries. It uses atomic Lua scripts for namespace generations and a namespace-wide publication fence. Unlike MemoryCache, an unrelated write within the same namespace may conservatively supersede an in-flight producer. Old generation data expires naturally; no scan or flush is performed. Redis expiry is reported as a miss. All Redis values have finite TTL. Separate processes share values, but producer coalescing is still local to one TypedCache.
 
 ## Known limits
 
-- Two server processes do not share entries, invalidations or stampede protection.
+- Two server processes using MemoryCache do not share entries or invalidations. Neither backend provides distributed stampede protection.
 - Two `TypedCache` values do not share stampede protection, even when they clone one `MemoryCache`.
 - `get` collapses `Miss` and `Expired`. Use `lookup` when the difference matters.
 - A version mismatch stays until an explicit delete, overwrite or expiry. It does not refresh itself.
@@ -88,7 +86,7 @@ That crate is not part of this tree. A Redis client would add a network service 
 
 These tests do not open an application database. `cargo test -p fexu-cache` covers TTL boundaries, a one-millisecond expiry, zero TTL, zero limits, eviction, `TooLarge`, miss versus expiry, exact namespaces, key-pair collisions, user-key collisions, unsafe keys, version errors, corrupt payloads, serialization that must not echo the value, secrets left in the caller's namespace, a shared namespace mixing tenants, separate `MemoryCache` instances, cloned memory with two stampede locks, concurrent `get_or_set`, coalesced producer errors, a delete or namespace invalidation during a producer, an aborted producer, a newer `set` during a producer, a `set` after an observed miss, fragment invalidation, dotted view names, and both invalid view-scope flags.
 
-A shared backend such as Redis is not implemented. It stays behind a design review because it would add a required network service. The trait is the extension point; this crate does not claim cross-process atomicity.
+The optional Redis CI job tests independent clients, exact namespace invalidation, stale-write fences, expiry, bounds, version mismatch and stopped-server errors. The default suite still uses no external service.
 
 `cargo test -p notes --test cache_page` runs the notes example: tenant miss and hit, tenant invalidation, a public page cached once, an authenticated viewer refused, a user page isolated from another user and from the public page, and a second `NoteCache` that does not see the first.
 

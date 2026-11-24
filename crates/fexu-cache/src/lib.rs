@@ -1,7 +1,7 @@
-//! Optional typed cache. Bundled storage is local to the current process.
+//! Optional typed cache. The default backend is local to the current process.
 //!
-//! External backends implement [`CacheBackend`]. Fexu does not include a
-//! Redis client or treat in-process storage as a distributed cache.
+//! External backends implement [`CacheBackend`]. The optional `redis-cache`
+//! feature enables a standalone Redis backend without changing the local default.
 //! Two calls to `MemoryCache::new` do not share entries. Clones do, but
 //! only in the same process. [`ViewCache`] stores views only when
 //! the application invokes it. Shared scopes reject authenticated viewers,
@@ -10,6 +10,10 @@
 mod backend;
 mod error;
 mod memory;
+#[cfg(feature = "redis-cache")]
+mod redis_backend;
+#[cfg(feature = "redis-cache")]
+pub use redis_backend::{RedisCache, RedisLimits};
 mod typed;
 mod view;
 

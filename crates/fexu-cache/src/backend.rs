@@ -1,6 +1,6 @@
 //! Common interface for in-process caches and future external storage.
 //!
-//! No Redis or other network-backed driver is included.
+//! The optional Redis driver is available behind the `redis-cache` feature.
 //! [`crate::MemoryCache`] is scoped to the process that created it. Clones share
 //! entries; separately constructed caches and other processes do not.
 //!

@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
-description = "Process-local cache for the Fexu framework"
+description = "Typed local and optional shared cache for the Fexu framework"
 repository.workspace = true
 homepage.workspace = true
 keywords.workspace = true
@@ -17,6 +17,13 @@ serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 tokio = { workspace = true, features = ["sync"] }
+
+redis = { version = "=1.8.2", optional = true, default-features = false, features = ["tokio-rustls-comp"] }
+uuid = { workspace = true, optional = true }
+
+[features]
+default = []
+redis-cache = ["dep:redis", "dep:uuid", "tokio/time"]
 
 [dev-dependencies]
 serde.workspace = true

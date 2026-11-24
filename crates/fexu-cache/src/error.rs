@@ -4,7 +4,7 @@
 pub enum CacheError {
     #[error("cache key is invalid")]
     InvalidKey,
-    #[error("cache value exceeds the memory limit")]
+    #[error("cache value exceeds the configured limit")]
     TooLarge,
     #[error("cache value could not be serialized")]
     Serialization,
