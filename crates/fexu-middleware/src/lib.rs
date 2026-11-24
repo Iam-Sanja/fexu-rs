@@ -19,7 +19,7 @@
 //! This crate provides neither authentication nor authorization. Cookie-based
 //! CSRF protection is installed by `App::into_router`, not by this layer.
 
-use axum::extract::Request;
+use axum::extract::{MatchedPath, Request};
 use axum::http::{header, HeaderMap, HeaderValue};
 use axum::middleware::Next;
 use axum::response::Response;
@@ -106,7 +106,12 @@ async fn request_id(mut request: Request, next: Next) -> Response {
 
 async fn access_log(request: Request, next: Next) -> Response {
     let method = request.method().clone();
-    let path = logged_path(request.uri());
+    let path = request
+        .extensions()
+        .get::<MatchedPath>()
+        .map(|path| path.as_str())
+        .unwrap_or("<unmatched>")
+        .to_owned();
     let started = Instant::now();
     let id = request
         .extensions()
@@ -181,16 +186,23 @@ fn shared_referrer_policy(headers: &HeaderMap, configured: ReferrerPolicy) -> Re
     accepted.unwrap_or(configured)
 }
 
-/// Logs only the path; query values such as passwords or tokens are never recorded.
+/// Returns the raw path without its query for callers that explicitly need it.
+/// Standard access logging uses the matched route template instead, because
+/// dynamic and unmatched paths may contain sensitive values.
 pub fn logged_path(uri: &axum::http::Uri) -> String {
     uri.path().to_owned()
 }
 
 /// Accepts a caller-supplied request id when it is a short token.
 ///
-/// Anything else is ignored so a proxy cannot put newlines or secrets into the log field.
+/// Multiple header values or malformed tokens are ignored. A syntactically
+/// valid inbound token is still untrusted caller data, not an identity.
 pub fn incoming_request_id(request: &Request) -> Option<String> {
-    let value = request.headers().get("x-request-id")?.to_str().ok()?;
+    let mut values = request.headers().get_all("x-request-id").iter();
+    let value = values.next()?.to_str().ok()?;
+    if values.next().is_some() {
+        return None;
+    }
     if (8..=64).contains(&value.len())
         && value
             .chars()
@@ -265,6 +277,10 @@ mod tests {
             .headers_mut()
             .insert("x-request-id", "abc-1234".parse().unwrap());
         assert_eq!(incoming_request_id(&request).as_deref(), Some("abc-1234"));
+        request
+            .headers_mut()
+            .append("x-request-id", "second-1234".parse().unwrap());
+        assert!(incoming_request_id(&request).is_none());
         request
             .headers_mut()
             .insert("x-request-id", "short".parse().unwrap());

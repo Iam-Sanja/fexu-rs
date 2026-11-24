@@ -26,7 +26,7 @@ The first CI slice extends the existing fullstack fixture to the actual registry
 
 ## Production foundations
 
-- [ ] #94: readiness, shutdown, redacted logging, least privilege, isolated backup/restore drills. New deployment CI targets an actual Compose HTTPS connection, runtime role, DB outage, normal SIGTERM exit, volume/session persistence and real PostgreSQL restore; results are pending. Worker outage, media restore, checkout recovery and live LAN/NPM remain separate.
+- [ ] #94: readiness, shutdown, redacted logging, least privilege, isolated backup/restore drills. PR #264 passed actual Compose HTTPS, runtime role, DB outage, normal SIGTERM exit, volume/session persistence and real PostgreSQL restore. The next slice adds stricter deployment checks and structured access-log regression coverage; these new results remain pending. Worker outage, media restore, checkout recovery and live LAN/NPM remain separate.
 - [ ] #96: local and optional S3 storage lifecycle, authorization, quotas and recovery.
 - [ ] #87/#88: worker restart, at-least-once delivery, optional shared cache and consistency tests.
 - [ ] #85/#172–174: opt-in OIDC, explicit account linking and mandatory negative/mock/browser tests.

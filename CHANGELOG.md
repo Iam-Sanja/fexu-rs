@@ -2,6 +2,8 @@
 
 ## Unreleased — toward v0.3.0
 
+- Harden deployment checks for exact HTTPS origin syntax, independent CSRF/MFA keys, canonical proxy IPs and missing databases. Standard access logging uses matched route templates or an unmatched marker instead of raw paths; duplicate inbound request IDs are ignored. Verify structured log redaction in Docker CI.
+
 - Make the disposable Myshop image use explicit runtime static/media paths, include the migration CLI and application migrations, require the separate MFA key, persist media and the local TLS CA, and separate the proxy and database networks. Add Docker CI for HTTPS, recovery and real PostgreSQL backup/restore.
 
 - Restrict the disposable backup/restore rehearsal to distinct local PostgreSQL test database names, explicit loopback TCP endpoints and no connection overrides; restore atomically and cover the URL policy with mock-client tests.
