@@ -1218,7 +1218,10 @@ mod tests {
             storage.metadata(owner, new.id).await.unwrap().expires_at,
             Some(130)
         );
-        assert_eq!(storage.inner.cleanup_orphans(130).unwrap().removed_expired, 1);
+        assert_eq!(
+            storage.inner.cleanup_orphans(130).unwrap().removed_expired,
+            1
+        );
         assert_eq!(storage.read(owner, old.id).await.unwrap().1, b"old");
         let _ = std::fs::remove_dir_all(directory);
     }

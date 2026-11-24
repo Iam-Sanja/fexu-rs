@@ -50,13 +50,16 @@ pub fn prepare(
         return Err(StorageError::Failed);
     }
     let parsed = url::Url::parse(endpoint).map_err(|_| StorageError::Failed)?;
-    let authority = endpoint.trim_end_matches('/');
+    let authority = endpoint
+        .strip_prefix("https://")
+        .ok_or(StorageError::Failed)?
+        .trim_end_matches('/');
     if parsed.host().is_none()
         || !parsed.username().is_empty()
         || parsed.password().is_some()
         || parsed.port() == Some(0)
         || parsed.path() != "/"
-        || authority["https://".len()..].contains('/')
+        || authority.contains('/')
         || endpoint.ends_with("//")
     {
         return Err(StorageError::Failed);
