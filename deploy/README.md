@@ -9,7 +9,7 @@ Do not point `DATABASE_URL` at a database you need to keep. The backup rehearsal
 ## What is here
 
 - `Dockerfile` builds the `myshop` example. The image runs as a non-root user
-  and sets `FEXU_ALLOW_WILDCARD_BIND=true` next to `BIND_ADDRESS=0.0.0.0:8080`.
+  and copies the static assets, application migrations and migration CLI. It sets `FEXU_ALLOW_WILDCARD_BIND=true` next to `BIND_ADDRESS=0.0.0.0:8080`.
   Generated applications still reject that bind unless the same opt-in is set.
 - `compose.yaml` puts PostgreSQL on an internal network, publishes the proxy
   only on `127.0.0.1:8443`, and does not publish the database port. The app
@@ -23,8 +23,7 @@ Do not point `DATABASE_URL` at a database you need to keep. The backup rehearsal
   Host. Compose does not start NPM.
 - `backup-restore.sh` performs an isolated PostgreSQL backup/restore rehearsal with a single-transaction restore; the URL guard is tested without connecting to any database.
 
-The app container does not run migrations on startup. Run
-`fexu migrate up` as a separate step. `/healthz` only shows that the
+The app container does not run migrations on startup. Run the included CLI as a separate step with the migration owner URL: `fexu migrate up --migrations-dir /home/fexu/migrations`. The image uses `FEXU_MYSHOP_STATIC_DIR` and `FEXU_MYSHOP_MEDIA_DIR`; the media directory and Caddy CA have named volumes. The proxy and database use separate networks with the app on both. `/healthz` only shows that the
 process is up. `/readyz` runs `SELECT 1`.
 
 `FEXU_TRUST_PROXY` is not set. Enabling it also requires `FEXU_TRUSTED_PROXIES`
@@ -33,9 +32,7 @@ container. The framework does not require a fixed private IP. A `*` entry
 trusts nobody. `Host`, `Forwarded` and `X-Forwarded-*` do not become allowed
 origins, and they do not weaken the CSRF check.
 
-No container from this file was started while the files were added if Docker
-is not installed on the machine that prepared them. A real browser session
-and a live Nginx Proxy Manager were not part of the automated checks.
+The deployment CI scripts exercise a randomly named disposable Compose project, trusted local TLS, runtime role permissions, database outage, graceful app exit and session/volume persistence, plus a separate actual PostgreSQL dump/restore drill. Their results must be checked before claiming acceptance. These are HTTP client tests, not a live NPM or LAN browser test.
 
 ## Direct local HTTP
 
@@ -70,7 +67,11 @@ network. Do not publish port 5432 to reach it.
 
 ```powershell
 $env:FEXU_CSRF_SECRET = "<64 hexadecimal characters>"
-docker compose -f deploy/compose.yaml up --build
+$env:FEXU_MFA_KEY = "<different 64 hexadecimal characters>"
+docker compose -f deploy/compose.yaml build app
+docker compose -f deploy/compose.yaml up -d --wait db
+docker compose -f deploy/compose.yaml run --rm --no-deps -e DATABASE_URL="postgres://fexu:fexu_dev_only@db:5432/fexu_test_deploy" app fexu migrate up --migrations-dir /home/fexu/migrations
+docker compose -f deploy/compose.yaml up -d --wait app proxy
 ```
 
 Generate the secret outside the shell history when you can. The example
@@ -100,7 +101,7 @@ start a second proxy from that file as part of an existing NPM stack.
 
 ### Reproducible preflight on a disposable host
 
-Run these from the repository root, against **test data only**. The
+Run these from the repository root, against **test data only**. Set both independent secrets and apply the owner migrations first, as shown above. The
 Compose example uses disposable development passwords and a local TLS
 issuer; it is **not** a production template.
 
@@ -108,7 +109,7 @@ issuer; it is **not** a production template.
 # Provide a 64-character hexadecimal test secret through a safe secret
 # mechanism before running this example.
 docker compose -f deploy/compose.yaml config --quiet
-docker compose -f deploy/compose.yaml up --build -d
+docker compose -f deploy/compose.yaml up -d --wait app proxy
 docker compose -f deploy/compose.yaml ps
 docker compose -f deploy/compose.yaml port proxy 443
 docker compose -f deploy/compose.yaml port db 5432

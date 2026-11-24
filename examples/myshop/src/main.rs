@@ -102,7 +102,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .add::<Product>()
             .add::<InternalNote>(),
     )?;
-    let media = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("media");
+    let media = std::env::var_os("FEXU_MYSHOP_MEDIA_DIR")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("media"));
     let storage = LocalStorage::open(
         &media,
         1024 * 1024,
@@ -157,7 +159,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let listener = tokio::net::TcpListener::bind(&address).await?;
     println!("Fexu myshop at http://{address}");
-    let static_root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("static");
+    let static_root = std::env::var_os("FEXU_MYSHOP_STATIC_DIR")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("static"));
     let router = mount(app.into_router(), StaticOptions::new(static_root));
     let router = apply(
         router,
