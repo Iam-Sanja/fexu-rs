@@ -66,6 +66,35 @@ curl --noproxy '*' --cacert "$SSL_CERT_FILE" -fsS --max-time 10 "$base/healthz"
 curl --noproxy '*' --cacert "$SSL_CERT_FILE" -fsS --max-time 10 "$base/readyz"
 curl --noproxy '*' --cacert "$SSL_CERT_FILE" -fsS --max-time 10 "$base/static/css/app.css" >/dev/null
 
+# Verify actual structured access events, not only a helper's return value.
+log_probe="fexu-log-probe-$(python3 -c 'import secrets; print(secrets.token_hex(8))')"
+curl --noproxy '*' --cacert "$SSL_CERT_FILE" -fsS --max-time 10 \
+  -H "x-request-id: $log_probe" "$base/healthz?token=fixture-query-secret" >/dev/null
+curl --noproxy '*' --cacert "$SSL_CERT_FILE" -sS --max-time 10 \
+  -H "x-request-id: $log_probe" "$base/fixture-path-secret?token=fixture-query-secret" >/dev/null
+curl --noproxy '*' --cacert "$SSL_CERT_FILE" -sS --max-time 10 \
+  -H "x-request-id: $log_probe" "$base/static/fixture-path-secret?token=fixture-query-secret" >/dev/null
+"${compose[@]}" logs --no-color --no-log-prefix app >"$work/access.log"
+python3 - "$work/access.log" "$log_probe" <<'PY'
+import json
+import sys
+from pathlib import Path
+events = []
+for line in Path(sys.argv[1]).read_text(encoding="utf-8").splitlines():
+    try:
+        event = json.loads(line)
+    except ValueError:
+        continue
+    fields = event.get("fields", {})
+    if fields.get("request_id") == sys.argv[2] and fields.get("message") == "http request":
+        events.append(fields)
+assert any(e.get("path") == "/healthz" and e.get("status") == 200 for e in events), "missing health access event"
+assert any(e.get("path") == "<unmatched>" and e.get("status") == 404 for e in events), "missing redacted unmatched access event"
+assert any(e.get("path") == "/static/{*path}" and e.get("status") == 404 for e in events), "missing redacted dynamic route event"
+assert not any("fixture-query-secret" in str(e) or "fixture-path-secret" in str(e) for e in events), "raw request values leaked"
+print("PASS: structured request logs redact unmatched paths and query values")
+PY
+
 python3 - "$root/scripts" "$base" "$work/session" <<'PY'
 import json
 import os

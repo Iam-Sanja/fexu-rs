@@ -1,6 +1,6 @@
 # Deployment and operation
 
-[Overview](index.md) · Local SQLite remains the default. `compose.yaml` starts PostgreSQL on `127.0.0.1`. [deploy/README.md](https://github.com/Iam-Sanja/fexu-rs/blob/main/deploy/README.md) is a disposable app, proxy and database example. It was not started as part of writing the files when Docker is absent.
+[Overview](index.md) · Local SQLite remains the default. `compose.yaml` starts PostgreSQL on `127.0.0.1`. [deploy/README.md](https://github.com/Iam-Sanja/fexu-rs/blob/main/deploy/README.md) is a disposable app, proxy and database example. PR #264 passed the disposable Docker HTTPS and PostgreSQL recovery CI; this is not production certification.
 
 ## Local Development (Implemented)
 
@@ -17,7 +17,7 @@ The admin does not need a node process. `cargo build` is sufficient. Put `FEXU_C
 
 `fexu check --deploy` is read-only. It reports debug, bind address, cookie `Secure`, the presence and shape of `FEXU_CSRF_SECRET` without printing it, https origins, pending migrations, and the proxy flag. `FEXU_TRUST_PROXY=1` must be paired with `FEXU_TRUSTED_PROXIES` containing explicitly trusted immediate peer addresses. Without configured peers no peer is trusted; wildcard entries are ignored. The deployment check reports the configured peer count without exposing addresses. The check does not migrate.
 
-`fexu::serve` stops the process on Ctrl+C and, on Unix, on SIGTERM. `FEXU_LOG_FORMAT=json` selects JSON logs. The access log records method, path, status, elapsed time and `x-request-id`. Query strings are not logged. An inbound `x-request-id` is kept only when it is 8 to 64 ASCII letters, digits or hyphens. OpenTelemetry is not bundled. `/healthz` does not touch the database. `/readyz` runs `SELECT 1` and does not migrate. `App::strict_migrations` refuses startup when migrations are pending and does not apply them.
+`fexu::serve` stops the process on Ctrl+C and, on Unix, on SIGTERM. `FEXU_LOG_FORMAT=json` selects JSON logs. The access log records method, matched route template (or `<unmatched>`), status, elapsed time and `x-request-id`. Raw dynamic paths and query strings are not logged by this event. A single inbound `x-request-id` is kept only when it is 8 to 64 ASCII letters, digits or hyphens. It remains untrusted caller data. `check --deploy` requires exact HTTPS origin syntax, distinct CSRF/MFA secrets, canonical proxy IP peers when trust is enabled, and an inspectable database. It cannot verify that an external worker is running. OpenTelemetry is not bundled. `/healthz` does not touch the database. `/readyz` runs `SELECT 1` and does not migrate. `App::strict_migrations` refuses startup when migrations are pending and does not apply them.
 
 A different `BIND_ADDRESS`, in particular `0.0.0.0:3000`, can make the service accessible on other networks. `ProjectConfig::bind_address` rejects `0.0.0.0` and `::` unless `server.allow_wildcard_bind = true` or `FEXU_ALLOW_WILDCARD_BIND=true`. That opt-in does not add the bind address to `FEXU_ALLOWED_ORIGINS`. With the anonymous demo model, this is not an Internet deployment. Inside `deploy/compose.yaml` the app listens on `0.0.0.0` only on the Compose network and sets the opt-in. The published port is the proxy on `127.0.0.1:8443`. The database port is not published. The app connects as `fexu_app`, which is `LOGIN NOSUPERUSER`. Migrations stay on the owner role `fexu`.
 
@@ -36,7 +36,7 @@ The same registered application then speaks PostgreSQL. The handlers remain unch
 
 ## Production architecture (not a production deployment)
 
-`deploy/` is a local example: multi-stage image, non-root user, Caddy on `127.0.0.1:8443`, `/readyz`, graceful shutdown and a separate migration step. It was not booted when Docker was absent. It is not a production deployment. Still required before calling a host production:
+`deploy/` is a local example: multi-stage image, non-root user, Caddy on `127.0.0.1:8443`, `/readyz`, graceful shutdown and a separate migration step. The isolated Compose HTTPS and restore checks passed on PR #264. It is not a production deployment. Still required before calling a host production:
 
 ```text
 TLS-Client → Reverse Proxy → Fexu-App → PostgreSQL

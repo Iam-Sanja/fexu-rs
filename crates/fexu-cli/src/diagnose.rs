@@ -386,13 +386,18 @@ fn wildcard_bind_opt_in() -> bool {
     )
 }
 
-/// Counts proxy peers. Empty entries and `*` are ignored. The text is not logged.
+/// Counts distinct canonical IP addresses. Names, empty entries and `*` are ignored.
+/// The runtime compares the immediate peer as an IP string; the text is not logged.
 pub fn configured_proxy_peers(value: &str) -> usize {
     value
         .split(',')
         .map(str::trim)
-        .filter(|peer| !peer.is_empty() && *peer != "*")
-        .count()
+        .filter_map(|peer| {
+            let ip = peer.parse::<std::net::IpAddr>().ok()?;
+            (ip.to_string() == peer).then_some(ip)
+        })
+        .collect::<std::collections::HashSet<_>>()
+        .len()
 }
 
 /// Read-only deployment findings. Secret values and peer addresses are not printed.
@@ -492,6 +497,21 @@ pub fn deploy_findings(debug: bool, host: &str, file_wildcard_opt_in: bool) -> i
             );
         }
     }
+    if let (Ok(csrf), Ok(mfa)) = (
+        std::env::var("FEXU_CSRF_SECRET"),
+        std::env::var("FEXU_MFA_KEY"),
+    ) {
+        if csrf_secret_shape_ok(&csrf)
+            && csrf_secret_shape_ok(&mfa)
+            && csrf.trim().eq_ignore_ascii_case(mfa.trim())
+        {
+            errors += 1;
+            report(
+                "ERROR",
+                "deploy.keys CSRF and MFA require independent secrets. Neither value is shown.",
+            );
+        }
+    }
     match std::env::var("FEXU_ALLOWED_ORIGINS") {
         Ok(value) if origins_are_https(&value) => {
             let count = value
@@ -508,7 +528,7 @@ pub fn deploy_findings(debug: bool, host: &str, file_wildcard_opt_in: bool) -> i
             errors += 1;
             report(
                 "ERROR",
-                "deploy.origin Every FEXU_ALLOWED_ORIGINS entry must be an https origin.",
+                "deploy.origin Every FEXU_ALLOWED_ORIGINS entry must be an exact https origin without user info, path, query or fragment.",
             );
         }
         Err(_) => {
@@ -538,14 +558,14 @@ pub fn deploy_findings(debug: bool, host: &str, file_wildcard_opt_in: bool) -> i
         (true, Some(count)) if count > 0 => report(
             "OK",
             &format!(
-                "deploy.proxy X-Forwarded-For is accepted from {count} configured peer(s). A wildcard is ignored."
+                "deploy.proxy X-Forwarded-For is accepted from {count} distinct canonical IP peer(s). Names and wildcards are ignored by this check."
             ),
         ),
         (true, Some(_)) => {
             errors += 1;
             report(
                 "ERROR",
-                "deploy.proxy FEXU_TRUST_PROXY is enabled, but no trusted peer is configured. No peer is trusted.",
+                "deploy.proxy FEXU_TRUST_PROXY is enabled, but no canonical IP peer is configured. Use the immediate proxy IP, not a name or wildcard.",
             );
         }
         (false, Some(_)) => report(
@@ -555,8 +575,8 @@ pub fn deploy_findings(debug: bool, host: &str, file_wildcard_opt_in: bool) -> i
         (_, None) => {}
     }
     report(
-        "OK",
-        "deploy.worker The web process does not start a job worker. Supervise fexu worker separately. This check cannot see that process.",
+        "INFO",
+        "deploy.worker The web process does not start a job worker. Supervise fexu worker separately. This check cannot verify that process is running.",
     );
     report(
         "OK",
@@ -576,7 +596,65 @@ fn origins_are_https(value: &str) -> bool {
         .map(str::trim)
         .filter(|origin| !origin.is_empty())
         .collect();
-    !origins.is_empty() && origins.iter().all(|origin| origin.starts_with("https://"))
+    !origins.is_empty() && origins.iter().all(|origin| exact_https_origin(origin))
+}
+
+// The runtime compares literal browser origins. Accept ASCII DNS names and IP
+// literals with an optional numeric port, not arbitrary HTTPS URLs.
+fn exact_https_origin(origin: &str) -> bool {
+    let Some(authority) = origin.strip_prefix("https://") else {
+        return false;
+    };
+    let (host, port) = if let Some(rest) = authority.strip_prefix('[') {
+        let Some((address, suffix)) = rest.split_once(']') else {
+            return false;
+        };
+        if address.parse::<std::net::Ipv6Addr>().is_err() {
+            return false;
+        }
+        let port = if suffix.is_empty() {
+            None
+        } else if let Some(port) = suffix.strip_prefix(':') {
+            Some(port)
+        } else {
+            return false;
+        };
+        (None, port)
+    } else {
+        let (host, port) = match authority.split_once(':') {
+            Some((host, port)) => (host, Some(port)),
+            None => (authority, None),
+        };
+        (Some(host), port)
+    };
+    if let Some(host) = host {
+        if host.is_empty()
+            || host.len() > 253
+            || !host.split('.').all(|label| {
+                !label.is_empty()
+                    && label.len() <= 63
+                    && !label.starts_with('-')
+                    && !label.ends_with('-')
+                    && label
+                        .bytes()
+                        .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
+            })
+        {
+            return false;
+        }
+        if host
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || byte == b'.')
+            && host.parse::<std::net::Ipv4Addr>().is_err()
+        {
+            return false;
+        }
+    }
+    port.is_none_or(|port| {
+        !port.is_empty()
+            && port.bytes().all(|byte| byte.is_ascii_digit())
+            && port.parse::<u16>().is_ok_and(|value| value > 0)
+    })
 }
 
 fn command_version(program: &str) -> Option<String> {
@@ -610,10 +688,10 @@ fn migration_lines(project: &ProjectConfig, compare_schema: bool, deploy: bool) 
     let readonly = match readonly_database_url(&url) {
         Ok(url) => url,
         Err(error) => {
-            report("WARN", &error.0);
+            report(if deploy { "ERROR" } else { "WARN" }, &error.0);
             return Counts {
-                errors: 0,
-                warnings: 1,
+                errors: i32::from(deploy),
+                warnings: i32::from(!deploy),
             };
         }
     };
@@ -1077,6 +1155,8 @@ mod tests {
         assert_eq!(configured_proxy_peers("*"), 0);
         assert_eq!(configured_proxy_peers(""), 0);
         assert_eq!(configured_proxy_peers(" , "), 0);
+        assert_eq!(configured_proxy_peers("proxy, not-an-ip, 999.1.1.1"), 0);
+        assert_eq!(configured_proxy_peers("10.0.0.1,10.0.0.1,::1"), 2);
     }
 
     #[test]
@@ -1090,6 +1170,26 @@ mod tests {
         ));
         assert!(!origins_are_https("http://shop.example"));
         assert!(!origins_are_https(""));
+        assert!(origins_are_https(
+            "https://localhost:8443,https://[::1]:8443"
+        ));
+        for invalid in [
+            "https://",
+            "https://*",
+            "https://user:password@shop.example",
+            "https://shop.example/",
+            "https://shop.example/path",
+            "https://shop.example?token=secret",
+            "https://shop.example#fragment",
+            "https://shop.example:0",
+            "https://shop.example:65536",
+            "https://shop.example:abc",
+            "https://999.1.1.1",
+            "https://[invalid]",
+            "https://shop.example,https://",
+        ] {
+            assert!(!origins_are_https(invalid));
+        }
     }
 
     #[test]
@@ -1120,7 +1220,7 @@ mod tests {
         std::env::set_var("FEXU_ALLOWED_ORIGINS", "https://app.example.test");
         std::env::set_var("FEXU_COOKIE_SECURE", "1");
         std::env::set_var("FEXU_CSRF_SECRET", &secret);
-        std::env::set_var("FEXU_MFA_KEY", &secret);
+        std::env::set_var("FEXU_MFA_KEY", "cd".repeat(32));
         std::env::remove_var("FEXU_DEBUG");
         std::env::remove_var("FEXU_ENV");
         std::env::remove_var("FEXU_TRUST_PROXY");
@@ -1133,6 +1233,9 @@ mod tests {
         std::env::remove_var("FEXU_ALLOW_WILDCARD_BIND");
         assert_eq!(super::deploy_findings(false, "127.0.0.1", false), 1);
         assert_eq!(super::deploy_findings(false, "127.0.0.1", true), 0);
+        std::env::set_var("FEXU_MFA_KEY", secret.to_ascii_uppercase());
+        assert_eq!(super::deploy_findings(false, "127.0.0.1", true), 1);
+        std::env::set_var("FEXU_MFA_KEY", "cd".repeat(32));
         std::env::set_var("FEXU_TRUSTED_PROXIES", "*");
         std::env::set_var("FEXU_TRUST_PROXY", "1");
         assert_eq!(super::deploy_findings(false, "127.0.0.1", true), 1);

@@ -12,6 +12,8 @@ fexu build
 
 Review migrations and create a verified, restorable backup before `fexu migrate up` against an existing PostgreSQL database. `fexu build` builds the release executable but does not itself start a web server.
 
+`fexu check --deploy` checks exact HTTPS origin syntax (no path, credentials, query or fragment), separate CSRF/MFA keys, explicit IP peers for trusted proxies, and database/migration readiness without applying migrations. It does not verify that a worker is running. Standard access logs use route templates, not dynamic path values or query strings; application logs and caller-supplied request IDs must not contain secrets.
+
 ## Deployment checklist
 
 - Provide `DATABASE_URL` through a protected secret rather than a committed file.

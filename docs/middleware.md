@@ -1,6 +1,6 @@
 # Middleware
 
-**Milestone:** v0.12, Implemented. The Cargo version is `0.1.2`.
+**Current development:** 0.3.0-dev.1. Published: 0.2.0.
 
 ## Responsibility
 
@@ -13,7 +13,7 @@
 
 ## Public API
 
-`Standard` carries `body_limit` (standard 2 MiB) and `referrer_policy`. `apply(router, standard)` attaches the layers. `RequestId` is in the request extensions. `logged_path` returns only the path. An incoming `x-request-id` is kept only when it is 8 to 64 ASCII letters, digits or hyphens. Anything else is replaced.
+`Standard` carries `body_limit` (standard 2 MiB) and `referrer_policy`. `apply(router, standard)` attaches the layers. `RequestId` is in the request extensions. `logged_path` remains a raw path-only helper. Standard access logging records the Axum matched route template, or `<unmatched>` when unavailable, rather than the raw path. A single incoming `x-request-id` is kept only when it is 8 to 64 ASCII letters, digits or hyphens. Duplicate or invalid values are replaced. A valid caller-supplied ID remains untrusted data.
 
 ## Data flow
 
@@ -31,7 +31,7 @@ Tower runs the last layer added first. `apply` is therefore attached in this ord
 
 ## Security
 
-The log contains method, path, status, duration and request ID. Query, cookies, `Authorization`, CSRF, passwords and multipart content are not written. This layer owns the final `X-Content-Type-Options: nosniff` and `X-Frame-Options: DENY`. A handler cannot weaken either value. `Referrer-Policy` is also owned here. Every header field and every comma-separated token is read. The response keeps one canonical header only when every token is the same listed policy. A missing header, an unsafe token, or two different values are replaced by the configured policy. Repeated copies of one safe policy collapse to that single header. This keeps `same-origin` on the admin login document and `no-referrer` on the password-reset pages. A content security policy is not set so that the admin does not break. Origin checks, Fetch Metadata and CSRF live in `fexu-auth` and `fexu-api`, not in this crate. Neither this crate nor the cookie-CSRF layer replaces an authorization check. A cookie-less `allow_anonymous` write remains public unless the app calls `require_browser_writes`.
+The standard access event contains method, route template, status, duration and request ID. It does not read query values, dynamic path parameters, cookies, `Authorization`, CSRF or request bodies. Application-defined tracing events remain the application’s responsibility; caller-supplied request IDs must not contain secrets. This layer owns the final `X-Content-Type-Options: nosniff` and `X-Frame-Options: DENY`. A handler cannot weaken either value. `Referrer-Policy` is also owned here. Every header field and every comma-separated token is read. The response keeps one canonical header only when every token is the same listed policy. A missing header, an unsafe token, or two different values are replaced by the configured policy. Repeated copies of one safe policy collapse to that single header. This keeps `same-origin` on the admin login document and `no-referrer` on the password-reset pages. A content security policy is not set so that the admin does not break. Origin checks, Fetch Metadata and CSRF live in `fexu-auth` and `fexu-api`, not in this crate. Neither this crate nor the cookie-CSRF layer replaces an authorization check. A cookie-less `allow_anonymous` write remains public unless the app calls `require_browser_writes`.
 
 The `x-fexu-trace-order` header is a test probe and does not affect routing.
 
