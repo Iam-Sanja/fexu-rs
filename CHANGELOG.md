@@ -3,10 +3,10 @@
 ## Unreleased — toward v0.3.0
 
 - Dependency modernization: GitHub Actions `setup-python` 7.1.0 was merged in PR #237.
-- Candidate update `rusqlite` 0.42.0 to 0.43.0 for v0.3.0; SQLite schema, migrations and cross-platform CI must pass before it is accepted.
-- Candidate Argon2 0.5.3 to 0.6.0 upgrade for upcoming v0.3.0; must preserve stored password hash verification, authentication/session continuity and Windows stability before acceptance.
-- Candidate combined SQLx core and PostgreSQL 0.8.6 to 0.9.1 update for v0.3.0; must pass PostgreSQL database, migration and consumer upgrade CI before merge.
-- Candidate SeaQuery 0.32.7 to 1.0.2 major API upgrade for v0.3.0; SQLite/PostgreSQL query generation, models and migrations must pass CI before merge.
+- Merged `rusqlite` 0.42.0 to 0.43.0 in #256.
+- Merged Argon2 0.5.3 to 0.6.0 in #257, preserving existing hash verification.
+- Merged SQLx core and PostgreSQL 0.8.6 to 0.9.1 in #258.
+- Merged SeaQuery 0.32.7 to 1.0.2 in #259, including expression traits, value binding, model macros, migrations and regression tests. All nine reviewed PR checks passed. Dependabot #239 is superseded.
 - Future dependency upgrades, documentation and all 16 crate versions are reviewed together. v0.3.0 has not been released.
 
 ## 0.2.0 — published 2026-11-23

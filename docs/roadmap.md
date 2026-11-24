@@ -2,14 +2,14 @@
 
 [Documentation](index.md) · [Capability matrix](django-capability-matrix.md) · [Release process](crates-io-release.md) · [GitHub issues](https://github.com/Iam-Sanja/fexu-rs/issues)
 
-**Updated: 2026-11-23.** A plan, not a promise of dates, completeness, or production readiness. Fexu remains experimental.
+**Updated: 2026-11-24. Reviewed baseline: `20aee5b`.** A plan, not a promise of dates, completeness, or production readiness. Fexu remains experimental.
 
 ## Current releases and version policy
 
 - **Latest published: [v0.2.0](https://github.com/Iam-Sanja/fexu-rs/releases/tag/v0.2.0)** (2026-11-23). All 16 crates published via the [successful release workflow](https://github.com/Iam-Sanja/fexu-rs/actions/runs/45090038609), with CI and the [release preflight](https://github.com/Iam-Sanja/fexu-rs/actions/runs/45086997959).
 - **Previous: [v0.1.2](https://github.com/Iam-Sanja/fexu-rs/releases/tag/v0.1.2)**. See the [upgrade guide](../manual/how-to/upgrade-0.1.2-to-0.2.md).
 - **Next planned: v0.3.0.** No release tag, registry packages or date yet.
-- **Development:** Cargo manifests still use the published `0.2.0` Fexu crate version while post-release dependency upgrades are being merged toward v0.3.0. The **first actual 0.3.0 code change** should coordinate all 16 crate versions and internal dependency requirements (proposed `0.3.0-dev.1`) and update the lockfile, generator pins, README, manual, changelog and roadmap in a tested PR. An unpublished prerelease must not be presented as available on crates.io.
+- **Development:** Cargo manifests still use the published `0.2.0` Fexu crate version after the post-release dependency upgrades merged. Before the next feature change, coordinate all 16 crate versions and internal dependency requirements (proposed `0.3.0-dev.1`) and update the lockfile, generator pins, README, manual, changelog and roadmap in a tested PR. An unpublished prerelease must not be presented as available on crates.io.
 - Old engineering milestone labels (for example `v0.13`) are not Cargo release tags.
 
 ## v0.3.0 dependency modernization
@@ -17,7 +17,7 @@
 - [Dependabot #237](https://github.com/Iam-Sanja/fexu-rs/pull/237) upgraded the SHA-pinned `actions/setup-python` action to 7.1.0 (merged).
 - `rusqlite` 0.43 integrated and tested through [PR #256](https://github.com/Iam-Sanja/fexu-rs/pull/256); Dependabot #238 closed.
 - Argon2 0.6 integrated through [PR #257](https://github.com/Iam-Sanja/fexu-rs/pull/257); SQLx 0.9.1 (core and PostgreSQL) through [PR #258](https://github.com/Iam-Sanja/fexu-rs/pull/258). Both passed required CI. Dependabot #240/#241/#242 closed.
-- SeaQuery 1.0.2 from [Dependabot #239](https://github.com/Iam-Sanja/fexu-rs/pull/239) is the final dependency migration under review, requiring SQLite/PostgreSQL SQL-generation and migration compatibility. Never merge failing cross-platform checks.
+- SeaQuery 1.0.2 merged in [PR #259](https://github.com/Iam-Sanja/fexu-rs/pull/259); Dependabot #239 closed as superseded. Linux, Windows, MSRV 1.89, PostgreSQL, browser, published 0.1.2 upgrade, security and documentation checks passed on the PR.
 - Dependency updates on GitHub are not new published Fexu versions. Coordinate all 16 framework crates, generator pins, lockfile and documentation as part of the v0.3.0 development version bump.
 
 ## What v0.2.0 delivered
@@ -50,7 +50,7 @@
 - **Operations [#94](https://github.com/Iam-Sanja/fexu-rs/issues/94):** observability, readiness, graceful shutdown, least-privilege deployment, PostgreSQL/media backup-and-restore drills and incident guidance.
 - **Localization [#148](https://github.com/Iam-Sanja/fexu-rs/issues/148):** bundled reviewed locale catalogs and opt-in translatable application labels/records, delivered in safe increments.
 
-Each workstream needs its own API, security and multi-backend review. **v0.3.0 is not automatically production-certified.** Unmet commitments can be deferred explicitly or block that release after maintainers reassess scope.
+Each workstream needs its own API, security and multi-backend review. The release gates are operations (#94), cross-backend acceptance (#93), and a new upgrade from published 0.2.0 (#92). Prioritize local/S3 storage, worker reliability, optional shared cache, OIDC with its mandatory security tests, a minimal reusable-app contract and English-first locale foundations. Defer multilingual stored records (#193), broader ORM/admin API expansion and optional distributed auth limiting (#175) to v0.4.0; comparative benchmarks (#95) target v0.5.0. These are planning targets, not shipped features. See [issue backlog](https://github.com/Iam-Sanja/fexu-rs/issues) and [milestones](https://github.com/Iam-Sanja/fexu-rs/milestones). **v0.3.0 is not automatically production-certified.** Unmet commitments can be deferred explicitly or block that release after maintainers reassess scope.
 
 ## Independent longer-term tracks
 

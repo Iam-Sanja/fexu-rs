@@ -1,11 +1,13 @@
 # Fexu documentation for AI assistants
 
 > Fexu is a Rust web framework. Use documentation for the **exact release** a
-> project depends on. As of 21 November 2026, 0.1.2 is published and 0.2.0
+> project depends on. As of 24 November 2026, 0.2.0 is published and 0.3.0
 > is planned; development source on main is not a published release.
 > Verify every copied Rust API against its version's source and tests.
 
 ## First steps
+
+- [Public manual](https://iam-sanja.github.io/fexu-rs/): current main documentation; use the tagged manual for exact release behavior.
 
 - [Documentation home](index.md): user-facing guide by topic
 - [Documentation versions](documentation-versions.md): release selection and install commands
@@ -48,7 +50,7 @@
 
 ## Version and safety rules
 
-- A page from `main` can describe an unreleased API. Do not present it as supported by published 0.1.2.
+- A page from `main` can describe an unreleased API. Do not present it as supported by published 0.2.0.
 - Do not invent CLI commands, flags, Rust method names or configuration keys; match the release source.
 - `fexu upgrade` handles supported project file layouts, not arbitrary Rust source rewrites or version-to-version DB upgrades.
 - `fexu migrate plan` is read-only; `fexu migrate up` writes schema changes. Require a verified backup before migrations on existing data.

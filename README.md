@@ -12,10 +12,10 @@ Fexu is a Django-inspired, **experimental** web framework on **Axum**, **Tera**,
 ![MSRV: 1.89](https://img.shields.io/badge/MSRV-1.89-informational)
 ![Workspace: 16 crates](https://img.shields.io/badge/workspace-16%20crates-informational)
 
-[**Quick start**](#quick-start) · [**Features**](#features) · [**Install**](#install-fexu-020) · [**Roadmap 0.3.0**](docs/roadmap.md) · [**Upgrade from 0.1.2**](#upgrade-from-012) · [**Documentation**](docs/index.md) · [**Contributing**](#contributing) · [**License**](#license)
+[**Quick start**](#quick-start) · [**Features**](#features) · [**Install**](#install-fexu-020) · [**Roadmap 0.3.0**](docs/roadmap.md) · [**Upgrade from 0.1.2**](#upgrade-from-012) · [**Documentation**](https://iam-sanja.github.io/fexu-rs/) · [**Contributing**](#contributing) · [**License**](#license)
 
 > [!IMPORTANT]
-> **Latest published release: Fexu 0.2.0.** All 16 crates were released together. Fexu remains experimental and is not declared production-ready. **Next milestone: v0.3.0** ([roadmap](docs/roadmap.md)); planned features are not yet included in v0.2.0. Development changes and their documentation are reviewed together.
+> **Latest published release: Fexu 0.2.0.** All 16 crates were released together. Fexu remains experimental and is not declared production-ready. **Next milestone: v0.3.0** ([roadmap](docs/roadmap.md)); planned features are not yet included in v0.2.0. Development changes and their documentation are reviewed together. The current main branch includes the merged SeaQuery, SQLx, rusqlite and Argon2 upgrades for v0.3.0; these are not part of published v0.2.0.
 
 ## Features
 

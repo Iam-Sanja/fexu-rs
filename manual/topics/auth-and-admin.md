@@ -2,7 +2,7 @@
 
 The fullstack generator enables the server-rendered administration interface and authentication, but does not create a default administrator.
 
-**Password-hashing compatibility:** Published Fexu v0.2.0 uses the RustCrypto `argon2` 0.5 series. The upcoming v0.3.0 development source is evaluating `argon2` 0.6. Existing password hashes use the PHC Argon2id encoding, including the salt and work parameters. Migration must preserve verification of hashes created by older releases; never reset existing account passwords or modify stored hashes merely because the dependency changes. The new dependency is not part of the v0.2.0 release tag.
+**Password-hashing compatibility:** Published Fexu v0.2.0 uses the RustCrypto `argon2` 0.5 series. Unreleased development source uses `argon2` 0.6 after [PR #257](https://github.com/Iam-Sanja/fexu-rs/pull/257) passed CI. Existing password hashes use the PHC Argon2id encoding, including the salt and work parameters. Migration must preserve verification of hashes created by older releases; never reset existing account passwords or modify stored hashes merely because the dependency changes. The new dependency is not part of the v0.2.0 release tag.
 
 ## Create an administrator
 

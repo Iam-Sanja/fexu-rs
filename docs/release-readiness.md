@@ -1,6 +1,6 @@
 # Release readiness
 
-> **Current status (2026-11-18):** `v0.1.2` is already published (all 16 workspace crates). The material below is a dated **0.1.0 / pre-0.1.2 readiness record**, not the readiness decision for `0.2.0`. The proposed next-release gates are in [roadmap.md](roadmap.md); a future release candidate needs its own current CI, upgrade, packaging, security and clean-room evidence. Do not reuse the historical `READY` decision as authorization to publish a new version.
+> **Current status (2026-11-24):** v0.2.0 is published (all 16 crates). The material below is a historical 0.1.0 / pre-0.1.2 record, not a current release decision. v0.3.0 requires new CI, published 0.2.0 upgrade tests on SQLite and PostgreSQL, packaging, security and clean-room evidence. See [roadmap.md](roadmap.md) and [release policy](crates-io-release.md). No historical READY decision authorizes publication.
 
 
 > **2026-11-15:** The sections below are a dated `0.1.0` snapshot. All 16 crate names now exist on crates.io at `0.1.0`, and `fexu-cli` also at `0.1.1`. This branch prepares `0.1.2` and does not publish it.
