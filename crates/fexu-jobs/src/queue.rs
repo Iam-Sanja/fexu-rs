@@ -396,8 +396,8 @@ impl Queue {
         let candidates = all(&self.db, &query).await?;
         for row in candidates {
             let id = required_uuid(&row, "id")?;
-            let id_match = Expr::col(Alias::new("id"))
-                .eq(id_expr(self.db.get_database_backend(), id));
+            let id_match =
+                Expr::col(Alias::new("id")).eq(id_expr(self.db.get_database_backend(), id));
             let attempts = Expr::col(Alias::new("attempts"));
             let maximum = Expr::col(Alias::new("max_attempts"));
             if u32_column(&row, "attempts")? >= u32_column(&row, "max_attempts")? {

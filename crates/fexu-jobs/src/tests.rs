@@ -391,9 +391,10 @@ async fn crash_exhausts_attempt_budget(queue: &Queue, clock: &ManualClock) {
         .expect("live lease")
         .is_none());
     clock.advance(31);
+    let handlers = [handler];
     let (left, right) = tokio::join!(
-        queue.claim("recovery-a", &[handler], 30),
-        queue.claim("recovery-b", &[handler], 30)
+        queue.claim("recovery-a", &handlers, 30),
+        queue.claim("recovery-b", &handlers, 30)
     );
     assert!(left.expect("first recovery").is_none());
     assert!(right.expect("second recovery").is_none());
