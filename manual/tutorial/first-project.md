@@ -4,6 +4,8 @@ This hands-on tutorial creates **bookstore**, adds a **catalog** app with a **Bo
 
 **Version boundary:** Start with the published 0.2.0 CLI. The source excerpts are based on the development generator and have not been independently re-executed end-to-end against the published 0.2.0 package in this review. Compare generated files with the exact installed release; for development APIs, use the matching checkout and `--fexu-path`.
 
+For the published 0.2.0 generator, apply the [database URL resolver correction](../getting-started/quickstart.md#published-020-generator-compatibility) before compiling the generated source.
+
 ## 1. Generate a project
 
 Install the published CLI:

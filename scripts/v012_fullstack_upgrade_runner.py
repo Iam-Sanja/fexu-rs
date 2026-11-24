@@ -33,6 +33,10 @@ def main() -> int:
     p.add_argument("manifest")
     p.add_argument("fexu_crate")
     p.add_argument("project_mod")
+    p.add_argument("--baseline", choices=("0.1.2", "0.2.0"), default="0.1.2")
+
+    p = sub.add_parser("repair-v020-resolver")
+    p.add_argument("project_mod")
 
     p = sub.add_parser("login")
     p.add_argument("base")
@@ -113,9 +117,15 @@ def main() -> int:
         )
         print(len(snap.migration_rows), len(snap.password_hashes))
         return 0
+    if args.cmd == "repair-v020-resolver":
+        lib.repair_v020_database_url_resolver(Path(args.project_mod))
+        return 0
     if args.cmd == "rewrite":
-        lib.rewrite_fullstack_dependency(Path(args.manifest), Path(args.fexu_crate))
-        lib.patch_database_url_resolver(Path(args.project_mod))
+        lib.rewrite_fullstack_dependency(Path(args.manifest), Path(args.fexu_crate), args.baseline)
+        if args.baseline == "0.1.2":
+            lib.patch_database_url_resolver(Path(args.project_mod))
+        elif "let database_url = settings.resolved_database_url()?;" not in Path(args.project_mod).read_text(encoding="utf-8"):
+            raise SystemExit("0.2.0 baseline resolver was not repaired before upgrade")
         return 0
     if args.cmd == "login":
         client = lib.HttpClient(args.base)
@@ -127,7 +137,7 @@ def main() -> int:
     if args.cmd == "session-check":
         client = lib.HttpClient(args.base)
         status = client.admin_get("/admin", args.session)
-        if status not in (200, 302, 303):
+        if status != 200:
             raise SystemExit(f"old session invalid after upgrade: {status}")
         return 0
     if args.cmd == "post-upgrade-db":

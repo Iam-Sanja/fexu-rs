@@ -32,9 +32,18 @@ def patch_database_url_resolver(project_mod: Path) -> None:
     project_mod.write_text(source.replace(old, new), encoding="utf-8")
 
 
-def rewrite_fullstack_dependency(manifest: Path, fexu_crate: Path) -> None:
+def repair_v020_database_url_resolver(project_mod: Path) -> None:
+    source = project_mod.read_text(encoding="utf-8")
+    old = "let database_url = settings.resolved_database_url();"
+    new = "let database_url = settings.resolved_database_url()?;"
+    if source.count(old) != 1 or new in source:
+        raise SystemExit("published 0.2.0 resolver no longer matches the pinned generator")
+    project_mod.write_text(source.replace(old, new), encoding="utf-8")
+
+
+def rewrite_fullstack_dependency(manifest: Path, fexu_crate: Path, baseline: str = "0.1.2") -> None:
     text = manifest.read_text(encoding="utf-8")
-    old = 'fexu = { version = "=0.1.2", features = ["admin-ui"] }'
+    old = f'fexu = {{ version = "={baseline}", features = ["admin-ui"] }}'
     if text.count(old) != 1:
         raise SystemExit("published fullstack generator changed dependency contract")
     path = fexu_crate.as_posix()

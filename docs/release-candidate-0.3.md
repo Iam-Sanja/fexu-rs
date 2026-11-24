@@ -10,6 +10,8 @@
 
 ## New published 0.2.0 upgrade acceptance (#92, #93)
 
+The first CI slice extends the existing fullstack fixture to the actual registry release 0.2.0 on both backends, with a documented one-line repair of the historical generator before baseline compilation. It also checks fresh API/fullstack registry scaffolding with the development CLI. Passing these jobs is required; media and broader API upgrade acceptance remain separate tasks.
+
 - [ ] Install the exact published 0.2.0 CLI in a disposable clean-room directory; generate API and fullstack projects with registry dependencies. Do not substitute a source-only fixture for the published baseline.
 - [ ] Seed real rows, relationships, migration history, users, roles, password hashes, sessions and representative media on isolated SQLite and PostgreSQL databases.
 - [ ] Switch only the disposable copies to matching candidate source via an explicit path; retain required feature flags, secrets and recorded migration files. Verify the read-only upgrade and migration plan before applying intended migrations.
