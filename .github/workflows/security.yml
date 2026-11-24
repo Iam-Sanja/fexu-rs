@@ -40,7 +40,7 @@ jobs:
       - name: Verify RSA is absent from the enabled dependency graph
         shell: bash
         run: |
-          cargo tree --workspace --target all --prefix none --locked > "$RUNNER_TEMP/fexu-dependencies.txt"
+          cargo tree --workspace --features fexu/redis-cache --target all --prefix none --locked > "$RUNNER_TEMP/fexu-dependencies.txt"
           if grep -E '^rsa v[0-9]' "$RUNNER_TEMP/fexu-dependencies.txt"; then
             echo "::error::RSA is enabled in the workspace dependency graph."
             exit 1
