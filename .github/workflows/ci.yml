@@ -102,6 +102,11 @@ jobs:
           printf '%s\n' "$output" | grep -q 'job='
           test -s "$work/app.sqlite"
 
+      - name: Backup restore URL policy (mock clients)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: bash scripts/test-backup-restore-url.sh
+
       - name: Cold-start URL policy
         if: runner.os == 'Linux'
         shell: bash
