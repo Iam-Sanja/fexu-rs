@@ -45,7 +45,9 @@ pub fn prepare(
     // syntax. A remote client must validate again when consuming a public plan.
     if !endpoint.starts_with("https://")
         || endpoint.contains(['@', '\\', '?', '#'])
-        || endpoint.chars().any(|c| c.is_whitespace() || c.is_control())
+        || endpoint
+            .chars()
+            .any(|c| c.is_whitespace() || c.is_control())
     {
         return Err(StorageError::Failed);
     }
