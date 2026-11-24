@@ -10,13 +10,19 @@
 
 ## New published 0.2.0 upgrade acceptance (#92, #93)
 
-The first CI slice extends the existing fullstack fixture to the actual registry release 0.2.0 on both backends, with a documented one-line repair of the historical generator before baseline compilation. It also checks fresh API/fullstack registry scaffolding with the development CLI. Passing these jobs is required; media and broader API upgrade acceptance remain separate tasks.
+The first CI slice extends the existing fullstack fixture to the actual registry release 0.2.0 on both backends, with a documented one-line repair of the historical generator before baseline compilation. It also checks fresh API/fullstack registry scaffolding with the development CLI. Both new fullstack upgrade jobs passed on PR #262 (CI run 45380382399); the PR merged as `1703161`. Existing 0.1.2 regressions passed, including identity and privilege checks with the original session cookie. Media and broader API upgrade acceptance remain separate tasks.
 
 - [ ] Install the exact published 0.2.0 CLI in a disposable clean-room directory; generate API and fullstack projects with registry dependencies. Do not substitute a source-only fixture for the published baseline.
 - [ ] Seed real rows, relationships, migration history, users, roles, password hashes, sessions and representative media on isolated SQLite and PostgreSQL databases.
 - [ ] Switch only the disposable copies to matching candidate source via an explicit path; retain required feature flags, secrets and recorded migration files. Verify the read-only upgrade and migration plan before applying intended migrations.
 - [ ] Confirm data, authorization, existing passwords and sessions survive; test admin login, CSRF, failed migration and rollback/recovery boundaries. Record candidate SHA and exact versions; never modify production data.
-- [ ] Keep the existing 0.1.2 regression suite in addition to the new 0.2.0 acceptance.
+- [x] Keep the existing 0.1.2 regression suite in addition to the new 0.2.0 acceptance (PR #262; rerun on final candidate).
+
+## Phase 1 acceptance reviewed (2026-11-24)
+
+- #74 completed: relocated binary, hidden source resources, authentication and job enqueue on SQLite and PostgreSQL; Linux/Windows CI; all eight migration JSON files identical to v0.2.0. Actual Docker deployment remains #78/#94.
+- #77 completed: direct strict native admin login, cookie-state and CSRF/origin matrix on SQLite and PostgreSQL; documented in admin-security.md.
+- #19 closed as not planned: pre-Fexu naming aliases and database conversion were deliberately retired, not implemented. Published Fexu upgrades remain #92/#93.
 
 ## Production foundations
 

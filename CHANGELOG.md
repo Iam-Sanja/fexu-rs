@@ -2,6 +2,8 @@
 
 ## Unreleased — toward v0.3.0
 
+- Restrict the disposable backup/restore rehearsal to distinct local PostgreSQL test database names, explicit loopback TCP endpoints and no connection overrides; restore atomically and cover the URL policy with mock-client tests.
+
 - Correct registry-generated API and fullstack database URL error propagation while retaining the published 0.2.0 dependency pin. Add published 0.2.0 fullstack upgrade CI on disposable SQLite and PostgreSQL, with the explicit one-line repair of the historical generated source before baseline compilation. Retain the 0.1.2 regressions.
 
 - Coordinate all 16 framework crate versions and internal requirements at `0.3.0-dev.1` for source development; the seven unpublished examples inherit the workspace version. Default registry scaffolding remains pinned to published 0.2.0; use `--fexu-path` for development. No prerelease package or tag is published.

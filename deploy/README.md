@@ -4,8 +4,7 @@ This stack is for a disposable machine. It is not a production deployment.
 `docker compose up` in the repository root still starts only PostgreSQL on
 `127.0.0.1`. This directory is separate.
 
-Do not point `DATABASE_URL` at a database you need to keep. The backup script
-refuses a database name that does not contain `fexu_test`.
+Do not point `DATABASE_URL` at a database you need to keep. The backup rehearsal requires two distinct database names starting with `fexu_test_`, explicit literal loopback IP addresses and TCP ports, and no URL query or fragment. It refuses remote endpoints and strips libpq environment overrides. Use a fresh, empty disposable restore target and an explicitly authorized local test role; this is not a production backup tool. Python 3 and PostgreSQL client tools are required.
 
 ## What is here
 
@@ -22,8 +21,7 @@ refuses a database name that does not contain `fexu_test`.
   `X-Forwarded-Proto` and `X-Forwarded-Host` and does not invent an origin.
 - `nginx-proxy-manager.example.conf` is a header snippet for one NPM Proxy
   Host. Compose does not start NPM.
-- `backup-restore.sh` dumps and restores a database whose name contains
-  `fexu_test`.
+- `backup-restore.sh` performs an isolated PostgreSQL backup/restore rehearsal with a single-transaction restore; the URL guard is tested without connecting to any database.
 
 The app container does not run migrations on startup. Run
 `fexu migrate up` as a separate step. `/healthz` only shows that the
