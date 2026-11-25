@@ -123,6 +123,7 @@ pub struct StagedMedia {
     created: Vec<StagedFile>,
     removals: Vec<MediaRef>,
     kept: Vec<BoundMedia>,
+    previous: Vec<BoundMedia>,
 }
 
 #[derive(Debug)]
@@ -195,7 +196,22 @@ impl UploadPlan {
         let mut created = Vec::new();
         let mut removals = Vec::new();
         let mut kept = Vec::new();
+        let mut previous = Vec::new();
         for decision in self.decisions {
+            previous.push(match &decision {
+                Decision::Absent { field } => BoundMedia {
+                    field: field.clone(),
+                    media: None,
+                },
+                Decision::Keep { field, media } | Decision::Remove { field, media } => BoundMedia {
+                    field: field.clone(),
+                    media: Some(*media),
+                },
+                Decision::Stage { field, retire, .. } => BoundMedia {
+                    field: field.clone(),
+                    media: *retire,
+                },
+            });
             match decision {
                 Decision::Absent { field } => kept.push(BoundMedia { field, media: None }),
                 Decision::Keep { field, media } => kept.push(BoundMedia {
@@ -244,11 +260,136 @@ impl UploadPlan {
             created,
             removals,
             kept,
+            previous,
         })
     }
 }
 
+/// Result of a reference-aware model save. Detached IDs are candidates for
+/// later reconciliation, not authorization to delete.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReferencedCommitReport {
+    pub bound: Vec<BoundMedia>,
+    pub detached: Vec<MediaRef>,
+}
+
+#[derive(Debug)]
+pub enum ReferencedSaveFailure<E> {
+    Begin,
+    Ledger(StorageError),
+    Model(E),
+    Retain(StorageError),
+    /// The database commit may have succeeded despite the error.
+    CommitUnknown,
+}
+
+/// All newly staged IDs are reported. Never delete these solely because the
+/// operation failed: a failed commit can have an ambiguous outcome.
+#[derive(Debug)]
+pub struct ReferencedSaveError<E> {
+    pub failure: ReferencedSaveFailure<E>,
+    pub candidates: Vec<MediaRef>,
+}
+
 impl StagedMedia {
+    /// Persist a model change and its ledger updates in one transaction.
+    ///
+    /// The supplied save operation must validate ownership and lock or
+    /// compare the actual current model fields against `previous` before
+    /// writing `bound`. It must use only the supplied transaction, must not
+    /// commit it, and must fail if the expected values no longer match.
+    /// Every other reference writer must follow the same ledger protocol.
+    ///
+    /// Newly staged files are retained before database commit. On any failure,
+    /// bytes are left untouched for explicit recovery (including permanent
+    /// orphans if retain succeeded). Old files are never deleted here.
+    pub async fn commit_referenced<S, T, E, F>(
+        self,
+        storage: &S,
+        db: &fexu_db::driver::DatabaseConnection,
+        save: F,
+    ) -> Result<(T, ReferencedCommitReport), ReferencedSaveError<E>>
+    where
+        S: Storage + ?Sized,
+        F: AsyncFnOnce(
+            &fexu_db::driver::DatabaseTransaction,
+            &[BoundMedia],
+            &[BoundMedia],
+        ) -> Result<T, E>,
+    {
+        use crate::ReferenceLedger;
+        use fexu_db::driver::TransactionTrait;
+
+        let candidates: Vec<_> = self
+            .created
+            .iter()
+            .map(|staged| MediaRef {
+                owner: self.owner,
+                id: staged.file.id,
+            })
+            .collect();
+        let error = |failure| ReferencedSaveError {
+            failure,
+            candidates: candidates.clone(),
+        };
+        let mut bound = self.kept;
+        for (staged, media) in self.created.iter().zip(&candidates) {
+            bound.push(BoundMedia {
+                field: staged.field.clone(),
+                media: Some(*media),
+            });
+        }
+        let tx = db
+            .begin()
+            .await
+            .map_err(|_| error(ReferencedSaveFailure::Begin))?;
+        let result = async {
+            // Acquire the writer lock before reading model state on SQLite.
+            for media in &candidates {
+                ReferenceLedger::register_tx(&tx, *media)
+                    .await
+                    .map_err(ReferencedSaveFailure::Ledger)?;
+                ReferenceLedger::attach(&tx, *media)
+                    .await
+                    .map_err(ReferencedSaveFailure::Ledger)?;
+            }
+            let value = save(&tx, &self.previous, &bound)
+                .await
+                .map_err(ReferencedSaveFailure::Model)?;
+            for media in &self.removals {
+                ReferenceLedger::detach(&tx, *media)
+                    .await
+                    .map_err(ReferencedSaveFailure::Ledger)?;
+            }
+            for media in &candidates {
+                storage
+                    .retain(media.owner, media.id)
+                    .await
+                    .map_err(ReferencedSaveFailure::Retain)?;
+            }
+            Ok(value)
+        }
+        .await;
+        match result {
+            Ok(value) => {
+                tx.commit()
+                    .await
+                    .map_err(|_| error(ReferencedSaveFailure::CommitUnknown))?;
+                Ok((
+                    value,
+                    ReferencedCommitReport {
+                        bound,
+                        detached: self.removals,
+                    },
+                ))
+            }
+            Err(failure) => {
+                let _ = tx.rollback().await;
+                Err(error(failure))
+            }
+        }
+    }
+
     pub fn created(&self) -> &[StagedFile] {
         &self.created
     }
