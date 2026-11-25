@@ -2,7 +2,9 @@
 
 ## Unreleased — toward v0.3.0
 
-- Add isolated S3 retain/delete race and persistent-container restart regression coverage; new tests require CI verification. Automatic remote cleanup and backup/restore remain separate.
+- Add targeted S3 expiry reconciliation using conditional tombstones and retryable physical removal; callers must independently exclude database references. New acceptance tests require CI verification.
+
+- Add isolated S3 retain/delete race and persistent-container restart regression coverage; PR #272 passed all workflows. Automatic remote cleanup and backup/restore remain separate.
 
 - Add an optional S3 storage client with atomic single-object metadata and bytes, conditional creation/retention, bounded reads, SHA-256 verification and HTTPS-only direct transport. PR #271 passed isolated TLS MinIO CI and dependency verification; remote quotas, cleanup and restore are follow-up work.
 
