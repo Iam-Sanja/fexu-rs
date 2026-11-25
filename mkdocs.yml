@@ -65,6 +65,7 @@ nav:
       - Authentication and admin: topics/auth-and-admin.md
       - Background jobs: topics/jobs.md
       - Cache: topics/cache.md
+      - Storage: topics/storage.md
   - Reference:
       - All CLI commands: reference/cli.md
       - Settings and environment: reference/settings.md

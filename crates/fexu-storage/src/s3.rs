@@ -1,6 +1,6 @@
-//! Configuration for a future S3-compatible storage backend.
+//! Configuration for S3-compatible storage.
 //!
-//! No network client exists. `prepare` validates configuration and reads
+//! `prepare` performs no network I/O. It validates configuration and reads
 //! credentials from named environment variables without logging them.
 
 use crate::StorageError;

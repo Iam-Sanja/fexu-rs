@@ -13,6 +13,25 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  s3_storage:
+    name: S3 storage (optional feature)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install Rust 1.89
+        uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8
+        with:
+          toolchain: 1.89.0
+      - name: Verify optional dependency lockfile
+        run: cargo metadata --locked --format-version 1 --features fexu/s3-storage,fexu/redis-cache >/dev/null
+      - name: Check feature and run S3 tests
+        run: |
+          cargo check --locked -p fexu --features s3-storage,redis-cache
+          bash scripts/test-s3-storage.sh
+          git diff --exit-code -- Cargo.lock
+
   redis_cache:
     name: Redis cache (optional feature)
     runs-on: ubuntu-24.04
@@ -80,6 +99,9 @@ jobs:
 
       - name: Check optional Redis feature (all targets)
         run: cargo check --locked -p fexu-cache --features redis-cache --all-targets
+
+      - name: Check optional S3 feature (all targets)
+        run: cargo check --locked -p fexu-storage --features s3-storage --all-targets
 
       - name: Run tests
         run: cargo test --workspace
