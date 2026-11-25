@@ -27,8 +27,8 @@ The first CI slice extends the existing fullstack fixture to the actual registry
 ## Production foundations
 
 - [ ] #94: readiness, shutdown, redacted logging, least privilege, isolated backup/restore drills. PR #264 passed actual Compose HTTPS, runtime role, DB outage, normal SIGTERM exit, volume/session persistence and real PostgreSQL restore. The next slice adds stricter deployment checks and structured access-log regression coverage; these new results remain pending. Worker outage, media restore, checkout recovery and live LAN/NPM remain separate.
-- [ ] #96: local and optional S3 storage lifecycle, authorization, quotas and recovery.
-- [ ] #87/#88: #266 and #267 passed lease-expiry, attempt-budget, Unix SQLite process crash/restart/SIGTERM and PostgreSQL handler overlap acceptance. #268 passed all 13 checks, including Redis shared/outage tests on Rust 1.89 and security/lockfile verification. The follow-up adds shared connection reuse, same-handle restart recovery, concurrent callers and TLS trust tests; await CI. Remaining production-specific acceptance is tracked separately.
+- [ ] #96: local and optional S3 storage lifecycle, authorization, quotas and recovery. First slice shares upload validation, rejects unsupported staging deadlines, preserves old files after retain failures and validates HTTPS S3 origins. Remote network client and object-store acceptance remain open.
+- [ ] #87/#88: #266 and #267 passed lease-expiry, attempt-budget, Unix SQLite process crash/restart/SIGTERM and PostgreSQL handler overlap acceptance. #268 passed all 13 checks, including Redis shared/outage tests on Rust 1.89 and security/lockfile verification. #269 passed all 13 checks, including connection reuse, same-handle restart, concurrent callers and both TLS trust cases. #88 closed; #87 remains open for remaining acceptance.
 - [ ] #85/#172–174: opt-in OIDC, explicit account linking and mandatory negative/mock/browser tests.
 - [ ] #86/#148: minimum reusable-app and locale contracts with runnable examples.
 - [ ] #80/#84/#91: acceptance of existing admin/forms and clean-room CLI workflow.

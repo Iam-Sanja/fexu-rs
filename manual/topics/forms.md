@@ -108,6 +108,14 @@ Model form-binding uses explicit allowed columns, field contracts and submission
 
 Uploads need separate input-size, content-type and storage checks. Fexu provides upload inspection and `LocalStorage` integration; storing bytes and linking them to a model is an application responsibility. A browser file input alone does not provide a secure upload handler.
 
+### Staged uploads and replacement failures
+
+In the v0.3 development version, the `Storage` contract rejects a staging deadline by default unless the backend implements expiring uploads. A backend that supports staged media must implement both `save_expiring` and `retain`.
+
+When using the staged media workflow (including `fexu::forms::finish_media`), abort staged uploads if the database transaction rolls back. After a successful database commit, retain the new files before removing previous files. If any retain operation fails, Fexu defers all previous-file removals for that batch. Inspect `CommitReport::retain_failed` and `CommitReport::removal_failed`; the latter also includes deferred removals. The database transaction has already committed, so reconcile its references and retention before running orphan cleanup. The previous bytes remain available, but the new file may still expire.
+
+Local storage remains the supported backend. S3 endpoint configuration is validated, but a remote S3 network client is not yet implemented. Content checks do not replace malware scanning or full image decoding.
+
 ## Next steps
 
 Read [views and URL routing](views-and-urls.md), [models](models.md), [authentication and admin](auth-and-admin.md), and [the complete first-project tutorial](../tutorial/first-project.md).

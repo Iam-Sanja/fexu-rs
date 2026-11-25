@@ -77,8 +77,8 @@ pub trait Storage: Send + Sync {
 
     /// Stores bytes that expire unless [`Storage::retain`] clears the deadline.
     ///
-    /// The default ignores `expires_at` and calls [`Storage::save`]. A backend that
-    /// stages uploads has to keep the deadline and honor `retain`.
+    /// The default rejects a deadline rather than silently storing permanent data.
+    /// A backend that stages uploads must persist the deadline and honor `retain`.
     async fn save_expiring(
         &self,
         owner: Uuid,
@@ -86,7 +86,9 @@ pub trait Storage: Send + Sync {
         bytes: &[u8],
         expires_at: Option<i64>,
     ) -> Result<StoredFile, StorageError> {
-        let _ = expires_at;
+        if expires_at.is_some() {
+            return Err(StorageError::Failed);
+        }
         self.save(owner, original_name, bytes).await
     }
 
@@ -96,5 +98,63 @@ pub trait Storage: Send + Sync {
     async fn retain(&self, owner: Uuid, id: Uuid) -> Result<StoredFile, StorageError> {
         let _ = (owner, id);
         Err(StorageError::Failed)
+    }
+}
+
+#[cfg(test)]
+mod contract_tests {
+    use super::*;
+
+    struct BasicOnly(LocalStorage);
+
+    #[async_trait]
+    impl Storage for BasicOnly {
+        async fn save(
+            &self,
+            owner: Uuid,
+            original_name: &str,
+            bytes: &[u8],
+        ) -> Result<StoredFile, StorageError> {
+            self.0.save(owner, original_name, bytes).await
+        }
+
+        async fn read(&self, owner: Uuid, id: Uuid) -> Result<(StoredFile, Vec<u8>), StorageError> {
+            self.0.read(owner, id).await
+        }
+
+        async fn delete(&self, owner: Uuid, id: Uuid) -> Result<(), StorageError> {
+            self.0.delete(owner, id).await
+        }
+
+        async fn exists(&self, owner: Uuid, id: Uuid) -> Result<bool, StorageError> {
+            self.0.exists(owner, id).await
+        }
+
+        async fn metadata(&self, owner: Uuid, id: Uuid) -> Result<StoredFile, StorageError> {
+            self.0.metadata(owner, id).await
+        }
+    }
+
+    #[tokio::test]
+    async fn basic_backend_rejects_staging_before_writing() {
+        let root = std::env::temp_dir().join(format!("fexu-basic-{}", Uuid::new_v4()));
+        let storage = BasicOnly(LocalStorage::open(&root, 64, &["text/plain"]).unwrap());
+        let owner = Uuid::new_v4();
+        assert_eq!(
+            storage
+                .save_expiring(owner, "note.txt", b"staged", Some(100))
+                .await,
+            Err(StorageError::Failed)
+        );
+        assert!(!root.join(owner.to_string()).exists());
+        let permanent = storage
+            .save_expiring(owner, "note.txt", b"permanent", None)
+            .await
+            .unwrap();
+        assert_eq!(
+            storage.read(owner, permanent.id).await.unwrap().1,
+            b"permanent"
+        );
+        let _ = std::fs::remove_dir_all(root);
     }
 }

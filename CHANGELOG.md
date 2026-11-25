@@ -2,6 +2,8 @@
 
 ## Unreleased — toward v0.3.0
 
+- Harden the backend-neutral media lifecycle: reject unsupported staging deadlines, defer old-file deletion after failed retention, share file validation and metadata construction, and reject unsafe S3 endpoint/bucket configuration. The S3 network client remains planned.
+
 - Reuse a multiplexed Redis connection across cache clones; reconnect on a later operation after failure without automatically replaying commands. Add concurrent connection-count, real restart and TLS trust acceptance tests.
 - Add an opt-in standalone Redis typed cache backend with bounded TTL and value size, namespace generation invalidation, atomic publication fences and redacted connection errors. The local cache remains the default. The initial Redis shared/outage CI and dependency lock verification passed in #268.
 

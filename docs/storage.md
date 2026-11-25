@@ -1,6 +1,6 @@
 # Storage
 
-**Milestone:** v0.12, implemented for local storage. Remote object storage is a checked configuration, not a client. The Cargo version is `0.1.2`. See [storage-remote.md](storage-remote.md).
+**Development:** v0.3.0-dev.1 (published: v0.2.0). Local storage is implemented. Remote object storage is a checked configuration, not yet a client. See [storage-remote.md](storage-remote.md).
 
 ## Responsibility
 
@@ -60,7 +60,7 @@ let (_meta, bytes) = storage.read(user_id, stored.id).await?;
 
 `prepare_media` checks the actor, the field name, the filename, the declared MIME type, the signature, the extension, the file size and the combined request size. It writes nothing. An image field then calls `validate_image`. A PNG is inflated and its scanlines are reconstructed under `ImageLimits`, and the pixel buffer is dropped. A JPEG is still only a marker and dimension check; `ImageValidation::JpegContainer` means the pixels were not decoded. GIF, WebP and PDF are not accepted as image fields. `inspect_image` and `detect_type` remain signature or container checks and are not a decode.
 
-`UploadPlan::stage` stores each new file with `save_expiring` and a lifetime of at most 24 hours. The previous id stays. If a later file in the same batch cannot be written, the ids created by that call are deleted. `StagedMedia::abort` deletes only the staged ids. Call it when form validation fails or the database transaction rolls back. `StagedMedia::commit` runs after that transaction has committed: `retain` clears the expiry, then the previous ids are deleted. `CommitReport::removal_failed` lists previous files that are still readable. `retain_failed` lists staged files whose expiry could not be cleared; `cleanup_orphans` can remove them after the deadline even though a database row points at them. A database rollback does not call the storage backend.
+`UploadPlan::stage` stores each new file with `save_expiring` and a lifetime of at most 24 hours. The previous id stays. If a later file in the same batch cannot be written, the ids created by that call are deleted. `StagedMedia::abort` deletes only the staged ids. Call it when form validation fails or the database transaction rolls back. `StagedMedia::commit` runs after that transaction has committed: `retain` clears the expiry, then the previous ids are deleted. `CommitReport::removal_failed` lists previous files that are still readable. `retain_failed` lists staged files whose expiry could not be cleared; `cleanup_orphans` can remove them after the deadline even though a database row points at them. If any retain fails, all previous-file removals in that commit are deferred and reported in `removal_failed`. Reconcile the database reference and retention before cleanup. This preserves previous bytes but does not roll back the committed database transaction. A database rollback does not call the storage backend.
 
 `MediaRef` is the owner id plus the file id. The client filename is stored only as a sanitized download label and is never a path. A readonly field rejects posted bytes and a clear flag. An empty body counts as no upload. Duplicate field names and duplicate basenames, including names that differ only by case, are `validation.duplicate`.
 
