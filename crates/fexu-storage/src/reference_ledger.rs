@@ -66,6 +66,67 @@ impl ReferenceLedger {
         register_on(&self.db, media).await
     }
 
+    /// List a bounded, deterministic page of enrolled zero-reference IDs.
+    /// This is discovery only: a concurrent attach can invalidate the result.
+    /// Use a durable retirement check before any physical removal.
+    pub async fn orphan_candidates(
+        &self,
+        after: Option<MediaRef>,
+        limit: u32,
+    ) -> Result<Vec<MediaRef>, StorageError> {
+        if !(1..=1000).contains(&limit) {
+            return Err(StorageError::Failed);
+        }
+        let backend = self.db.get_database_backend();
+        let (sql, values) = match (backend, after) {
+            (DatabaseBackend::Sqlite, None) => (
+                "SELECT owner, file_id FROM _fexu_media_references
+                 WHERE refs = 0 ORDER BY owner, file_id LIMIT ?",
+                vec![Value::from(i64::from(limit))],
+            ),
+            (DatabaseBackend::Postgres, None) => (
+                "SELECT owner, file_id FROM _fexu_media_references
+                 WHERE refs = 0 ORDER BY owner, file_id LIMIT $1",
+                vec![Value::from(i64::from(limit))],
+            ),
+            (DatabaseBackend::Sqlite, Some(cursor)) => (
+                "SELECT owner, file_id FROM _fexu_media_references
+                 WHERE refs = 0 AND (owner, file_id) > (?, ?)
+                 ORDER BY owner, file_id LIMIT ?",
+                vec![
+                    Value::from(cursor.owner.to_string()),
+                    Value::from(cursor.id.to_string()),
+                    Value::from(i64::from(limit)),
+                ],
+            ),
+            (DatabaseBackend::Postgres, Some(cursor)) => (
+                "SELECT owner, file_id FROM _fexu_media_references
+                 WHERE refs = 0 AND (owner, file_id) > ($1, $2)
+                 ORDER BY owner, file_id LIMIT $3",
+                vec![
+                    Value::from(cursor.owner.to_string()),
+                    Value::from(cursor.id.to_string()),
+                    Value::from(i64::from(limit)),
+                ],
+            ),
+            _ => return Err(StorageError::Failed),
+        };
+        let rows = self
+            .db
+            .query_all(Statement::from_sql_and_values(backend, sql, values))
+            .await
+            .map_err(|_| StorageError::Failed)?;
+        rows.into_iter()
+            .map(|row| {
+                let owner: String = row.try_get("", "owner").map_err(|_| StorageError::Failed)?;
+                let id: String = row.try_get("", "file_id").map_err(|_| StorageError::Failed)?;
+                let owner = uuid::Uuid::parse_str(&owner).map_err(|_| StorageError::Failed)?;
+                let id = uuid::Uuid::parse_str(&id).map_err(|_| StorageError::Failed)?;
+                Ok(MediaRef { owner, id })
+            })
+            .collect()
+    }
+
     /// Enroll a fresh ID within the same transaction as its first model reference.
     pub async fn register_tx(
         tx: &DatabaseTransaction,
