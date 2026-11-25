@@ -15,6 +15,15 @@ pub struct ReferenceLedger {
     db: DatabaseConnection,
 }
 
+/// Outcome of one explicitly abandoned immutable ID.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AbandonedCleanup {
+    Unknown,
+    Referenced,
+    Removed,
+    Missing,
+}
+
 fn statement(
     db: &impl ConnectionTrait,
     sqlite: &str,
@@ -125,6 +134,31 @@ impl ReferenceLedger {
                 Ok(MediaRef { owner, id })
             })
             .collect()
+    }
+
+    /// Retire an enrolled zero-reference ID and remove its bytes.
+    ///
+    /// Call only for candidates that are permanently abandoned, including
+    /// retained orphans. Every writer must use the ledger and never reuse IDs.
+    /// Unknown or referenced IDs are never deleted. The retirement survives
+    /// failed storage requests and can be retried. Missing bytes are reported
+    /// separately from confirmed removal. No raw bucket scan is performed.
+    pub async fn cleanup_abandoned<S: crate::Storage + ?Sized>(
+        &self,
+        storage: &S,
+        media: MediaRef,
+    ) -> Result<AbandonedCleanup, StorageError> {
+        match self.check(media).await? {
+            ReferenceDecision::Unknown => Ok(AbandonedCleanup::Unknown),
+            ReferenceDecision::Referenced => Ok(AbandonedCleanup::Referenced),
+            ReferenceDecision::Unreferenced(()) => {
+                match storage.delete(media.owner, media.id).await {
+                    Ok(()) => Ok(AbandonedCleanup::Removed),
+                    Err(StorageError::NotFound) => Ok(AbandonedCleanup::Missing),
+                    Err(error) => Err(error),
+                }
+            }
+        }
     }
 
     /// Enroll a fresh ID within the same transaction as its first model reference.
