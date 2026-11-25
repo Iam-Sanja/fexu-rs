@@ -94,7 +94,18 @@ def main() -> int:
     p.add_argument("db", nargs="?")
     p.add_argument("--database-url", dest="database_url")
 
+    sub.add_parser("check-session-arguments")
+
     args = parser.parse_args()
+    if args.cmd == "check-session-arguments":
+        for token in ("normal_token", "-leading", "--leading", "--help", "-"):
+            parsed = parser.parse_args(
+                ["session-check", "--", "http://127.0.0.1:12345", token, "fixture@example.test"]
+            )
+            if parsed.session != token or parsed.email != "fixture@example.test":
+                raise SystemExit("session argument parsing changed the supplied values")
+        print("PASS: session argument parsing preserves leading hyphens")
+        return 0
     if args.cmd == "pick-port":
         import socket
 
