@@ -259,6 +259,14 @@ impl S3Storage {
     }
 }
 
+#[async_trait]
+impl crate::ExpiryCleanup for S3Storage {
+    async fn cleanup_expired(&self, media: crate::MediaRef) -> Result<bool, StorageError> {
+        self.cleanup_unreferenced_expired(media.owner, media.id)
+            .await
+    }
+}
+
 fn tombstone(owner: Uuid, id: Uuid) -> Vec<u8> {
     let mut body = Vec::with_capacity(36);
     body.extend_from_slice(DELETED_MAGIC);
