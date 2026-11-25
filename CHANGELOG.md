@@ -2,6 +2,8 @@
 
 ## Unreleased — toward v0.3.0
 
+- Add an explicit reference-aware staged media commit with transactional model callback, fresh-ID enrollment and pre-commit retention. Old files are never directly deleted; ambiguous failures preserve candidates for recovery.
+
 - Add an opt-in SQLite/PostgreSQL media reference ledger with transactional reference counts and irreversible retirement before remote cleanup; model integration and CI acceptance remain open.
 
 - Harden the published fullstack upgrade fixtures against session tokens beginning with hyphens. Preserve the exact original cookie using the argument separator and exercise deterministic parser regression cases before the SQLite and PostgreSQL upgrade drills.
