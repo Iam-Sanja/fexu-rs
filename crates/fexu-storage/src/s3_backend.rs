@@ -478,14 +478,19 @@ mod tests {
             .unwrap();
         let (_, _, stale) = first.load(owner, staged.id).await.unwrap();
         let (_, _, version) = second.load(owner, staged.id).await.unwrap();
-        second.mark_expired(owner, staged.id, version).await.unwrap();
+        second
+            .mark_expired(owner, staged.id, version)
+            .await
+            .unwrap();
 
         // Stop after the marker, before physical deletion. A stale write
         // cannot replace it and a fresh client can finish reconciliation.
         let mut retained = staged.clone();
         retained.expires_at = None;
         assert_eq!(
-            first.put(&retained, b"discard", PutMode::Update(stale)).await,
+            first
+                .put(&retained, b"discard", PutMode::Update(stale))
+                .await,
             Err(StorageError::Failed)
         );
         assert_eq!(
