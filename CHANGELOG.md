@@ -2,9 +2,11 @@
 
 ## Unreleased — toward v0.3.0
 
-- Add an optional S3 storage client with atomic single-object metadata and bytes, conditional creation/retention, bounded reads, SHA-256 verification and HTTPS-only direct transport. Isolated MinIO CI and dependency verification are pending; remote quotas, cleanup and restore are follow-up work.
+- Add isolated S3 retain/delete race and persistent-container restart regression coverage; new tests require CI verification. Automatic remote cleanup and backup/restore remain separate.
 
-- Harden the backend-neutral media lifecycle: reject unsupported staging deadlines, defer old-file deletion after failed retention, share file validation and metadata construction, and reject unsafe S3 endpoint/bucket configuration. The S3 network client remains planned.
+- Add an optional S3 storage client with atomic single-object metadata and bytes, conditional creation/retention, bounded reads, SHA-256 verification and HTTPS-only direct transport. PR #271 passed isolated TLS MinIO CI and dependency verification; remote quotas, cleanup and restore are follow-up work.
+
+- Harden the backend-neutral media lifecycle: reject unsupported staging deadlines, defer old-file deletion after failed retention, share file validation and metadata construction, and reject unsafe S3 endpoint/bucket configuration. The optional S3 network client was added in #271.
 
 - Reuse a multiplexed Redis connection across cache clones; reconnect on a later operation after failure without automatically replaying commands. Add concurrent connection-count, real restart and TLS trust acceptance tests.
 - Add an opt-in standalone Redis typed cache backend with bounded TTL and value size, namespace generation invalidation, atomic publication fences and redacted connection errors. The local cache remains the default. The initial Redis shared/outage CI and dependency lock verification passed in #268.
