@@ -116,7 +116,7 @@ mod tests {
     struct Backend {
         held: Arc<AtomicBool>,
         calls: AtomicUsize,
-        result: Result<bool, StorageError>,
+        result: Result<bool, ()>,
         expected: MediaRef,
     }
 
@@ -128,7 +128,7 @@ mod tests {
             tokio::task::yield_now().await;
             assert!(self.held.load(Ordering::SeqCst));
             self.calls.fetch_add(1, Ordering::SeqCst);
-            self.result.clone()
+            self.result.map_err(|_| StorageError::Failed)
         }
     }
 
@@ -178,7 +178,7 @@ mod tests {
             Ok(ReconciliationOutcome::NotEligible)
         );
         assert!(!held.load(Ordering::SeqCst));
-        backend.result = Err(StorageError::Failed);
+        backend.result = Err(());
         assert_eq!(
             reconcile_expired(&check, &backend, media).await,
             Err(StorageError::Failed)
