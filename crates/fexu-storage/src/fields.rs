@@ -1597,7 +1597,10 @@ mod tests {
         );
         assert_eq!(storage.read(owner, old.id).await.unwrap().1, b"shared");
         assert_eq!(storage.read(owner, new.id).await.unwrap().1, b"replacement");
-        assert_eq!(storage.metadata(owner, new.id).await.unwrap().expires_at, None);
+        assert_eq!(
+            storage.metadata(owner, new.id).await.unwrap().expires_at,
+            None
+        );
         let rows = db
             .query_all(Statement::from_string(
                 backend,
