@@ -1496,7 +1496,10 @@ mod tests {
             tx.execute(Statement::from_sql_and_values(
                 backend,
                 sql,
-                [Value::from(slot.to_owned()), Value::from(old.id.to_string())],
+                [
+                    Value::from(slot.to_owned()),
+                    Value::from(old.id.to_string()),
+                ],
             ))
             .await
             .unwrap();
@@ -1545,7 +1548,10 @@ mod tests {
             ledger.check(rejected.candidates[0]).await.unwrap(),
             ReferenceDecision::Unknown
         );
-        assert!(storage.exists(owner, rejected.candidates[0].id).await.unwrap());
+        assert!(storage
+            .exists(owner, rejected.candidates[0].id)
+            .await
+            .unwrap());
 
         let staged = stage().stage(&storage, now, 600).await.unwrap();
         let (_, report) = staged
@@ -1581,8 +1587,14 @@ mod tests {
             .unwrap();
         let new = report.bound[0].media.unwrap();
         assert_eq!(report.detached, vec![old]);
-        assert_eq!(ledger.check(old).await.unwrap(), ReferenceDecision::Referenced);
-        assert_eq!(ledger.check(new).await.unwrap(), ReferenceDecision::Referenced);
+        assert_eq!(
+            ledger.check(old).await.unwrap(),
+            ReferenceDecision::Referenced
+        );
+        assert_eq!(
+            ledger.check(new).await.unwrap(),
+            ReferenceDecision::Referenced
+        );
         assert_eq!(storage.read(owner, old.id).await.unwrap().1, b"shared");
         assert_eq!(storage.read(owner, new.id).await.unwrap().1, b"replacement");
         assert_eq!(storage.metadata(owner, new.id).await.unwrap().expires_at, None);
@@ -1594,8 +1606,14 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(rows.len(), 2);
-        assert_eq!(rows[0].try_get::<String>("", "file_id").unwrap(), new.id.to_string());
-        assert_eq!(rows[1].try_get::<String>("", "file_id").unwrap(), old.id.to_string());
+        assert_eq!(
+            rows[0].try_get::<String>("", "file_id").unwrap(),
+            new.id.to_string()
+        );
+        assert_eq!(
+            rows[1].try_get::<String>("", "file_id").unwrap(),
+            old.id.to_string()
+        );
         std::fs::remove_dir_all(directory).unwrap();
     }
 
