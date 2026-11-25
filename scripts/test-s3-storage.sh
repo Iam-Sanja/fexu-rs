@@ -39,4 +39,18 @@ export AWS_ACCESS_KEY_ID="$FEXU_S3_ACCESS_KEY" AWS_SECRET_ACCESS_KEY="$FEXU_S3_S
 export AWS_DEFAULT_REGION=us-east-1 AWS_CA_BUNDLE="$work/ca.crt" AWS_EC2_METADATA_DISABLED=true
 aws --endpoint-url "$FEXU_TEST_S3_ENDPOINT" s3api create-bucket --bucket fexu-test-media >/dev/null
 cargo test --locked -p fexu-storage --features s3-storage --lib
-cargo test --locked -p fexu-storage --features s3-storage --test s3_contract -- --ignored --test-threads=1
+cargo test --locked -p fexu-storage --features s3-storage --test s3_contract -- --ignored --test-threads=1 --skip s3_restart_contract
+
+# Preserve the same disposable container and its data across a real restart.
+export FEXU_TEST_S3_RESTART_STATE="$work/restart-state"
+FEXU_TEST_S3_RESTART_PHASE=seed cargo test --locked -p fexu-storage --features s3-storage --test s3_contract -- s3_restart_contract --ignored --exact
+docker restart "$container" >/dev/null
+port="$(docker port "$container" 9000/tcp | sed -n 's/^127\.0\.0\.1://p')"
+test -n "$port"
+export FEXU_TEST_S3_ENDPOINT="https://127.0.0.1:$port"
+for _ in $(seq 1 60); do
+  if curl --silent --fail --cacert "$work/ca.crt" "$FEXU_TEST_S3_ENDPOINT/minio/health/ready" >/dev/null; then break; fi
+  sleep 1
+done
+curl --silent --fail --cacert "$work/ca.crt" "$FEXU_TEST_S3_ENDPOINT/minio/health/ready" >/dev/null
+FEXU_TEST_S3_RESTART_PHASE=verify cargo test --locked -p fexu-storage --features s3-storage --test s3_contract -- s3_restart_contract --ignored --exact
