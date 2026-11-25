@@ -263,3 +263,55 @@ async fn s3_expiry_cleanup_contract() {
         first.delete(owner, file.id).await.unwrap();
     }
 }
+
+#[tokio::test]
+#[ignore = "requires isolated TLS S3 fixture"]
+async fn s3_reference_reconciliation_contract() {
+    use fexu_storage::{
+        reconcile_expired, MediaRef, ReconciliationOutcome, ReferenceCheck, ReferenceDecision,
+    };
+
+    struct Check(bool);
+
+    #[async_trait::async_trait]
+    impl ReferenceCheck for Check {
+        type Guard = ();
+
+        async fn check(
+            &self,
+            _media: MediaRef,
+        ) -> Result<ReferenceDecision<Self::Guard>, StorageError> {
+            // This isolated fixture has no database or competing reference writer.
+            if self.0 {
+                Ok(ReferenceDecision::Referenced)
+            } else {
+                Ok(ReferenceDecision::Unreferenced(()))
+            }
+        }
+    }
+
+    let storage = fixture();
+    let owner = Uuid::new_v4();
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs() as i64;
+    let file = storage
+        .save_expiring(owner, "reference.txt", b"reference", Some(now - 1))
+        .await
+        .unwrap();
+    let media = MediaRef { owner, id: file.id };
+    assert_eq!(
+        reconcile_expired(&Check(true), &storage, media).await,
+        Ok(ReconciliationOutcome::Referenced)
+    );
+    assert_eq!(storage.metadata(owner, file.id).await.unwrap(), file);
+    assert_eq!(
+        reconcile_expired(&Check(false), &storage, media).await,
+        Ok(ReconciliationOutcome::Removed)
+    );
+    assert_eq!(
+        storage.metadata(owner, file.id).await,
+        Err(StorageError::NotFound)
+    );
+}
