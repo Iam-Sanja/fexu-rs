@@ -63,17 +63,12 @@ impl ReferenceLedger {
     /// Enroll a newly allocated immutable ID before its first reference.
     /// An existing or retired ID must never be registered again.
     pub async fn register(&self, media: MediaRef) -> Result<(), StorageError> {
-        let query = statement(
-            &self.db,
-            "INSERT INTO _fexu_media_references VALUES (?, ?, 0, 0)",
-            "INSERT INTO _fexu_media_references VALUES ($1, $2, 0, 0)",
-            media,
-        )?;
-        self.db
-            .execute(query)
-            .await
-            .map_err(|_| StorageError::Failed)?;
-        Ok(())
+        register_on(&self.db, media).await
+    }
+
+    /// Enroll a fresh ID within the same transaction as its first model reference.
+    pub async fn register_tx(tx: &DatabaseTransaction, media: MediaRef) -> Result<(), StorageError> {
+        register_on(tx, media).await
     }
 
     /// Call in the same transaction as the corresponding model reference
@@ -103,6 +98,17 @@ impl ReferenceLedger {
         )?;
         change_one(tx, query).await
     }
+}
+
+async fn register_on(db: &impl ConnectionTrait, media: MediaRef) -> Result<(), StorageError> {
+    let query = statement(
+        db,
+        "INSERT INTO _fexu_media_references VALUES (?, ?, 0, 0)",
+        "INSERT INTO _fexu_media_references VALUES ($1, $2, 0, 0)",
+        media,
+    )?;
+    db.execute(query).await.map_err(|_| StorageError::Failed)?;
+    Ok(())
 }
 
 async fn change_one(tx: &DatabaseTransaction, query: Statement) -> Result<(), StorageError> {
