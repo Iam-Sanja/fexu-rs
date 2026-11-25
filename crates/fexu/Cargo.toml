@@ -40,3 +40,4 @@ tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 default = []
 admin-ui = ["fexu-admin/embedded-admin"]
 redis-cache = ["fexu-cache/redis-cache"]
+s3-storage = ["fexu-storage/s3-storage"]

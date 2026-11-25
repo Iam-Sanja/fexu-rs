@@ -1,6 +1,6 @@
 # Storage
 
-**Development:** v0.3.0-dev.1 (published: v0.2.0). Local storage is implemented. Remote object storage is a checked configuration, not yet a client. See [storage-remote.md](storage-remote.md).
+**Development:** v0.3.0-dev.1 (published: v0.2.0). Local storage is implemented. Remote object storage is an optional development backend. See [storage-remote.md](storage-remote.md).
 
 ## Responsibility
 
@@ -66,7 +66,7 @@ let (_meta, bytes) = storage.read(user_id, stored.id).await?;
 
 ## Limitations
 
-S3 has no network client. See [storage-remote.md](storage-remote.md). Malware scanning is missing. Content recognition does not replace a virus scanner. Header checks do not decode image pixels. JPEG image fields are not pixel-decoded. PNG decoding accepts 8-bit gray, RGB and RGBA without interlacing and rejects other PNG forms. A mismatched `sha256` or length makes `read` return `Failed` and leaves the file on disk. Metadata is Sidecar JSON, not a database table. `StoredFile` accepts older sidecars that omit `created_at`, `expires_at` and `sha256`.
+The optional S3 network backend is explicit and does not replace the local HTTP routes or generated configuration; remote quota, cleanup and restore acceptance remain open. See [storage-remote.md](storage-remote.md). Malware scanning is missing. Content recognition does not replace a virus scanner. Header checks do not decode image pixels. JPEG image fields are not pixel-decoded. PNG decoding accepts 8-bit gray, RGB and RGBA without interlacing and rejects other PNG forms. A mismatched `sha256` or length makes `read` return `Failed` and leaves the file on disk. Metadata is Sidecar JSON, not a database table. `StoredFile` accepts older sidecars that omit `created_at`, `expires_at` and `sha256`.
 
 Account close and admin record deletion do not call `purge_owner` or `delete`. Auth does not depend on this crate. `FieldSpec::image_limits` overrides the policy for one image field. `fexu_forms::finish_media` is the app helper for stage, database save, abort and commit, in that order. It does not make the database and the storage backend one transaction.
 

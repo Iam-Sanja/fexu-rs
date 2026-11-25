@@ -1,4 +1,4 @@
-//! Local file storage. Public delivery is disabled by default.
+//! Local and optional S3 file storage. Public delivery is disabled by default.
 //!
 //! [`s3`] validates remote-storage configuration without opening a connection.
 //! Malware scanning is not included. Content validation does not replace antivirus scanning
@@ -10,7 +10,12 @@ mod http;
 mod local;
 mod png;
 mod s3;
+#[cfg(feature = "s3-storage")]
+mod s3_backend;
 mod signed;
+
+#[cfg(feature = "s3-storage")]
+pub use s3_backend::{S3Limits, S3Storage};
 
 pub use access::{OwnerAccess, StorageAccess, StorageAction};
 pub use fields::{

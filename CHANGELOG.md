@@ -2,6 +2,8 @@
 
 ## Unreleased — toward v0.3.0
 
+- Add an optional S3 storage client with atomic single-object metadata and bytes, conditional creation/retention, bounded reads, SHA-256 verification and HTTPS-only direct transport. Isolated MinIO CI and dependency verification are pending; remote quotas, cleanup and restore are follow-up work.
+
 - Harden the backend-neutral media lifecycle: reject unsupported staging deadlines, defer old-file deletion after failed retention, share file validation and metadata construction, and reject unsafe S3 endpoint/bucket configuration. The S3 network client remains planned.
 
 - Reuse a multiplexed Redis connection across cache clones; reconnect on a later operation after failure without automatically replaying commands. Add concurrent connection-count, real restart and TLS trust acceptance tests.
