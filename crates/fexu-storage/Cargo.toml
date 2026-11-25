@@ -16,6 +16,7 @@ async-trait.workspace = true
 axum.workspace = true
 fexu-auth.workspace = true
 fexu-core.workspace = true
+fexu-db.workspace = true
 hmac = "0.13.0"
 miniz_oxide = "0.8"
 serde.workspace = true
@@ -36,5 +37,4 @@ default = []
 s3-storage = ["dep:object_store", "dep:reqwest", "dep:rustls", "dep:futures-util"]
 
 [dev-dependencies]
-fexu-db.workspace = true
 tower = { version = "0.5", features = ["util"] }

@@ -2,6 +2,8 @@
 
 ## Unreleased — toward v0.3.0
 
+- Add an opt-in SQLite/PostgreSQL media reference ledger with transactional reference counts and irreversible retirement before remote cleanup; model integration and CI acceptance remain open.
+
 - Harden the published fullstack upgrade fixtures against session tokens beginning with hyphens. Preserve the exact original cookie using the argument separator and exercise deterministic parser regression cases before the SQLite and PostgreSQL upgrade drills.
 
 - Add explicit reference-aware expiry reconciliation with caller-provided exclusion guards and fail-closed reference decisions; no automatic scan or default database lock adapter. New tests pending CI.
