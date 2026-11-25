@@ -2,7 +2,9 @@
 
 ## Unreleased — toward v0.3.0
 
-- Add deterministic S3 stale ETag and interrupted tombstone recovery tests against TLS MinIO; pending CI. No automatic sweep or new public API.
+- Add explicit reference-aware expiry reconciliation with caller-provided exclusion guards and fail-closed reference decisions; no automatic scan or default database lock adapter. New tests pending CI.
+
+- Add deterministic S3 stale ETag and interrupted tombstone recovery tests against TLS MinIO; #274 passed all 14 checks. No automatic sweep or new public API.
 
 - Add targeted S3 expiry reconciliation using conditional tombstones and retryable physical removal; callers must independently exclude database references. PR #273 passed all 14 checks.
 
