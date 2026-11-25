@@ -136,3 +136,70 @@ async fn s3_rejects_untrusted_tls_and_wrong_credentials() {
         Err(StorageError::Failed)
     );
 }
+
+#[tokio::test]
+#[ignore = "requires isolated TLS S3 fixture"]
+async fn s3_retain_delete_race() {
+    let first = fixture();
+    let second = fixture();
+    let owner = Uuid::new_v4();
+    let deadline = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs() as i64
+        + 300;
+    for _ in 0..8 {
+        let staged = first
+            .save_expiring(owner, "race.txt", b"race", Some(deadline))
+            .await
+            .unwrap();
+        let (retained, deleted) = tokio::join!(
+            first.retain(owner, staged.id),
+            second.delete(owner, staged.id)
+        );
+        deleted.unwrap();
+        match retained {
+            Ok(meta) => assert_eq!(meta.expires_at, None),
+            Err(StorageError::NotFound | StorageError::Failed) => {}
+            Err(error) => panic!("unexpected retain error: {error:?}"),
+        }
+        assert!(!first.exists(owner, staged.id).await.unwrap());
+        assert_eq!(
+            second.retain(owner, staged.id).await,
+            Err(StorageError::NotFound)
+        );
+    }
+}
+
+#[tokio::test]
+#[ignore = "requires isolated TLS S3 fixture and restart phase"]
+async fn s3_restart_contract() {
+    let storage = fixture();
+    let state =
+        std::env::var_os("FEXU_TEST_S3_RESTART_STATE").expect("isolated restart state path");
+    let phase = std::env::var("FEXU_TEST_S3_RESTART_PHASE").unwrap();
+    match phase.as_str() {
+        "seed" => {
+            let owner = Uuid::new_v4();
+            let file = storage
+                .save(owner, "restart.txt", b"persistent bytes")
+                .await
+                .unwrap();
+            std::fs::write(state, format!("{} {}", owner, file.id)).unwrap();
+        }
+        "verify" => {
+            let saved = std::fs::read_to_string(state).unwrap();
+            let (owner, id) = saved.split_once(' ').unwrap();
+            let owner = Uuid::parse_str(owner).unwrap();
+            let id = Uuid::parse_str(id).unwrap();
+            let (meta, bytes) = storage.read(owner, id).await.unwrap();
+            assert_eq!(meta.owner, owner);
+            assert_eq!(meta.id, id);
+            assert_eq!(meta.original_name, "restart.txt");
+            assert_eq!(bytes, b"persistent bytes");
+            storage.delete(owner, id).await.unwrap();
+            assert!(!storage.exists(owner, id).await.unwrap());
+        }
+        _ => panic!("invalid restart phase"),
+    }
+}
