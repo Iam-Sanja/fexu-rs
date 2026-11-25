@@ -67,7 +67,10 @@ impl ReferenceLedger {
     }
 
     /// Enroll a fresh ID within the same transaction as its first model reference.
-    pub async fn register_tx(tx: &DatabaseTransaction, media: MediaRef) -> Result<(), StorageError> {
+    pub async fn register_tx(
+        tx: &DatabaseTransaction,
+        media: MediaRef,
+    ) -> Result<(), StorageError> {
         register_on(tx, media).await
     }
 
