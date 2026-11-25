@@ -9,6 +9,7 @@ mod fields;
 mod http;
 mod local;
 mod png;
+mod reconciliation;
 mod s3;
 #[cfg(feature = "s3-storage")]
 mod s3_backend;
@@ -32,6 +33,9 @@ pub use local::{
     ImageInfo, ImageLimits, LocalStorage, StorageError, StoredFile,
 };
 pub use png::{decode_png, validate_image, ImageValidation};
+pub use reconciliation::{
+    reconcile_expired, ExpiryCleanup, ReferenceCheck, ReferenceDecision, ReconciliationOutcome,
+};
 pub use s3::{
     credentials_from_env, prepare as prepare_s3, S3Credentials, S3Plan, ACCESS_KEY_ENV,
     SECRET_KEY_ENV,
