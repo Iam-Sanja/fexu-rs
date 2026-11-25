@@ -94,8 +94,8 @@ impl S3Storage {
             .timeout(limits.timeout)
             .connect_timeout(limits.timeout);
         if let Some(pem) = ca_pem {
-            let certs = reqwest::Certificate::from_pem_bundle(pem)
-                .map_err(|_| StorageError::Failed)?;
+            let certs =
+                reqwest::Certificate::from_pem_bundle(pem).map_err(|_| StorageError::Failed)?;
             if certs.is_empty() {
                 return Err(StorageError::Failed);
             }
@@ -134,12 +134,7 @@ impl S3Storage {
         Path::from(format!("fexu-media/v1/{owner}/{id}"))
     }
 
-    async fn put(
-        &self,
-        meta: &StoredFile,
-        bytes: &[u8],
-        mode: PutMode,
-    ) -> Result<(), StorageError> {
+    async fn put(&self, meta: &StoredFile, bytes: &[u8], mode: PutMode) -> Result<(), StorageError> {
         let payload = encode(meta, bytes)?;
         self.store
             .put_opts(&Self::path(meta.owner, meta.id), payload.into(), mode.into())

@@ -102,6 +102,9 @@ jobs:
       - name: Check optional Redis feature (all targets)
         run: cargo check --locked -p fexu-cache --features redis-cache --all-targets
 
+      - name: Check optional S3 feature (all targets)
+        run: cargo check --locked -p fexu-storage --features s3-storage --all-targets
+
       - name: Run tests
         run: cargo test --workspace
 

@@ -39,4 +39,4 @@ export AWS_ACCESS_KEY_ID="$FEXU_S3_ACCESS_KEY" AWS_SECRET_ACCESS_KEY="$FEXU_S3_S
 export AWS_DEFAULT_REGION=us-east-1 AWS_CA_BUNDLE="$work/ca.crt" AWS_EC2_METADATA_DISABLED=true
 aws --endpoint-url "$FEXU_TEST_S3_ENDPOINT" s3api create-bucket --bucket fexu-test-media >/dev/null
 cargo test --locked -p fexu-storage --features s3-storage --lib
-cargo test --locked -p fexu-storage --features s3-storage --test s3_contract s3_storage_contract -- --ignored --exact
+cargo test --locked -p fexu-storage --features s3-storage --test s3_contract -- --ignored --test-threads=1
