@@ -78,10 +78,7 @@ impl ReferenceLedger {
 
     /// Call in the same transaction as the corresponding model reference
     /// insertion. Roll back the whole transaction on any error.
-    pub async fn attach(
-        tx: &DatabaseTransaction,
-        media: MediaRef,
-    ) -> Result<(), StorageError> {
+    pub async fn attach(tx: &DatabaseTransaction, media: MediaRef) -> Result<(), StorageError> {
         let query = statement(
             tx,
             "UPDATE _fexu_media_references SET refs = refs + 1
@@ -95,10 +92,7 @@ impl ReferenceLedger {
 
     /// Call in the same transaction as the corresponding model reference
     /// removal. Underflow and unknown or retired IDs are rejected.
-    pub async fn detach(
-        tx: &DatabaseTransaction,
-        media: MediaRef,
-    ) -> Result<(), StorageError> {
+    pub async fn detach(tx: &DatabaseTransaction, media: MediaRef) -> Result<(), StorageError> {
         let query = statement(
             tx,
             "UPDATE _fexu_media_references SET refs = refs - 1
@@ -111,10 +105,7 @@ impl ReferenceLedger {
     }
 }
 
-async fn change_one(
-    tx: &DatabaseTransaction,
-    query: Statement,
-) -> Result<(), StorageError> {
+async fn change_one(tx: &DatabaseTransaction, query: Statement) -> Result<(), StorageError> {
     let changed = tx.execute(query).await.map_err(|_| StorageError::Failed)?;
     if changed.rows_affected() != 1 {
         return Err(StorageError::Failed);
@@ -146,12 +137,17 @@ impl ReferenceCheck for ReferenceLedger {
             "SELECT refs, retired FROM _fexu_media_references WHERE owner = $1 AND file_id = $2",
             media,
         )?;
-        let row = tx.query_one(query).await.map_err(|_| StorageError::Failed)?;
+        let row = tx
+            .query_one(query)
+            .await
+            .map_err(|_| StorageError::Failed)?;
         let decision = match row {
             None => ReferenceDecision::Unknown,
             Some(row) => {
                 let refs: i64 = row.try_get("", "refs").map_err(|_| StorageError::Failed)?;
-                let retired: i32 = row.try_get("", "retired").map_err(|_| StorageError::Failed)?;
+                let retired: i32 = row
+                    .try_get("", "retired")
+                    .map_err(|_| StorageError::Failed)?;
                 match (refs, retired) {
                     (0, 1) => ReferenceDecision::Unreferenced(()),
                     (1..=i64::MAX, 0) => ReferenceDecision::Referenced,
@@ -178,19 +174,28 @@ mod tests {
             owner: Uuid::new_v4(),
             id: Uuid::new_v4(),
         };
-        assert_eq!(other.check(media).await.unwrap(), ReferenceDecision::Unknown);
+        assert_eq!(
+            other.check(media).await.unwrap(),
+            ReferenceDecision::Unknown
+        );
         ledger.register(media).await.unwrap();
         assert!(ledger.register(media).await.is_err());
 
         let tx = first.begin().await.unwrap();
         ReferenceLedger::attach(&tx, media).await.unwrap();
         tx.commit().await.unwrap();
-        assert_eq!(other.check(media).await.unwrap(), ReferenceDecision::Referenced);
+        assert_eq!(
+            other.check(media).await.unwrap(),
+            ReferenceDecision::Referenced
+        );
 
         let tx = first.begin().await.unwrap();
         ReferenceLedger::detach(&tx, media).await.unwrap();
         tx.rollback().await.unwrap();
-        assert_eq!(other.check(media).await.unwrap(), ReferenceDecision::Referenced);
+        assert_eq!(
+            other.check(media).await.unwrap(),
+            ReferenceDecision::Referenced
+        );
 
         let tx = first.begin().await.unwrap();
         ReferenceLedger::detach(&tx, media).await.unwrap();
@@ -236,7 +241,10 @@ mod tests {
     #[tokio::test]
     async fn sqlite_reference_ledger_contract() {
         let path = std::env::temp_dir().join(format!("fexu-ledger-{}.sqlite3", Uuid::new_v4()));
-        let url = format!("sqlite://{}?mode=rwc", path.to_string_lossy().replace('\\', "/"));
+        let url = format!(
+            "sqlite://{}?mode=rwc",
+            path.to_string_lossy().replace('\\', "/")
+        );
         let first = fexu_db::connect(&url).await.unwrap();
         let second = fexu_db::connect(&url).await.unwrap();
         contract(&first, &second).await;
