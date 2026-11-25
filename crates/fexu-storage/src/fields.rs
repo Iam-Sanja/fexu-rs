@@ -123,6 +123,7 @@ pub struct StagedMedia {
     created: Vec<StagedFile>,
     removals: Vec<MediaRef>,
     kept: Vec<BoundMedia>,
+    previous: Vec<BoundMedia>,
 }
 
 #[derive(Debug)]
@@ -195,7 +196,22 @@ impl UploadPlan {
         let mut created = Vec::new();
         let mut removals = Vec::new();
         let mut kept = Vec::new();
+        let mut previous = Vec::new();
         for decision in self.decisions {
+            previous.push(match &decision {
+                Decision::Absent { field } => BoundMedia {
+                    field: field.clone(),
+                    media: None,
+                },
+                Decision::Keep { field, media } | Decision::Remove { field, media } => BoundMedia {
+                    field: field.clone(),
+                    media: Some(*media),
+                },
+                Decision::Stage { field, retire, .. } => BoundMedia {
+                    field: field.clone(),
+                    media: *retire,
+                },
+            });
             match decision {
                 Decision::Absent { field } => kept.push(BoundMedia { field, media: None }),
                 Decision::Keep { field, media } => kept.push(BoundMedia {
@@ -244,11 +260,136 @@ impl UploadPlan {
             created,
             removals,
             kept,
+            previous,
         })
     }
 }
 
+/// Result of a reference-aware model save. Detached IDs are candidates for
+/// later reconciliation, not authorization to delete.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReferencedCommitReport {
+    pub bound: Vec<BoundMedia>,
+    pub detached: Vec<MediaRef>,
+}
+
+#[derive(Debug)]
+pub enum ReferencedSaveFailure<E> {
+    Begin,
+    Ledger(StorageError),
+    Model(E),
+    Retain(StorageError),
+    /// The database commit may have succeeded despite the error.
+    CommitUnknown,
+}
+
+/// All newly staged IDs are reported. Never delete these solely because the
+/// operation failed: a failed commit can have an ambiguous outcome.
+#[derive(Debug)]
+pub struct ReferencedSaveError<E> {
+    pub failure: ReferencedSaveFailure<E>,
+    pub candidates: Vec<MediaRef>,
+}
+
 impl StagedMedia {
+    /// Persist a model change and its ledger updates in one transaction.
+    ///
+    /// The supplied save operation must validate ownership and lock or
+    /// compare the actual current model fields against `previous` before
+    /// writing `bound`. It must use only the supplied transaction, must not
+    /// commit it, and must fail if the expected values no longer match.
+    /// Every other reference writer must follow the same ledger protocol.
+    ///
+    /// Newly staged files are retained before database commit. On any failure,
+    /// bytes are left untouched for explicit recovery (including permanent
+    /// orphans if retain succeeded). Old files are never deleted here.
+    pub async fn commit_referenced<S, T, E, F>(
+        self,
+        storage: &S,
+        db: &fexu_db::driver::DatabaseConnection,
+        save: F,
+    ) -> Result<(T, ReferencedCommitReport), ReferencedSaveError<E>>
+    where
+        S: Storage + ?Sized,
+        F: AsyncFnOnce(
+            &fexu_db::driver::DatabaseTransaction,
+            &[BoundMedia],
+            &[BoundMedia],
+        ) -> Result<T, E>,
+    {
+        use crate::ReferenceLedger;
+        use fexu_db::driver::TransactionTrait;
+
+        let candidates: Vec<_> = self
+            .created
+            .iter()
+            .map(|staged| MediaRef {
+                owner: self.owner,
+                id: staged.file.id,
+            })
+            .collect();
+        let error = |failure| ReferencedSaveError {
+            failure,
+            candidates: candidates.clone(),
+        };
+        let mut bound = self.kept;
+        for (staged, media) in self.created.iter().zip(&candidates) {
+            bound.push(BoundMedia {
+                field: staged.field.clone(),
+                media: Some(*media),
+            });
+        }
+        let tx = db
+            .begin()
+            .await
+            .map_err(|_| error(ReferencedSaveFailure::Begin))?;
+        let result = async {
+            // Acquire the writer lock before reading model state on SQLite.
+            for media in &candidates {
+                ReferenceLedger::register_tx(&tx, *media)
+                    .await
+                    .map_err(ReferencedSaveFailure::Ledger)?;
+                ReferenceLedger::attach(&tx, *media)
+                    .await
+                    .map_err(ReferencedSaveFailure::Ledger)?;
+            }
+            let value = save(&tx, &self.previous, &bound)
+                .await
+                .map_err(ReferencedSaveFailure::Model)?;
+            for media in &self.removals {
+                ReferenceLedger::detach(&tx, *media)
+                    .await
+                    .map_err(ReferencedSaveFailure::Ledger)?;
+            }
+            for media in &candidates {
+                storage
+                    .retain(media.owner, media.id)
+                    .await
+                    .map_err(ReferencedSaveFailure::Retain)?;
+            }
+            Ok(value)
+        }
+        .await;
+        match result {
+            Ok(value) => {
+                tx.commit()
+                    .await
+                    .map_err(|_| error(ReferencedSaveFailure::CommitUnknown))?;
+                Ok((
+                    value,
+                    ReferencedCommitReport {
+                        bound,
+                        detached: self.removals,
+                    },
+                ))
+            }
+            Err(failure) => {
+                let _ = tx.rollback().await;
+                Err(error(failure))
+            }
+        }
+    }
+
     pub fn created(&self) -> &[StagedFile] {
         &self.created
     }
@@ -1323,6 +1464,178 @@ mod tests {
             .await
             .unwrap();
         let _ = std::fs::remove_dir_all(directory);
+    }
+
+    async fn referenced_model_roundtrip(db: &fexu_db::driver::DatabaseConnection) {
+        use crate::{ReferenceCheck, ReferenceDecision, ReferenceLedger, ReferencedSaveFailure};
+        use fexu_db::driver::{DatabaseBackend, Statement, Value};
+        use std::time::{SystemTime, UNIX_EPOCH};
+
+        let directory = root();
+        let storage = LocalStorage::open(&directory, 64_000, &["text/plain"]).unwrap();
+        let ledger = ReferenceLedger::new(db.clone());
+        ledger.initialize().await.unwrap();
+        let backend = db.get_database_backend();
+        db.execute_unprepared(
+            "CREATE TABLE media_model (slot TEXT PRIMARY KEY, file_id TEXT NOT NULL)",
+        )
+        .await
+        .unwrap();
+        let owner = Uuid::new_v4();
+        let old = storage.save(owner, "old.txt", b"shared").await.unwrap();
+        let old = MediaRef { owner, id: old.id };
+        ledger.register(old).await.unwrap();
+        let tx = db.begin().await.unwrap();
+        for slot in ["first", "second"] {
+            ReferenceLedger::attach(&tx, old).await.unwrap();
+            let sql = match backend {
+                DatabaseBackend::Sqlite => "INSERT INTO media_model VALUES (?, ?)",
+                DatabaseBackend::Postgres => "INSERT INTO media_model VALUES ($1, $2)",
+                _ => unreachable!(),
+            };
+            tx.execute(Statement::from_sql_and_values(
+                backend,
+                sql,
+                [
+                    Value::from(slot.to_owned()),
+                    Value::from(old.id.to_string()),
+                ],
+            ))
+            .await
+            .unwrap();
+        }
+        tx.commit().await.unwrap();
+
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+        let stage = || {
+            prepare_media(
+                owner,
+                owner,
+                &OwnerAccess,
+                &policy(),
+                &[FieldSpec {
+                    name: "file",
+                    kind: MediaKind::File,
+                    required: true,
+                    readonly: false,
+                    existing: Some(old),
+                    clear: false,
+                    image_limits: None,
+                    incoming: Some(IncomingFile {
+                        original_name: "new.txt",
+                        declared_type: Some("text/plain"),
+                        bytes: b"replacement",
+                    }),
+                }],
+            )
+            .unwrap()
+        };
+
+        let staged = stage().stage(&storage, now, 600).await.unwrap();
+        let rejected = staged
+            .commit_referenced(&storage, db, async |_, _, _| Err::<(), _>("stale"))
+            .await
+            .unwrap_err();
+        assert!(matches!(
+            rejected.failure,
+            ReferencedSaveFailure::Model("stale")
+        ));
+        assert_eq!(rejected.candidates.len(), 1);
+        assert_eq!(
+            ledger.check(rejected.candidates[0]).await.unwrap(),
+            ReferenceDecision::Unknown
+        );
+        assert!(storage
+            .exists(owner, rejected.candidates[0].id)
+            .await
+            .unwrap());
+
+        let staged = stage().stage(&storage, now, 600).await.unwrap();
+        let (_, report) = staged
+            .commit_referenced(&storage, db, async |tx, previous, bound| {
+                assert_eq!(previous[0].media, Some(old));
+                let new = bound[0].media.unwrap();
+                let sql = match backend {
+                    DatabaseBackend::Sqlite => {
+                        "UPDATE media_model SET file_id = ? WHERE slot = 'first' AND file_id = ?"
+                    }
+                    DatabaseBackend::Postgres => {
+                        "UPDATE media_model SET file_id = $1 WHERE slot = 'first' AND file_id = $2"
+                    }
+                    _ => unreachable!(),
+                };
+                let changed = tx
+                    .execute(Statement::from_sql_and_values(
+                        backend,
+                        sql,
+                        [
+                            Value::from(new.id.to_string()),
+                            Value::from(old.id.to_string()),
+                        ],
+                    ))
+                    .await
+                    .map_err(|_| "database")?;
+                if changed.rows_affected() != 1 {
+                    return Err("stale");
+                }
+                Ok(())
+            })
+            .await
+            .unwrap();
+        let new = report.bound[0].media.unwrap();
+        assert_eq!(report.detached, vec![old]);
+        assert_eq!(
+            ledger.check(old).await.unwrap(),
+            ReferenceDecision::Referenced
+        );
+        assert_eq!(
+            ledger.check(new).await.unwrap(),
+            ReferenceDecision::Referenced
+        );
+        assert_eq!(storage.read(owner, old.id).await.unwrap().1, b"shared");
+        assert_eq!(storage.read(owner, new.id).await.unwrap().1, b"replacement");
+        assert_eq!(
+            storage.metadata(owner, new.id).await.unwrap().expires_at,
+            None
+        );
+        let rows = db
+            .query_all(Statement::from_string(
+                backend,
+                "SELECT file_id FROM media_model ORDER BY slot",
+            ))
+            .await
+            .unwrap();
+        assert_eq!(rows.len(), 2);
+        assert_eq!(
+            rows[0].try_get::<String>("", "file_id").unwrap(),
+            new.id.to_string()
+        );
+        assert_eq!(
+            rows[1].try_get::<String>("", "file_id").unwrap(),
+            old.id.to_string()
+        );
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[tokio::test]
+    async fn sqlite_referenced_model_commit_contract() {
+        let db = fexu_db::connect("sqlite::memory:").await.unwrap();
+        referenced_model_roundtrip(&db).await;
+        db.close().await.unwrap();
+    }
+
+    #[tokio::test]
+    #[ignore = "requires disposable PostgreSQL"]
+    async fn postgres_referenced_model_commit_contract() {
+        let url = std::env::var("DATABASE_URL").unwrap();
+        let fixture = fexu_db::DisposablePostgres::create(&url).await.unwrap();
+        let db = fexu_db::connect(fixture.url()).await.unwrap();
+        referenced_model_roundtrip(&db).await;
+        db.close().await.unwrap();
+        fixture.drop_database().await.unwrap();
     }
 
     #[tokio::test]

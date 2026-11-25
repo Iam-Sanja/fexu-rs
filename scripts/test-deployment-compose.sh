@@ -129,7 +129,7 @@ session = client.login(email, password, base)
 assert any(c.name == "fexu_session" and c.secure for c in client.jar), "session cookie not Secure"
 Path(sys.argv[3]).write_text(session, encoding="utf-8")
 PY
-python3 "$root/scripts/v012_fullstack_upgrade_runner.py" session-check "$base" "$(cat "$work/session")" deploy-admin@example.test
+python3 "$root/scripts/v012_fullstack_upgrade_runner.py" session-check -- "$base" "$(cat "$work/session")" deploy-admin@example.test
 # A writable media volume must survive application container recreation.
 "${compose[@]}" exec -T app sh -c 'test "$(id -u)" -ne 0 && printf fixture > /home/fexu/media/.deployment-probe'
 "${compose[@]}" stop db
@@ -152,5 +152,5 @@ for _ in $(seq 1 60); do
 done
 curl --noproxy '*' --cacert "$SSL_CERT_FILE" -fsS --max-time 10 "$base/readyz"
 "${compose[@]}" exec -T app sh -c 'test "$(cat /home/fexu/media/.deployment-probe)" = fixture'
-python3 "$root/scripts/v012_fullstack_upgrade_runner.py" session-check "$base" "$(cat "$work/session")" deploy-admin@example.test
+python3 "$root/scripts/v012_fullstack_upgrade_runner.py" session-check -- "$base" "$(cat "$work/session")" deploy-admin@example.test
 echo "PASS: disposable Compose TLS, runtime role, database outage, graceful exit and volume/session persistence"

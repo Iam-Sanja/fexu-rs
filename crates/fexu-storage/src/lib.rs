@@ -22,8 +22,9 @@ pub use s3_backend::{S3Limits, S3Storage};
 pub use access::{OwnerAccess, StorageAccess, StorageAction};
 pub use fields::{
     prepare_media, upload_name_code, AbortReport, BoundMedia, CommitReport, FieldError, FieldSpec,
-    IncomingFile, MediaKind, MediaPolicy, MediaRef, PlannedField, StagedFile, StagedMedia,
-    UploadPlan, MAX_STAGING_TTL,
+    IncomingFile, MediaKind, MediaPolicy, MediaRef, PlannedField, ReferencedCommitReport,
+    ReferencedSaveError, ReferencedSaveFailure, StagedFile, StagedMedia, UploadPlan,
+    MAX_STAGING_TTL,
 };
 pub use http::{
     multipart_text_field, read_multipart, read_multipart_repeated, routes, FormPart,
