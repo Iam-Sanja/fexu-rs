@@ -39,6 +39,7 @@ export AWS_ACCESS_KEY_ID="$FEXU_S3_ACCESS_KEY" AWS_SECRET_ACCESS_KEY="$FEXU_S3_S
 export AWS_DEFAULT_REGION=us-east-1 AWS_CA_BUNDLE="$work/ca.crt" AWS_EC2_METADATA_DISABLED=true
 aws --endpoint-url "$FEXU_TEST_S3_ENDPOINT" s3api create-bucket --bucket fexu-test-media >/dev/null
 cargo test --locked -p fexu-storage --features s3-storage --lib
+cargo test --locked -p fexu-storage --features s3-storage --lib s3_cleanup_ -- --ignored --test-threads=1
 cargo test --locked -p fexu-storage --features s3-storage --test s3_contract -- --ignored --test-threads=1 --skip s3_restart_contract
 
 # Preserve the same disposable container and its data across a real restart.
