@@ -9,7 +9,9 @@ use futures_util::StreamExt;
 use object_store::aws::{AmazonS3, AmazonS3Builder, S3ConditionalPut};
 use object_store::client::{HttpClient, HttpConnector};
 use object_store::path::Path;
-use object_store::{ClientOptions, ObjectStore, ObjectStoreExt, PutMode, RetryConfig, UpdateVersion};
+use object_store::{
+    ClientOptions, ObjectStore, ObjectStoreExt, PutMode, RetryConfig, UpdateVersion,
+};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use uuid::Uuid;
@@ -134,10 +136,19 @@ impl S3Storage {
         Path::from(format!("fexu-media/v1/{owner}/{id}"))
     }
 
-    async fn put(&self, meta: &StoredFile, bytes: &[u8], mode: PutMode) -> Result<(), StorageError> {
+    async fn put(
+        &self,
+        meta: &StoredFile,
+        bytes: &[u8],
+        mode: PutMode,
+    ) -> Result<(), StorageError> {
         let payload = encode(meta, bytes)?;
         self.store
-            .put_opts(&Self::path(meta.owner, meta.id), payload.into(), mode.into())
+            .put_opts(
+                &Self::path(meta.owner, meta.id),
+                payload.into(),
+                mode.into(),
+            )
             .await
             .map_err(map_error)?;
         Ok(())

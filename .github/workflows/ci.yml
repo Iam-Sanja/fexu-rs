@@ -24,10 +24,8 @@ jobs:
         uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8
         with:
           toolchain: 1.89.0
-      - name: Resolve optional dependency lockfile
-        run: |
-          cargo metadata --format-version 1 --features fexu/s3-storage >/dev/null
-          git diff -- Cargo.lock
+      - name: Verify optional dependency lockfile
+        run: cargo metadata --locked --format-version 1 --features fexu/s3-storage,fexu/redis-cache >/dev/null
       - name: Check feature and run S3 tests
         run: |
           cargo check --locked -p fexu --features s3-storage,redis-cache

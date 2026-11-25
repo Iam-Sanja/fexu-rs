@@ -23,7 +23,7 @@ export FEXU_S3_ACCESS_KEY="$(openssl rand -hex 16)"
 export FEXU_S3_SECRET_KEY="$(openssl rand -hex 24)"
 container="$(docker run -d -p 127.0.0.1::9000 \
   -e MINIO_ROOT_USER="$FEXU_S3_ACCESS_KEY" -e MINIO_ROOT_PASSWORD="$FEXU_S3_SECRET_KEY" \
-  -v "$work/certs:/certs:ro" minio/minio:RELEASE.2025-04-22T22-12-26Z \
+  -v "$work/certs:/certs:ro" ghcr.io/coollabsio/minio:RELEASE.2025-10-15T17-29-55Z@sha256:69b55a1c1c5dc285ce04db96689f5b2102317fc77a50680a1874ca6efd1c87f9 \
   server /data --certs-dir /certs --address :9000)"
 port="$(docker port "$container" 9000/tcp | sed -n 's/^127\.0\.0\.1://p')"
 test -n "$port"
