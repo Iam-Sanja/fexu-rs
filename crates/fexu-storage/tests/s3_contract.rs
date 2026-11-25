@@ -203,3 +203,63 @@ async fn s3_restart_contract() {
         _ => panic!("invalid restart phase"),
     }
 }
+
+#[tokio::test]
+#[ignore = "requires isolated TLS S3 fixture"]
+async fn s3_expiry_cleanup_contract() {
+    let first = fixture();
+    let second = fixture();
+    let owner = Uuid::new_v4();
+    let other = Uuid::new_v4();
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs() as i64;
+    let expired = first
+        .save_expiring(owner, "expired.txt", b"expired", Some(now - 1))
+        .await
+        .unwrap();
+    let staged = first
+        .save_expiring(owner, "staged.txt", b"staged", Some(now + 300))
+        .await
+        .unwrap();
+    let permanent = second.retain(owner, staged.id).await.unwrap();
+    let future = first
+        .save_expiring(owner, "future.txt", b"future", Some(now + 300))
+        .await
+        .unwrap();
+
+    assert!(!second
+        .cleanup_unreferenced_expired(other, expired.id)
+        .await
+        .unwrap());
+    assert!(!second
+        .cleanup_unreferenced_expired(owner, permanent.id)
+        .await
+        .unwrap());
+    assert!(!second
+        .cleanup_unreferenced_expired(owner, future.id)
+        .await
+        .unwrap());
+    assert_eq!(first.read(owner, permanent.id).await.unwrap().1, b"staged");
+    assert_eq!(first.read(owner, future.id).await.unwrap().1, b"future");
+    assert!(second
+        .cleanup_unreferenced_expired(owner, expired.id)
+        .await
+        .unwrap());
+    assert_eq!(
+        first.metadata(owner, expired.id).await,
+        Err(StorageError::NotFound)
+    );
+    assert_eq!(
+        first.retain(owner, expired.id).await,
+        Err(StorageError::NotFound)
+    );
+    assert!(!first
+        .cleanup_unreferenced_expired(owner, expired.id)
+        .await
+        .unwrap());
+    for file in [permanent, future] {
+        first.delete(owner, file.id).await.unwrap();
+    }
+}

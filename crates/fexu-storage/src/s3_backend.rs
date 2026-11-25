@@ -17,6 +17,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use uuid::Uuid;
 
 const MAGIC: &[u8; 4] = b"FXS1";
+const DELETED_MAGIC: &[u8; 4] = b"FXD1";
 const MAX_METADATA: usize = 4096;
 const MAX_FILE: u64 = 100 * 1024 * 1024;
 
@@ -159,6 +160,19 @@ impl S3Storage {
         owner: Uuid,
         id: Uuid,
     ) -> Result<(StoredFile, Vec<u8>, UpdateVersion), StorageError> {
+        let (body, version) = self.load_raw(owner, id).await?;
+        if body == tombstone(owner, id) {
+            return Err(StorageError::NotFound);
+        }
+        let (meta, bytes) = decode(&body, owner, id, self.limits.max_bytes)?;
+        Ok((meta, bytes.to_vec(), version))
+    }
+
+    async fn load_raw(
+        &self,
+        owner: Uuid,
+        id: Uuid,
+    ) -> Result<(Vec<u8>, UpdateVersion), StorageError> {
         let result = self
             .store
             .get(&Self::path(owner, id))
@@ -185,9 +199,57 @@ impl S3Storage {
         if body.len() as u64 != expected_len {
             return Err(StorageError::Failed);
         }
-        let (meta, bytes) = decode(&body, owner, id, self.limits.max_bytes)?;
-        Ok((meta, bytes.to_vec(), version))
+        Ok((body, version))
     }
+
+    /// Remove an expired object that the application has established is unreferenced.
+    ///
+    /// This is an operator-level operation, not an authorization or database
+    /// reference check. The caller must exclude new references while reconciling.
+    /// A conditional replacement fences concurrent retain before physical removal.
+    /// A failed removal can be retried with the same owner and immutable file ID.
+    pub async fn cleanup_unreferenced_expired(
+        &self,
+        owner: Uuid,
+        id: Uuid,
+    ) -> Result<bool, StorageError> {
+        let (body, version) = match self.load_raw(owner, id).await {
+            Ok(value) => value,
+            Err(StorageError::NotFound) => return Ok(false),
+            Err(error) => return Err(error),
+        };
+        let marker = tombstone(owner, id);
+        let path = Self::path(owner, id);
+        if body != marker {
+            let (meta, _) = decode(&body, owner, id, self.limits.max_bytes)?;
+            if !expired(&meta) {
+                return Ok(false);
+            }
+            if version.e_tag.is_none() {
+                return Err(StorageError::Failed);
+            }
+            // A stale observation cannot overwrite a successfully retained object.
+            self.store
+                .put_opts(&path, marker.into(), PutMode::Update(version).into())
+                .await
+                .map_err(map_error)?;
+        }
+        // No public operation can retain or recreate this immutable key after
+        // the marker is committed. Never delete if the conditional PUT failed.
+        match self.store.delete(&path).await {
+            Ok(()) => Ok(true),
+            Err(object_store::Error::NotFound { .. }) => Ok(false),
+            Err(error) => Err(map_error(error)),
+        }
+    }
+}
+
+fn tombstone(owner: Uuid, id: Uuid) -> Vec<u8> {
+    let mut body = Vec::with_capacity(36);
+    body.extend_from_slice(DELETED_MAGIC);
+    body.extend_from_slice(owner.as_bytes());
+    body.extend_from_slice(id.as_bytes());
+    body
 }
 
 fn map_error(error: object_store::Error) -> StorageError {
