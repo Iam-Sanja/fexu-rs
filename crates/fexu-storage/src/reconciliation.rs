@@ -22,10 +22,7 @@ pub enum ReferenceDecision<G> {
 pub trait ReferenceCheck: Send + Sync {
     type Guard: Send;
 
-    async fn check(
-        &self,
-        media: MediaRef,
-    ) -> Result<ReferenceDecision<Self::Guard>, StorageError>;
+    async fn check(&self, media: MediaRef) -> Result<ReferenceDecision<Self::Guard>, StorageError>;
 }
 
 /// A backend must fence expiry checks against concurrent retention.
