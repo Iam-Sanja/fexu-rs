@@ -175,7 +175,8 @@ async fn s3_retain_delete_race() {
 #[ignore = "requires isolated TLS S3 fixture and restart phase"]
 async fn s3_restart_contract() {
     let storage = fixture();
-    let state = std::env::var_os("FEXU_TEST_S3_RESTART_STATE").expect("isolated restart state path");
+    let state =
+        std::env::var_os("FEXU_TEST_S3_RESTART_STATE").expect("isolated restart state path");
     let phase = std::env::var("FEXU_TEST_S3_RESTART_PHASE").unwrap();
     match phase.as_str() {
         "seed" => {
