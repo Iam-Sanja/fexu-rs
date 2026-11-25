@@ -342,6 +342,84 @@ mod tests {
         }
     }
 
+    async fn orphan_contract(db: &DatabaseConnection) {
+        use crate::{LocalStorage, Storage};
+
+        let root = std::env::temp_dir().join(format!("fexu-orphans-{}", Uuid::new_v4()));
+        let storage = LocalStorage::open(&root, 1024, &["text/plain"]).unwrap();
+        let ledger = ReferenceLedger::new(db.clone());
+        ledger.initialize().await.unwrap();
+        let owner = Uuid::new_v4();
+        let mut media = Vec::new();
+        for _ in 0..4 {
+            let file = storage.save(owner, "note.txt", b"orphan").await.unwrap();
+            media.push(MediaRef { owner, id: file.id });
+        }
+        media.sort_by_key(|item| item.id);
+        for item in &media[..3] {
+            ledger.register(*item).await.unwrap();
+        }
+        let tx = db.begin().await.unwrap();
+        ReferenceLedger::attach(&tx, media[1]).await.unwrap();
+        tx.commit().await.unwrap();
+
+        assert!(ledger.orphan_candidates(None, 0).await.is_err());
+        assert!(ledger.orphan_candidates(None, 1001).await.is_err());
+        let first = ledger.orphan_candidates(None, 1).await.unwrap();
+        assert_eq!(first, vec![media[0]]);
+        let second = ledger.orphan_candidates(Some(first[0]), 1).await.unwrap();
+        assert_eq!(second, vec![media[2]]);
+        assert!(ledger
+            .orphan_candidates(Some(second[0]), 1)
+            .await
+            .unwrap()
+            .is_empty());
+        assert_eq!(
+            ledger.cleanup_abandoned(&storage, media[1]).await.unwrap(),
+            AbandonedCleanup::Referenced
+        );
+        assert_eq!(
+            ledger.cleanup_abandoned(&storage, media[3]).await.unwrap(),
+            AbandonedCleanup::Unknown
+        );
+        assert_eq!(
+            ledger.cleanup_abandoned(&storage, media[0]).await.unwrap(),
+            AbandonedCleanup::Removed
+        );
+        assert_eq!(
+            ledger.cleanup_abandoned(&storage, media[0]).await.unwrap(),
+            AbandonedCleanup::Missing
+        );
+        let tx = db.begin().await.unwrap();
+        assert!(ReferenceLedger::attach(&tx, media[0]).await.is_err());
+        tx.rollback().await.unwrap();
+        assert!(storage.exists(owner, media[1].id).await.unwrap());
+        assert!(storage.exists(owner, media[3].id).await.unwrap());
+        assert_eq!(
+            ledger.orphan_candidates(None, 10).await.unwrap(),
+            vec![media[0], media[2]]
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[tokio::test]
+    async fn sqlite_orphan_candidates_contract() {
+        let db = fexu_db::connect("sqlite::memory:").await.unwrap();
+        orphan_contract(&db).await;
+        db.close().await.unwrap();
+    }
+
+    #[tokio::test]
+    #[ignore = "requires disposable PostgreSQL"]
+    async fn postgres_orphan_candidates_contract() {
+        let url = std::env::var("DATABASE_URL").unwrap();
+        let fixture = fexu_db::DisposablePostgres::create(&url).await.unwrap();
+        let db = fexu_db::connect(fixture.url()).await.unwrap();
+        orphan_contract(&db).await;
+        db.close().await.unwrap();
+        fixture.drop_database().await.unwrap();
+    }
+
     #[tokio::test]
     async fn sqlite_reference_ledger_contract() {
         let path = std::env::temp_dir().join(format!("fexu-ledger-{}.sqlite3", Uuid::new_v4()));
