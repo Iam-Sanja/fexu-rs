@@ -202,6 +202,28 @@ impl S3Storage {
         Ok((body, version))
     }
 
+    // Only used after validating the full expired envelope; keep the observed
+    // version across the conditional write rather than fetching a newer ETag.
+    async fn mark_expired(
+        &self,
+        owner: Uuid,
+        id: Uuid,
+        version: UpdateVersion,
+    ) -> Result<(), StorageError> {
+        if version.e_tag.is_none() {
+            return Err(StorageError::Failed);
+        }
+        self.store
+            .put_opts(
+                &Self::path(owner, id),
+                tombstone(owner, id).into(),
+                PutMode::Update(version).into(),
+            )
+            .await
+            .map_err(map_error)?;
+        Ok(())
+    }
+
     /// Remove an expired object that the application has established is unreferenced.
     ///
     /// This is an operator-level operation, not an authorization or database
@@ -225,14 +247,7 @@ impl S3Storage {
             if !expired(&meta) {
                 return Ok(false);
             }
-            if version.e_tag.is_none() {
-                return Err(StorageError::Failed);
-            }
-            // A stale observation cannot overwrite a successfully retained object.
-            self.store
-                .put_opts(&path, marker.into(), PutMode::Update(version).into())
-                .await
-                .map_err(map_error)?;
+            self.mark_expired(owner, id, version).await?;
         }
         // No public operation can retain or recreate this immutable key after
         // the marker is committed. Never delete if the conditional PUT failed.
@@ -396,6 +411,114 @@ impl Storage for S3Storage {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // Private access deliberately permits deterministic interleavings without
+    // exposing raw writes or failure injection in the public API.
+    fn recovery_fixture() -> S3Storage {
+        let endpoint = std::env::var("FEXU_TEST_S3_ENDPOINT").unwrap();
+        assert!(endpoint.starts_with("https://127.0.0.1:"));
+        let plan = prepare_s3(
+            &endpoint,
+            "us-east-1",
+            "fexu-test-media",
+            crate::ACCESS_KEY_ENV,
+            crate::SECRET_KEY_ENV,
+        )
+        .unwrap();
+        let ca = std::fs::read(std::env::var_os("FEXU_TEST_S3_CA").unwrap()).unwrap();
+        S3Storage::new(
+            &plan,
+            crate::credentials_from_env(&plan).unwrap(),
+            S3Limits::default(),
+            &["text/plain"],
+            Some(&ca),
+        )
+        .unwrap()
+    }
+
+    #[tokio::test]
+    #[ignore = "requires isolated TLS S3 fixture"]
+    async fn s3_cleanup_stale_etag_contract() {
+        let first = recovery_fixture();
+        let second = recovery_fixture();
+        let owner = Uuid::new_v4();
+        let staged = first
+            .save_expiring(owner, "stale.txt", b"keep", Some(now() + 300))
+            .await
+            .unwrap();
+        let (_, _, stale) = first.load(owner, staged.id).await.unwrap();
+        let retained = second.retain(owner, staged.id).await.unwrap();
+
+        // Model a previously observed version arriving after the retain.
+        // The private marker write must fail, regardless of caller timing.
+        assert_eq!(
+            first.mark_expired(owner, staged.id, stale).await,
+            Err(StorageError::Failed)
+        );
+        assert_eq!(
+            second.read(owner, staged.id).await.unwrap(),
+            (retained, b"keep".to_vec())
+        );
+        assert!(!first
+            .cleanup_unreferenced_expired(owner, staged.id)
+            .await
+            .unwrap());
+        second.delete(owner, staged.id).await.unwrap();
+    }
+
+    #[tokio::test]
+    #[ignore = "requires isolated TLS S3 fixture"]
+    async fn s3_cleanup_interrupted_marker_contract() {
+        let first = recovery_fixture();
+        let second = recovery_fixture();
+        let owner = Uuid::new_v4();
+        let staged = first
+            .save_expiring(owner, "interrupted.txt", b"discard", Some(now() - 1))
+            .await
+            .unwrap();
+        let (_, _, stale) = first.load(owner, staged.id).await.unwrap();
+        let (_, _, version) = second.load(owner, staged.id).await.unwrap();
+        second
+            .mark_expired(owner, staged.id, version)
+            .await
+            .unwrap();
+
+        // Stop after the marker, before physical deletion. A stale write
+        // cannot replace it and a fresh client can finish reconciliation.
+        let mut retained = staged.clone();
+        retained.expires_at = None;
+        assert_eq!(
+            first
+                .put(&retained, b"discard", PutMode::Update(stale))
+                .await,
+            Err(StorageError::Failed)
+        );
+        assert_eq!(
+            first.read(owner, staged.id).await,
+            Err(StorageError::NotFound)
+        );
+        assert_eq!(
+            first.metadata(owner, staged.id).await,
+            Err(StorageError::NotFound)
+        );
+        assert_eq!(
+            first.retain(owner, staged.id).await,
+            Err(StorageError::NotFound)
+        );
+        assert!(!first.exists(owner, staged.id).await.unwrap());
+        assert!(first
+            .cleanup_unreferenced_expired(owner, staged.id)
+            .await
+            .unwrap());
+        assert!(matches!(
+            second.load_raw(owner, staged.id).await,
+            Err(StorageError::NotFound)
+        ));
+        assert!(!second
+            .cleanup_unreferenced_expired(owner, staged.id)
+            .await
+            .unwrap());
+    }
 
     #[test]
     fn envelope_rejects_corruption_truncation_and_wrong_identity() {

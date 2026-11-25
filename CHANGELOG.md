@@ -2,7 +2,9 @@
 
 ## Unreleased — toward v0.3.0
 
-- Add targeted S3 expiry reconciliation using conditional tombstones and retryable physical removal; callers must independently exclude database references. New acceptance tests require CI verification.
+- Add deterministic S3 stale ETag and interrupted tombstone recovery tests against TLS MinIO; pending CI. No automatic sweep or new public API.
+
+- Add targeted S3 expiry reconciliation using conditional tombstones and retryable physical removal; callers must independently exclude database references. PR #273 passed all 14 checks.
 
 - Add isolated S3 retain/delete race and persistent-container restart regression coverage; PR #272 passed all workflows. Automatic remote cleanup and backup/restore remain separate.
 
