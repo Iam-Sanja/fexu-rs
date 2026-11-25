@@ -128,7 +128,9 @@ impl ReferenceLedger {
         rows.into_iter()
             .map(|row| {
                 let owner: String = row.try_get("", "owner").map_err(|_| StorageError::Failed)?;
-                let id: String = row.try_get("", "file_id").map_err(|_| StorageError::Failed)?;
+                let id: String = row
+                    .try_get("", "file_id")
+                    .map_err(|_| StorageError::Failed)?;
                 let owner = uuid::Uuid::parse_str(&owner).map_err(|_| StorageError::Failed)?;
                 let id = uuid::Uuid::parse_str(&id).map_err(|_| StorageError::Failed)?;
                 Ok(MediaRef { owner, id })
