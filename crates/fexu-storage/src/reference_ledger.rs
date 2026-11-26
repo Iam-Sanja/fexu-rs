@@ -1086,6 +1086,51 @@ impl ReferenceLedger {
         change_one(tx, query).await
     }
 
+    /// Explicitly admit a previously committed, now unreferenced upload to
+    /// abandoned-only cleanup. The caller must authorize permanent deletion
+    /// and establish that no external references or storage writes remain.
+    /// Use the same transaction as the model removal, or a fresh transaction
+    /// after it. Roll back the entire transaction on error.
+    /// Returns false for referenced, unknown, staged or legacy IDs.
+    /// A successful admission permanently prevents subsequent attachment.
+    pub async fn admit_detached_cleanup(
+        tx: &DatabaseTransaction,
+        media: MediaRef,
+    ) -> Result<bool, StorageError> {
+        // Lock the reference row first, matching claim_reserved's lock order.
+        let query = statement(
+            tx,
+            "UPDATE _fexu_media_references SET retired = 1
+             WHERE owner = ? AND file_id = ? AND refs = 0
+             AND EXISTS (SELECT 1 FROM _fexu_media_uploads u
+                 WHERE u.owner = _fexu_media_references.owner
+                 AND u.file_id = _fexu_media_references.file_id AND u.state = 2)",
+            "UPDATE _fexu_media_references SET retired = 1
+             WHERE owner = $1 AND file_id = $2 AND refs = 0
+             AND EXISTS (SELECT 1 FROM _fexu_media_uploads u
+                 WHERE u.owner = _fexu_media_references.owner
+                 AND u.file_id = _fexu_media_references.file_id AND u.state = 2)",
+            media,
+        )?;
+        let changed = tx.execute(query).await.map_err(|_| StorageError::Failed)?;
+        if changed.rows_affected() == 0 {
+            return Ok(false);
+        }
+        if changed.rows_affected() != 1 {
+            return Err(StorageError::Failed);
+        }
+        let query = statement(
+            tx,
+            "UPDATE _fexu_media_uploads SET state = 3
+             WHERE owner = ? AND file_id = ? AND state = 2",
+            "UPDATE _fexu_media_uploads SET state = 3
+             WHERE owner = $1 AND file_id = $2 AND state = 2",
+            media,
+        )?;
+        change_one(tx, query).await?;
+        Ok(true)
+    }
+
     /// Call in the same transaction as the corresponding model reference
     /// removal. Underflow and unknown or retired IDs are rejected.
     pub async fn detach(tx: &DatabaseTransaction, media: MediaRef) -> Result<(), StorageError> {
@@ -1810,6 +1855,58 @@ mod tests {
         assert!(batch.items.is_empty() && batch.reached_end);
         assert!(storage.exists(owner, staged.id).await.unwrap());
         assert!(storage.exists(owner, committed.id).await.unwrap());
+        assert!(storage.exists(owner, legacy.id).await.unwrap());
+        // Explicit opt-in only: existing committed zero-reference files
+        // are not automatically selected by the worker.
+        let detached = MediaRef {
+            owner,
+            id: committed.id,
+        };
+        let tx = db.begin().await.unwrap();
+        ReferenceLedger::attach(&tx, detached).await.unwrap();
+        ReferenceLedger::attach(&tx, detached).await.unwrap();
+        ReferenceLedger::detach(&tx, detached).await.unwrap();
+        assert!(!ReferenceLedger::admit_detached_cleanup(&tx, detached)
+            .await
+            .unwrap());
+        ReferenceLedger::detach(&tx, detached).await.unwrap();
+        assert!(ReferenceLedger::admit_detached_cleanup(&tx, detached)
+            .await
+            .unwrap());
+        tx.rollback().await.unwrap();
+        assert_eq!(
+            ledger.upload_state(detached).await.unwrap(),
+            Some(UploadState::Committed)
+        );
+        let tx = db.begin().await.unwrap();
+        ReferenceLedger::attach(&tx, detached).await.unwrap();
+        ReferenceLedger::detach(&tx, detached).await.unwrap();
+        assert!(!ReferenceLedger::admit_detached_cleanup(&tx, staged_media)
+            .await
+            .unwrap());
+        assert!(!ReferenceLedger::admit_detached_cleanup(&tx, uploading)
+            .await
+            .unwrap());
+        assert!(ReferenceLedger::admit_detached_cleanup(&tx, detached)
+            .await
+            .unwrap());
+        tx.commit().await.unwrap();
+        assert_eq!(
+            ledger.upload_state(detached).await.unwrap(),
+            Some(UploadState::Abandoned)
+        );
+        let tx = db.begin().await.unwrap();
+        assert!(ReferenceLedger::attach(&tx, detached).await.is_err());
+        tx.rollback().await.unwrap();
+        let batch = ledger
+            .cleanup_abandoned_batch(&storage, None, 10, 1)
+            .await
+            .unwrap();
+        assert_eq!(batch.items.len(), 1);
+        assert_eq!(batch.items[0].media, detached);
+        assert_eq!(batch.items[0].outcome, Ok(AbandonedCleanup::Removed));
+        assert!(!storage.exists(owner, committed.id).await.unwrap());
+        assert!(storage.exists(owner, staged.id).await.unwrap());
         assert!(storage.exists(owner, legacy.id).await.unwrap());
         std::fs::remove_dir_all(root).unwrap();
     }
