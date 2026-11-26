@@ -551,6 +551,59 @@ mod tests {
 
     #[tokio::test]
     #[ignore = "requires isolated TLS S3 fixture"]
+    async fn s3_cleanup_ledger_fence_contract() {
+        let first = recovery_fixture();
+        let second = recovery_fixture();
+        let db = fexu_db::connect("sqlite::memory:").await.unwrap();
+        let ledger = crate::ReferenceLedger::new(db.clone());
+        ledger.initialize().await.unwrap();
+        let owner = Uuid::new_v4();
+        let failed = ledger
+            .stage_reserved(&first, owner, "note.exe", b"pending", now() + 300)
+            .await
+            .unwrap_err();
+        let media = failed.media;
+        assert_eq!(failed.error, StorageError::TypeRejected);
+        assert!(!ledger.upload_fence_requested(media).await.unwrap());
+        assert_eq!(
+            ledger.upload_state(media).await.unwrap(),
+            Some(crate::UploadState::Uploading)
+        );
+        ledger.abandon_unresolved_s3(&first, media).await.unwrap();
+        assert!(ledger.upload_fence_requested(media).await.unwrap());
+        assert_eq!(
+            ledger.upload_state(media).await.unwrap(),
+            Some(crate::UploadState::Abandoned)
+        );
+        let reopened = crate::ReferenceLedger::new(db.clone());
+        reopened
+            .abandon_unresolved_s3(&second, media)
+            .await
+            .unwrap();
+        let page = reopened
+            .cleanup_abandoned_page(&second, None, 10)
+            .await
+            .unwrap();
+        assert_eq!(page.len(), 1);
+        assert_eq!(page[0].media, media);
+        assert_eq!(page[0].outcome, Ok(crate::AbandonedCleanup::Missing));
+        assert_eq!(
+            reopened.cleanup_receipt(media).await.unwrap(),
+            Some(crate::CleanupReceipt::Missing)
+        );
+        assert!(first
+            .save_reserved(media, "note.txt", b"late", now() + 300)
+            .await
+            .is_err());
+        assert_eq!(
+            second.load_raw(media.owner, media.id).await.unwrap().0,
+            upload_fence(media.owner, media.id)
+        );
+        db.close().await.unwrap();
+    }
+
+    #[tokio::test]
+    #[ignore = "requires isolated TLS S3 fixture"]
     async fn s3_cleanup_reserved_collision_contract() {
         let first = recovery_fixture();
         let second = recovery_fixture();
