@@ -2,6 +2,8 @@
 
 ## Unreleased — toward v0.3.0
 
+- Add bounded resumable abandoned-upload cleanup worker batches with continuation and page-query error reporting.
+
 - Add explicit offline recovery of settled local writer slots with durable discard requests, converting empty slots to permanent markers without unlinking them.
 
 - Add exclusive local writer slots and durable local discard requests; never automatically steal an occupied slot.
