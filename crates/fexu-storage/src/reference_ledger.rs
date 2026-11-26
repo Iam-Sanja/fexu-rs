@@ -346,7 +346,10 @@ impl ReferenceLedger {
             .is_some())
     }
 
-    async fn has_local_fence(db: &impl ConnectionTrait, media: MediaRef) -> Result<bool, StorageError> {
+    async fn has_local_fence(
+        db: &impl ConnectionTrait,
+        media: MediaRef,
+    ) -> Result<bool, StorageError> {
         let query = statement(
             db,
             "SELECT file_id FROM _fexu_media_local_fences WHERE owner = ? AND file_id = ?",
@@ -1437,10 +1440,7 @@ mod tests {
             .await
             .is_err());
         assert_eq!(
-            ledger
-                .cleanup_local_residue(&storage, local)
-                .await
-                .unwrap(),
+            ledger.cleanup_local_residue(&storage, local).await.unwrap(),
             AbandonedCleanup::Missing
         );
         assert_eq!(std::fs::read(&slot).unwrap(), b"FXL1");
