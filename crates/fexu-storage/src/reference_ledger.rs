@@ -25,6 +25,16 @@ pub enum AbandonedCleanup {
     Missing,
 }
 
+/// One bounded worker invocation. A cursor is a progress hint, not a snapshot.
+/// Restart from None after reaching the end to retry failed or newly eligible IDs.
+#[derive(Debug)]
+pub struct CleanupBatch {
+    pub items: Vec<AbandonedCleanupItem>,
+    pub next_after: Option<MediaRef>,
+    pub reached_end: bool,
+    pub scan_error: Option<StorageError>,
+}
+
 /// Recorded backend result, not evidence of physical erasure or backup removal.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CleanupReceipt {
@@ -849,6 +859,55 @@ impl ReferenceLedger {
             results.push(AbandonedCleanupItem { media, outcome });
         }
         Ok(results)
+    }
+
+    /// Run a bounded cleanup sweep for a single trusted storage namespace.
+    /// Intended for an explicitly configured scheduler or worker handler.
+    /// Never abandons uploads, scans raw storage, or deletes committed IDs.
+    /// A page-query failure preserves progress and earlier item results.
+    /// At most 16 pages and 1,000 total candidates may be attempted per call.
+    pub async fn cleanup_abandoned_batch<S: crate::Storage + ?Sized>(
+        &self,
+        storage: &S,
+        after: Option<MediaRef>,
+        page_size: u32,
+        max_pages: u32,
+    ) -> Result<CleanupBatch, StorageError> {
+        if !(1..=16).contains(&max_pages)
+            || !(1..=1000).contains(&page_size)
+            || page_size * max_pages > 1000
+        {
+            return Err(StorageError::Failed);
+        }
+        let mut batch = CleanupBatch {
+            items: Vec::new(),
+            next_after: after,
+            reached_end: false,
+            scan_error: None,
+        };
+        for _ in 0..max_pages {
+            let page = match self
+                .cleanup_abandoned_page(storage, batch.next_after, page_size)
+                .await
+            {
+                Ok(page) => page,
+                Err(error) => {
+                    batch.scan_error = Some(error);
+                    break;
+                }
+            };
+            let short = page.len() < page_size as usize;
+            if let Some(last) = page.last() {
+                batch.next_after = Some(last.media);
+            }
+            batch.items.extend(page);
+            if short {
+                batch.reached_end = true;
+                batch.next_after = None;
+                break;
+            }
+        }
+        Ok(batch)
     }
 
     /// Read a previously recorded abandoned-page backend outcome.
