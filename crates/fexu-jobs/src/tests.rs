@@ -1876,7 +1876,6 @@ async fn postgres_job_claim_and_rollback() {
     );
 }
 
-
 async fn storage_cleanup_job_contract(db: fexu_db::driver::DatabaseConnection) {
     use fexu_storage::{LocalStorage, MediaRef, ReferenceLedger, Storage};
 
@@ -1920,8 +1919,16 @@ async fn storage_cleanup_job_contract(db: fexu_db::driver::DatabaseConnection) {
     let runner = worker(queue.clone(), registry);
     assert!(runner.run_once().await.unwrap());
     assert_eq!(queue.get(id).await.unwrap().status, JobStatus::Succeeded);
-    assert!(ledger.cleanup_receipt(discarded[0]).await.unwrap().is_some());
-    assert!(ledger.cleanup_receipt(discarded[1]).await.unwrap().is_none());
+    assert!(ledger
+        .cleanup_receipt(discarded[0])
+        .await
+        .unwrap()
+        .is_some());
+    assert!(ledger
+        .cleanup_receipt(discarded[1])
+        .await
+        .unwrap()
+        .is_none());
     assert!(!runner.run_once().await.unwrap());
     clock.advance(60);
     assert!(runner.run_once().await.unwrap());
