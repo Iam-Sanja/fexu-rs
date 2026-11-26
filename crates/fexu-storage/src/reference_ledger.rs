@@ -709,6 +709,111 @@ mod tests {
         fixture.drop_database().await.unwrap();
     }
 
+    async fn abandoned_page_contract(db: &DatabaseConnection) {
+        use crate::{LocalStorage, Storage};
+
+        let root = std::env::temp_dir().join(format!("fexu-page-{}", Uuid::new_v4()));
+        let storage = LocalStorage::open(&root, 64, &["text/plain"]).unwrap();
+        let ledger = ReferenceLedger::new(db.clone());
+        ledger.initialize().await.unwrap();
+        let owner = Uuid::new_v4();
+        let mut abandoned = Vec::new();
+        for _ in 0..2 {
+            let file = ledger
+                .stage_reserved(&storage, owner, "note.txt", b"discard", i64::MAX)
+                .await
+                .unwrap();
+            let media = MediaRef { owner, id: file.id };
+            ledger.abandon_upload(media).await.unwrap();
+            abandoned.push(media);
+        }
+        abandoned.sort_by_key(|item| item.id);
+        let staged = ledger
+            .stage_reserved(&storage, owner, "note.txt", b"keep", i64::MAX)
+            .await
+            .unwrap();
+        let committed = ledger
+            .stage_reserved(&storage, owner, "note.txt", b"model", i64::MAX)
+            .await
+            .unwrap();
+        let media = MediaRef {
+            owner,
+            id: committed.id,
+        };
+        let tx = db.begin().await.unwrap();
+        ReferenceLedger::claim_reserved(&tx, media).await.unwrap();
+        ReferenceLedger::detach(&tx, media).await.unwrap();
+        tx.commit().await.unwrap();
+        let legacy = storage.save(owner, "note.txt", b"legacy").await.unwrap();
+        ledger
+            .register(MediaRef {
+                owner,
+                id: legacy.id,
+            })
+            .await
+            .unwrap();
+        let uploading = MediaRef {
+            owner,
+            id: Uuid::new_v4(),
+        };
+        ledger.begin_upload(uploading).await.unwrap();
+
+        assert!(ledger.abandoned_candidates(None, 0).await.is_err());
+        assert!(ledger.abandoned_candidates(None, 1001).await.is_err());
+        assert_eq!(
+            ledger.abandoned_candidates(None, 10).await.unwrap(),
+            abandoned
+        );
+        let page = ledger
+            .cleanup_abandoned_page(&storage, None, 1)
+            .await
+            .unwrap();
+        assert_eq!(page.len(), 1);
+        assert_eq!(page[0].media, abandoned[0]);
+        assert_eq!(page[0].outcome, Ok(AbandonedCleanup::Removed));
+        let next = ledger
+            .cleanup_abandoned_page(&storage, Some(page[0].media), 1)
+            .await
+            .unwrap();
+        assert_eq!(next.len(), 1);
+        assert_eq!(next[0].media, abandoned[1]);
+        assert_eq!(next[0].outcome, Ok(AbandonedCleanup::Removed));
+        let retry = ledger
+            .cleanup_abandoned_page(&storage, None, 10)
+            .await
+            .unwrap();
+        assert_eq!(retry.len(), 2);
+        for item in retry {
+            assert_eq!(item.outcome, Ok(AbandonedCleanup::Missing));
+        }
+        assert!(storage.exists(owner, staged.id).await.unwrap());
+        assert!(storage.exists(owner, committed.id).await.unwrap());
+        assert!(storage.exists(owner, legacy.id).await.unwrap());
+        assert_eq!(
+            ledger.upload_state(uploading).await.unwrap(),
+            Some(UploadState::Uploading)
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[tokio::test]
+    async fn sqlite_abandoned_page_contract() {
+        let db = fexu_db::connect("sqlite::memory:").await.unwrap();
+        abandoned_page_contract(&db).await;
+        db.close().await.unwrap();
+    }
+
+    #[tokio::test]
+    #[ignore = "requires disposable PostgreSQL"]
+    async fn postgres_abandoned_page_contract() {
+        let url = std::env::var("DATABASE_URL").unwrap();
+        let fixture = fexu_db::DisposablePostgres::create(&url).await.unwrap();
+        let db = fexu_db::connect(fixture.url()).await.unwrap();
+        abandoned_page_contract(&db).await;
+        db.close().await.unwrap();
+        fixture.drop_database().await.unwrap();
+    }
+
     async fn orphan_contract(db: &DatabaseConnection) {
         use crate::{LocalStorage, Storage};
 
