@@ -155,6 +155,19 @@ pub struct CommitReport {
     pub retain_failed: Vec<MediaRef>,
 }
 
+/// A pre-enrolled staging result, deliberately without legacy delete methods.
+pub struct ReservedStagedMedia {
+    staged: StagedMedia,
+    ledger: crate::ReferenceLedger,
+}
+
+/// Failed reserved staging leaves all enrolled IDs available for reconciliation.
+#[derive(Debug)]
+pub struct ReservedStageError {
+    pub error: StorageError,
+    pub candidates: Vec<MediaRef>,
+}
+
 impl UploadPlan {
     pub fn fields(&self) -> impl Iterator<Item = PlannedField<'_>> {
         self.decisions.iter().map(|decision| match decision {
@@ -178,6 +191,103 @@ impl UploadPlan {
                 retire: *retire,
                 pixels_decoded: upload.pixels_decoded,
             },
+        })
+    }
+
+    /// Enroll each new ID before writing its bytes. No legacy abort or delete
+    /// is performed on error; enrolled candidates remain discoverable.
+    pub async fn stage_referenced<S: Storage + ?Sized>(
+        self,
+        storage: &S,
+        ledger: &crate::ReferenceLedger,
+        now: i64,
+        ttl: i64,
+    ) -> Result<ReservedStagedMedia, ReservedStageError> {
+        if !(1..=MAX_STAGING_TTL).contains(&ttl) || now.checked_add(ttl).is_none() {
+            return Err(ReservedStageError {
+                error: StorageError::Failed,
+                candidates: Vec::new(),
+            });
+        }
+        let mut created = Vec::new();
+        let mut removals = Vec::new();
+        let mut kept = Vec::new();
+        let mut previous = Vec::new();
+        let mut candidates = Vec::new();
+        for decision in self.decisions {
+            previous.push(match &decision {
+                Decision::Absent { field } => BoundMedia {
+                    field: field.clone(),
+                    media: None,
+                },
+                Decision::Keep { field, media } | Decision::Remove { field, media } => BoundMedia {
+                    field: field.clone(),
+                    media: Some(*media),
+                },
+                Decision::Stage { field, retire, .. } => BoundMedia {
+                    field: field.clone(),
+                    media: *retire,
+                },
+            });
+            match decision {
+                Decision::Absent { field } => kept.push(BoundMedia { field, media: None }),
+                Decision::Keep { field, media } => kept.push(BoundMedia {
+                    field,
+                    media: Some(media),
+                }),
+                Decision::Remove { field, media } => {
+                    kept.push(BoundMedia { field, media: None });
+                    removals.push(media);
+                }
+                Decision::Stage {
+                    field,
+                    upload,
+                    retire,
+                } => {
+                    let file = match ledger
+                        .stage_reserved(
+                            storage,
+                            self.owner,
+                            &upload.original_name,
+                            &upload.bytes,
+                            now + ttl,
+                        )
+                        .await
+                    {
+                        Ok(file) => file,
+                        Err(error) => {
+                            candidates.push(error.media);
+                            return Err(ReservedStageError {
+                                error: error.error,
+                                candidates,
+                            });
+                        }
+                    };
+                    candidates.push(MediaRef {
+                        owner: self.owner,
+                        id: file.id,
+                    });
+                    if let Some(old) = retire {
+                        removals.push(old);
+                    }
+                    created.push(StagedFile {
+                        field,
+                        file,
+                        retire,
+                        pixels_decoded: upload.pixels_decoded,
+                    });
+                }
+            }
+        }
+        Ok(ReservedStagedMedia {
+            staged: StagedMedia {
+                owner: self.owner,
+                created,
+                removals,
+                kept,
+                previous,
+            },
+            ledger: ledger.clone(),
         })
     }
 
@@ -291,6 +401,34 @@ pub struct ReferencedSaveError<E> {
     pub candidates: Vec<MediaRef>,
 }
 
+impl ReservedStagedMedia {
+    pub fn created(&self) -> &[StagedFile] {
+        self.staged.created()
+    }
+
+    /// Commit using the same ledger database that enrolled the uploads.
+    /// The callback has the same compare-and-write obligations as
+    /// [`StagedMedia::commit_referenced`]. Dropping this value never deletes
+    /// bytes; cleanup must be separately authorized after writes settle.
+    pub async fn commit<S, T, E, F>(
+        self,
+        storage: &S,
+        save: F,
+    ) -> Result<(T, ReferencedCommitReport), ReferencedSaveError<E>>
+    where
+        S: Storage + ?Sized,
+        F: AsyncFnOnce(
+            &fexu_db::driver::DatabaseTransaction,
+            &[BoundMedia],
+            &[BoundMedia],
+        ) -> Result<T, E>,
+    {
+        self.staged
+            .commit_with_enrollment(storage, self.ledger.database(), true, save)
+            .await
+    }
+}
+
 impl StagedMedia {
     /// Persist a model change and its ledger updates in one transaction.
     ///
@@ -307,6 +445,24 @@ impl StagedMedia {
         self,
         storage: &S,
         db: &fexu_db::driver::DatabaseConnection,
+        save: F,
+    ) -> Result<(T, ReferencedCommitReport), ReferencedSaveError<E>>
+    where
+        S: Storage + ?Sized,
+        F: AsyncFnOnce(
+            &fexu_db::driver::DatabaseTransaction,
+            &[BoundMedia],
+            &[BoundMedia],
+        ) -> Result<T, E>,
+    {
+        self.commit_with_enrollment(storage, db, false, save).await
+    }
+
+    async fn commit_with_enrollment<S, T, E, F>(
+        self,
+        storage: &S,
+        db: &fexu_db::driver::DatabaseConnection,
+        reserved: bool,
         save: F,
     ) -> Result<(T, ReferencedCommitReport), ReferencedSaveError<E>>
     where
@@ -346,12 +502,18 @@ impl StagedMedia {
         let result = async {
             // Acquire the writer lock before reading model state on SQLite.
             for media in &candidates {
-                ReferenceLedger::register_tx(&tx, *media)
-                    .await
-                    .map_err(ReferencedSaveFailure::Ledger)?;
-                ReferenceLedger::attach(&tx, *media)
-                    .await
-                    .map_err(ReferencedSaveFailure::Ledger)?;
+                if reserved {
+                    ReferenceLedger::claim_reserved(&tx, *media)
+                        .await
+                        .map_err(ReferencedSaveFailure::Ledger)?;
+                } else {
+                    ReferenceLedger::register_tx(&tx, *media)
+                        .await
+                        .map_err(ReferencedSaveFailure::Ledger)?;
+                    ReferenceLedger::attach(&tx, *media)
+                        .await
+                        .map_err(ReferencedSaveFailure::Ledger)?;
+                }
             }
             let value = save(&tx, &self.previous, &bound)
                 .await
