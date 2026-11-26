@@ -187,8 +187,6 @@ impl LocalStorage {
         let directory = self.rooted_owner(owner, true)?;
         self.enforce_quota(&directory, bytes.len() as u64)?;
         stored.id = id;
-        // A permanent discard marker occupies the exclusive writer slot.
-        // Check it before publishing any bytes, under the same slot protocol.
         let partial = directory.join(format!("{id}.partial"));
         let target = directory.join(id.to_string());
         let meta_path = directory.join(format!("{id}.json"));
@@ -197,6 +195,7 @@ impl LocalStorage {
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
             _ => return Err(StorageError::Failed),
         }
+        // Acquire the exclusive writer slot before publishing any bytes.
         let slot = directory.join(format!("{id}.write-lock"));
         let mut admission = PendingFiles::default();
         let lock = std::fs::OpenOptions::new()
@@ -204,7 +203,7 @@ impl LocalStorage {
             .create_new(true)
             .open(&slot)
             .map_err(|_| StorageError::Failed)?;
-        admission.track(slot.clone());
+        admission.track(slot);
         drop(lock);
         let mut pending = PendingFiles::default();
         // Claim the temporary name exclusively before tracking it. A losing
@@ -258,11 +257,16 @@ impl LocalStorage {
                     return Err(StorageError::Failed);
                 }
                 let path = Self::contained(&directory, &slot)?;
-                let mut file = std::fs::File::open(path).map_err(|_| StorageError::Failed)?;
+                let mut file = std::fs::OpenOptions::new()
+                    .read(true)
+                    .write(true)
+                    .open(path)
+                    .map_err(|_| StorageError::Failed)?;
                 let mut marker = [0; 5];
                 let count = std::io::Read::read(&mut file, &mut marker)
                     .map_err(|_| StorageError::Failed)?;
                 if count == 4 && &marker[..4] == b"FXL1" {
+                    file.sync_all().map_err(|_| StorageError::Failed)?;
                     return Ok(());
                 }
                 return Err(StorageError::Failed);
