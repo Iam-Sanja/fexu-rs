@@ -399,8 +399,38 @@ impl ReferenceLedger {
         }
         tx.commit().await.map_err(|_| StorageError::Failed)?;
         storage.fence_local_writer(media)?;
+        self.confirm_local_discard(media).await
+    }
+
+    /// Offline operator recovery of a stale local writer slot after every
+    /// writer and competing recovery operator has been stopped and settled.
+    /// Requires a previously committed local discard request. Never use age
+    /// or a missing process ID as proof. Keep the same trusted storage root.
+    /// The permanent marker is preserved, including on retry.
+    pub async fn recover_settled_local_discard(
+        &self,
+        storage: &crate::LocalStorage,
+        media: MediaRef,
+    ) -> Result<(), StorageError> {
+        if !self.local_fence_requested(media).await?
+            || self.upload_fence_requested(media).await?
+            || !matches!(
+                self.upload_state(media).await?,
+                Some(UploadState::Uploading | UploadState::Abandoned)
+            )
+        {
+            return Err(StorageError::Failed);
+        }
+        storage.recover_settled_slot(media)?;
+        self.confirm_local_discard(media).await
+    }
+
+    async fn confirm_local_discard(&self, media: MediaRef) -> Result<(), StorageError> {
         let tx = self.db.begin().await.map_err(|_| StorageError::Failed)?;
         Self::lock_upload(&tx, media).await?;
+        if !Self::has_local_fence(&tx, media).await? || Self::has_fence(&tx, media).await? {
+            return Err(StorageError::Failed);
+        }
         let query = statement(
             &tx,
             "UPDATE _fexu_media_uploads SET state = 3
@@ -1410,6 +1440,10 @@ mod tests {
             .join(format!("{}.write-lock", local.id));
         std::fs::write(&slot, b"").unwrap();
         assert!(ledger
+            .recover_settled_local_discard(&storage, local)
+            .await
+            .is_err());
+        assert!(ledger
             .abandon_unresolved_local(&storage, local)
             .await
             .is_err());
@@ -1421,10 +1455,24 @@ mod tests {
             .save_reserved(local, "note.txt", b"late", i64::MAX)
             .await
             .is_err());
-        // Simulate a cooperating writer releasing its slot after settlement.
-        std::fs::remove_file(&slot).unwrap();
+        // Offline maintenance: simulate a crashed writer whose slot remains.
+        std::fs::write(&slot, b"FX").unwrap();
+        assert!(ledger
+            .recover_settled_local_discard(&storage, local)
+            .await
+            .is_err());
+        assert_eq!(std::fs::read(&slot).unwrap(), b"FX");
+        assert_eq!(
+            ledger.upload_state(local).await.unwrap(),
+            Some(UploadState::Uploading)
+        );
+        std::fs::write(&slot, b"").unwrap();
         ledger
-            .abandon_unresolved_local(&storage, local)
+            .recover_settled_local_discard(&storage, local)
+            .await
+            .unwrap();
+        ledger
+            .recover_settled_local_discard(&other, local)
             .await
             .unwrap();
         ledger
