@@ -2,6 +2,8 @@
 
 ## Unreleased — toward v0.3.0
 
+- Add bounded cleanup pages for explicitly abandoned tracked uploads, with per-ID results and protection of active, staged, committed and legacy IDs.
+
 - Track reserved uploads durably from in-flight write to staged, committed or explicitly abandoned; block reference-aware retirement while uploads remain active or staged.
 
 - Connect pre-enrolled media staging to the model transaction through a dedicated wrapper that prevents legacy direct deletion and preserves rollback candidates.
