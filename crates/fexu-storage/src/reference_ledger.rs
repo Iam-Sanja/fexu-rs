@@ -310,10 +310,7 @@ impl ReferenceLedger {
 
     // First acquire the upload row's write lock, then read the fence request
     // in a separate statement (PostgreSQL READ COMMITTED / SQLite).
-    async fn lock_upload(
-        tx: &DatabaseTransaction,
-        media: MediaRef,
-    ) -> Result<(), StorageError> {
+    async fn lock_upload(tx: &DatabaseTransaction, media: MediaRef) -> Result<(), StorageError> {
         let query = statement(
             tx,
             "UPDATE _fexu_media_uploads SET state = state
@@ -325,10 +322,7 @@ impl ReferenceLedger {
         change_one(tx, query).await
     }
 
-    async fn has_fence(
-        db: &impl ConnectionTrait,
-        media: MediaRef,
-    ) -> Result<bool, StorageError> {
+    async fn has_fence(db: &impl ConnectionTrait, media: MediaRef) -> Result<bool, StorageError> {
         let query = statement(
             db,
             "SELECT file_id FROM _fexu_media_upload_fences WHERE owner = ? AND file_id = ?",
@@ -1267,6 +1261,36 @@ mod tests {
             .recover_settled_upload(&storage, mismatch)
             .await
             .is_err());
+        // Once discard is requested, even a delayed successful writer or
+        // operator recovery cannot move the upload to Staged.
+        let pending = MediaRef {
+            owner,
+            id: Uuid::new_v4(),
+        };
+        let intent = UploadIntent::new("pending.txt", b"pending", i64::MAX).unwrap();
+        ledger.begin_upload(pending, &intent).await.unwrap();
+        ledger.request_upload_fence(pending).await.unwrap();
+        ledger.request_upload_fence(pending).await.unwrap();
+        assert!(ledger.upload_fence_requested(pending).await.unwrap());
+        assert!(ledger.finish_upload(pending).await.is_err());
+        assert!(ledger.abandon_upload(pending).await.is_err());
+        storage
+            .save_reserved(pending, "pending.txt", b"pending", i64::MAX)
+            .await
+            .unwrap();
+        assert!(ledger
+            .recover_settled_upload(&storage, pending)
+            .await
+            .is_err());
+        assert_eq!(
+            ledger.upload_state(pending).await.unwrap(),
+            Some(UploadState::Uploading)
+        );
+        assert_eq!(
+            ledger.cleanup_abandoned(&storage, pending).await.unwrap(),
+            AbandonedCleanup::Unknown
+        );
+        assert!(ledger.request_upload_fence(media).await.is_err());
         std::fs::remove_dir_all(root).unwrap();
     }
 
