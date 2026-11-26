@@ -24,6 +24,13 @@ pub enum AbandonedCleanup {
     Missing,
 }
 
+/// Recorded backend result, not evidence of physical erasure or backup removal.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CleanupReceipt {
+    Removed,
+    Missing,
+}
+
 /// Per-ID result of a bounded cleanup page. Errors remain retryable.
 #[derive(Debug)]
 pub struct AbandonedCleanupItem {
@@ -100,6 +107,17 @@ impl ReferenceLedger {
                     owner TEXT NOT NULL,
                     file_id TEXT NOT NULL,
                     state INTEGER NOT NULL CHECK (state IN (0, 1, 2, 3)),
+                    PRIMARY KEY (owner, file_id)
+                )",
+            )
+            .await
+            .map_err(|_| StorageError::Failed)?;
+        self.db
+            .execute_unprepared(
+                "CREATE TABLE IF NOT EXISTS _fexu_media_cleanup_receipts (
+                    owner TEXT NOT NULL,
+                    file_id TEXT NOT NULL,
+                    outcome INTEGER NOT NULL CHECK (outcome IN (1, 2)),
                     PRIMARY KEY (owner, file_id)
                 )",
             )
@@ -285,7 +303,7 @@ impl ReferenceLedger {
 
     /// Discover only explicitly abandoned, tracked zero-reference IDs.
     /// Active, staged, committed and legacy IDs are excluded. Retired IDs
-    /// remain visible for retry. This is not permission to delete.
+    /// without a recorded result remain visible for retry. This is not permission to delete.
     pub async fn abandoned_candidates(
         &self,
         after: Option<MediaRef>,
@@ -299,19 +317,25 @@ impl ReferenceLedger {
             (DatabaseBackend::Sqlite, None) => (
                 "SELECT r.owner, r.file_id FROM _fexu_media_references r
                  JOIN _fexu_media_uploads u ON u.owner = r.owner AND u.file_id = r.file_id
-                 WHERE r.refs = 0 AND u.state = 3 ORDER BY r.owner, r.file_id LIMIT ?",
+                 WHERE r.refs = 0 AND u.state = 3
+                 AND NOT EXISTS (SELECT 1 FROM _fexu_media_cleanup_receipts c
+                     WHERE c.owner = r.owner AND c.file_id = r.file_id) ORDER BY r.owner, r.file_id LIMIT ?",
                 vec![Value::from(i64::from(limit))],
             ),
             (DatabaseBackend::Postgres, None) => (
                 "SELECT r.owner, r.file_id FROM _fexu_media_references r
                  JOIN _fexu_media_uploads u ON u.owner = r.owner AND u.file_id = r.file_id
-                 WHERE r.refs = 0 AND u.state = 3 ORDER BY r.owner, r.file_id LIMIT $1",
+                 WHERE r.refs = 0 AND u.state = 3
+                 AND NOT EXISTS (SELECT 1 FROM _fexu_media_cleanup_receipts c
+                     WHERE c.owner = r.owner AND c.file_id = r.file_id) ORDER BY r.owner, r.file_id LIMIT $1",
                 vec![Value::from(i64::from(limit))],
             ),
             (DatabaseBackend::Sqlite, Some(cursor)) => (
                 "SELECT r.owner, r.file_id FROM _fexu_media_references r
                  JOIN _fexu_media_uploads u ON u.owner = r.owner AND u.file_id = r.file_id
-                 WHERE r.refs = 0 AND u.state = 3 AND (r.owner, r.file_id) > (?, ?)
+                 WHERE r.refs = 0 AND u.state = 3
+                 AND NOT EXISTS (SELECT 1 FROM _fexu_media_cleanup_receipts c
+                     WHERE c.owner = r.owner AND c.file_id = r.file_id) AND (r.owner, r.file_id) > (?, ?)
                  ORDER BY r.owner, r.file_id LIMIT ?",
                 vec![
                     Value::from(cursor.owner.to_string()),
@@ -322,7 +346,9 @@ impl ReferenceLedger {
             (DatabaseBackend::Postgres, Some(cursor)) => (
                 "SELECT r.owner, r.file_id FROM _fexu_media_references r
                  JOIN _fexu_media_uploads u ON u.owner = r.owner AND u.file_id = r.file_id
-                 WHERE r.refs = 0 AND u.state = 3 AND (r.owner, r.file_id) > ($1, $2)
+                 WHERE r.refs = 0 AND u.state = 3
+                 AND NOT EXISTS (SELECT 1 FROM _fexu_media_cleanup_receipts c
+                     WHERE c.owner = r.owner AND c.file_id = r.file_id) AND (r.owner, r.file_id) > ($1, $2)
                  ORDER BY r.owner, r.file_id LIMIT $3",
                 vec![
                     Value::from(cursor.owner.to_string()),
@@ -354,6 +380,7 @@ impl ReferenceLedger {
     /// No implicit abandonment, timeout or deletion of legacy IDs occurs.
     /// Each selected ID is checked again by the durable retirement gate.
     /// A failed item is returned without aborting the rest of the page.
+    /// Backend results are durably recorded before an item reports success.
     /// Resume with the last result's ID; revisit earlier pages on later runs.
     pub async fn cleanup_abandoned_page<S: crate::Storage + ?Sized>(
         &self,
@@ -364,10 +391,80 @@ impl ReferenceLedger {
         let candidates = self.abandoned_candidates(after, limit).await?;
         let mut results = Vec::with_capacity(candidates.len());
         for media in candidates {
-            let outcome = self.cleanup_abandoned(storage, media).await;
+            let outcome = self.cleanup_with_receipt(storage, media).await;
             results.push(AbandonedCleanupItem { media, outcome });
         }
         Ok(results)
+    }
+
+    /// Read a previously recorded abandoned-page backend outcome.
+    pub async fn cleanup_receipt(
+        &self,
+        media: MediaRef,
+    ) -> Result<Option<CleanupReceipt>, StorageError> {
+        let query = statement(
+            &self.db,
+            "SELECT outcome FROM _fexu_media_cleanup_receipts WHERE owner = ? AND file_id = ?",
+            "SELECT outcome FROM _fexu_media_cleanup_receipts WHERE owner = $1 AND file_id = $2",
+            media,
+        )?;
+        let row = self
+            .db
+            .query_one(query)
+            .await
+            .map_err(|_| StorageError::Failed)?;
+        let Some(row) = row else {
+            return Ok(None);
+        };
+        let outcome: i32 = row
+            .try_get("", "outcome")
+            .map_err(|_| StorageError::Failed)?;
+        match outcome {
+            1 => Ok(Some(CleanupReceipt::Removed)),
+            2 => Ok(Some(CleanupReceipt::Missing)),
+            _ => Err(StorageError::Failed),
+        }
+    }
+
+    async fn cleanup_with_receipt<S: crate::Storage + ?Sized>(
+        &self,
+        storage: &S,
+        media: MediaRef,
+    ) -> Result<AbandonedCleanup, StorageError> {
+        if let Some(receipt) = self.cleanup_receipt(media).await? {
+            return Ok(match receipt {
+                CleanupReceipt::Removed => AbandonedCleanup::Removed,
+                CleanupReceipt::Missing => AbandonedCleanup::Missing,
+            });
+        }
+        let outcome = self.cleanup_abandoned(storage, media).await?;
+        let (sqlite, postgres) = match outcome {
+            AbandonedCleanup::Removed => (
+                "INSERT INTO _fexu_media_cleanup_receipts VALUES (?, ?, 1)
+                 ON CONFLICT (owner, file_id) DO NOTHING",
+                "INSERT INTO _fexu_media_cleanup_receipts VALUES ($1, $2, 1)
+                 ON CONFLICT (owner, file_id) DO NOTHING",
+            ),
+            AbandonedCleanup::Missing => (
+                "INSERT INTO _fexu_media_cleanup_receipts VALUES (?, ?, 2)
+                 ON CONFLICT (owner, file_id) DO NOTHING",
+                "INSERT INTO _fexu_media_cleanup_receipts VALUES ($1, $2, 2)
+                 ON CONFLICT (owner, file_id) DO NOTHING",
+            ),
+            _ => return Ok(outcome),
+        };
+        let query = statement(&self.db, sqlite, postgres, media)?;
+        self.db
+            .execute(query)
+            .await
+            .map_err(|_| StorageError::Failed)?;
+        // Concurrent workers may have observed different backend outcomes.
+        // Report the first durable receipt rather than overwrite it.
+        match self.cleanup_receipt(media).await? {
+            Some(CleanupReceipt::Removed) => Ok(AbandonedCleanup::Removed),
+            Some(CleanupReceipt::Missing) => Ok(AbandonedCleanup::Missing),
+            None => Err(StorageError::Failed),
+        }
     }
 
     /// Retire an enrolled zero-reference ID and remove its bytes.
@@ -782,10 +879,47 @@ mod tests {
             .cleanup_abandoned_page(&storage, None, 10)
             .await
             .unwrap();
-        assert_eq!(retry.len(), 2);
-        for item in retry {
-            assert_eq!(item.outcome, Ok(AbandonedCleanup::Missing));
+        assert!(retry.is_empty());
+        let reopened = ReferenceLedger::new(db.clone());
+        reopened.initialize().await.unwrap();
+        for media in &abandoned {
+            assert_eq!(
+                reopened.cleanup_receipt(*media).await.unwrap(),
+                Some(CleanupReceipt::Removed)
+            );
         }
+        // Simulate interruption after retirement and storage deletion but
+        // before recording a receipt. The next page records Missing.
+        let missing = MediaRef {
+            owner,
+            id: Uuid::new_v4(),
+        };
+        ledger.begin_upload(missing).await.unwrap();
+        ledger.abandon_upload(missing).await.unwrap();
+        assert_eq!(
+            ledger.check(missing).await.unwrap(),
+            ReferenceDecision::Unreferenced(())
+        );
+        assert_eq!(ledger.cleanup_receipt(missing).await.unwrap(), None);
+        let retry = reopened
+            .cleanup_abandoned_page(&storage, None, 10)
+            .await
+            .unwrap();
+        assert_eq!(retry.len(), 1);
+        assert_eq!(retry[0].media, missing);
+        assert_eq!(retry[0].outcome, Ok(AbandonedCleanup::Missing));
+        assert_eq!(
+            reopened.cleanup_receipt(missing).await.unwrap(),
+            Some(CleanupReceipt::Missing)
+        );
+        assert!(reopened
+            .abandoned_candidates(None, 10)
+            .await
+            .unwrap()
+            .is_empty());
+        let tx = db.begin().await.unwrap();
+        assert!(ReferenceLedger::attach(&tx, missing).await.is_err());
+        tx.rollback().await.unwrap();
         assert!(storage.exists(owner, staged.id).await.unwrap());
         assert!(storage.exists(owner, committed.id).await.unwrap());
         assert!(storage.exists(owner, legacy.id).await.unwrap());
