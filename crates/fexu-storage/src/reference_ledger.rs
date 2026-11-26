@@ -24,6 +24,13 @@ pub enum AbandonedCleanup {
     Missing,
 }
 
+/// Per-ID result of a bounded cleanup page. Errors remain retryable.
+#[derive(Debug)]
+pub struct AbandonedCleanupItem {
+    pub media: MediaRef,
+    pub outcome: Result<AbandonedCleanup, StorageError>,
+}
+
 /// Durable write status for uploads enrolled through `stage_reserved`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UploadState {
@@ -274,6 +281,93 @@ impl ReferenceLedger {
                 Ok(MediaRef { owner, id })
             })
             .collect()
+    }
+
+    /// Discover only explicitly abandoned, tracked zero-reference IDs.
+    /// Active, staged, committed and legacy IDs are excluded. Retired IDs
+    /// remain visible for retry. This is not permission to delete.
+    pub async fn abandoned_candidates(
+        &self,
+        after: Option<MediaRef>,
+        limit: u32,
+    ) -> Result<Vec<MediaRef>, StorageError> {
+        if !(1..=1000).contains(&limit) {
+            return Err(StorageError::Failed);
+        }
+        let backend = self.db.get_database_backend();
+        let (sql, values) = match (backend, after) {
+            (DatabaseBackend::Sqlite, None) => (
+                "SELECT r.owner, r.file_id FROM _fexu_media_references r
+                 JOIN _fexu_media_uploads u ON u.owner = r.owner AND u.file_id = r.file_id
+                 WHERE r.refs = 0 AND u.state = 3 ORDER BY r.owner, r.file_id LIMIT ?",
+                vec![Value::from(i64::from(limit))],
+            ),
+            (DatabaseBackend::Postgres, None) => (
+                "SELECT r.owner, r.file_id FROM _fexu_media_references r
+                 JOIN _fexu_media_uploads u ON u.owner = r.owner AND u.file_id = r.file_id
+                 WHERE r.refs = 0 AND u.state = 3 ORDER BY r.owner, r.file_id LIMIT $1",
+                vec![Value::from(i64::from(limit))],
+            ),
+            (DatabaseBackend::Sqlite, Some(cursor)) => (
+                "SELECT r.owner, r.file_id FROM _fexu_media_references r
+                 JOIN _fexu_media_uploads u ON u.owner = r.owner AND u.file_id = r.file_id
+                 WHERE r.refs = 0 AND u.state = 3 AND (r.owner, r.file_id) > (?, ?)
+                 ORDER BY r.owner, r.file_id LIMIT ?",
+                vec![
+                    Value::from(cursor.owner.to_string()),
+                    Value::from(cursor.id.to_string()),
+                    Value::from(i64::from(limit)),
+                ],
+            ),
+            (DatabaseBackend::Postgres, Some(cursor)) => (
+                "SELECT r.owner, r.file_id FROM _fexu_media_references r
+                 JOIN _fexu_media_uploads u ON u.owner = r.owner AND u.file_id = r.file_id
+                 WHERE r.refs = 0 AND u.state = 3 AND (r.owner, r.file_id) > ($1, $2)
+                 ORDER BY r.owner, r.file_id LIMIT $3",
+                vec![
+                    Value::from(cursor.owner.to_string()),
+                    Value::from(cursor.id.to_string()),
+                    Value::from(i64::from(limit)),
+                ],
+            ),
+            _ => return Err(StorageError::Failed),
+        };
+        let rows = self
+            .db
+            .query_all(Statement::from_sql_and_values(backend, sql, values))
+            .await
+            .map_err(|_| StorageError::Failed)?;
+        rows.into_iter()
+            .map(|row| {
+                let owner: String = row.try_get("", "owner").map_err(|_| StorageError::Failed)?;
+                let id: String = row
+                    .try_get("", "file_id")
+                    .map_err(|_| StorageError::Failed)?;
+                let owner = uuid::Uuid::parse_str(&owner).map_err(|_| StorageError::Failed)?;
+                let id = uuid::Uuid::parse_str(&id).map_err(|_| StorageError::Failed)?;
+                Ok(MediaRef { owner, id })
+            })
+            .collect()
+    }
+
+    /// Process one bounded page of explicitly abandoned uploads.
+    /// No implicit abandonment, timeout or deletion of legacy IDs occurs.
+    /// Each selected ID is checked again by the durable retirement gate.
+    /// A failed item is returned without aborting the rest of the page.
+    /// Resume with the last result's ID; revisit earlier pages on later runs.
+    pub async fn cleanup_abandoned_page<S: crate::Storage + ?Sized>(
+        &self,
+        storage: &S,
+        after: Option<MediaRef>,
+        limit: u32,
+    ) -> Result<Vec<AbandonedCleanupItem>, StorageError> {
+        let candidates = self.abandoned_candidates(after, limit).await?;
+        let mut results = Vec::with_capacity(candidates.len());
+        for media in candidates {
+            let outcome = self.cleanup_abandoned(storage, media).await;
+            results.push(AbandonedCleanupItem { media, outcome });
+        }
+        Ok(results)
     }
 
     /// Retire an enrolled zero-reference ID and remove its bytes.
