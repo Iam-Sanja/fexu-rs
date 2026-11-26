@@ -2,11 +2,11 @@
 
 use crate::{MediaRef, ReferenceCheck, ReferenceDecision, StorageError};
 use async_trait::async_trait;
-use sha2::{Digest, Sha256};
 use fexu_db::driver::{
     ConnectionTrait, DatabaseBackend, DatabaseConnection, DatabaseTransaction, Statement,
     TransactionTrait, Value,
 };
+use sha2::{Digest, Sha256};
 
 /// Counts model references in the same transaction as each model write.
 /// Retirement is permanent, including when a subsequent storage request fails.
@@ -62,7 +62,7 @@ impl UploadIntent {
         let size = i64::try_from(bytes.len()).map_err(|_| StorageError::TooLarge)?;
         Ok(Self {
             size,
-            sha256: format!("{:x}", Sha256::digest(bytes)),
+            sha256: crate::local::hex(Sha256::digest(bytes)),
             expires_at,
             original_name: crate::sanitize_name(original_name),
         })
@@ -264,7 +264,10 @@ impl ReferenceLedger {
 
     /// Read the original intent without changing upload state.
     /// Older enrollments may have no intent and cannot use settled recovery.
-    pub async fn upload_intent(&self, media: MediaRef) -> Result<Option<UploadIntent>, StorageError> {
+    pub async fn upload_intent(
+        &self,
+        media: MediaRef,
+    ) -> Result<Option<UploadIntent>, StorageError> {
         let query = statement(
             &self.db,
             "SELECT size, sha256, expires_at, original_name FROM _fexu_media_upload_intents
@@ -283,7 +286,9 @@ impl ReferenceLedger {
         };
         Ok(Some(UploadIntent {
             size: row.try_get("", "size").map_err(|_| StorageError::Failed)?,
-            sha256: row.try_get("", "sha256").map_err(|_| StorageError::Failed)?,
+            sha256: row
+                .try_get("", "sha256")
+                .map_err(|_| StorageError::Failed)?,
             expires_at: row
                 .try_get("", "expires_at")
                 .map_err(|_| StorageError::Failed)?,
