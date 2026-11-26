@@ -1395,6 +1395,55 @@ mod tests {
             AbandonedCleanup::Unknown
         );
         assert!(ledger.request_upload_fence(media).await.is_err());
+        let local = MediaRef {
+            owner,
+            id: Uuid::new_v4(),
+        };
+        let intent = UploadIntent::new("note.txt", b"late", i64::MAX).unwrap();
+        ledger.begin_upload(local, &intent).await.unwrap();
+        let other = LocalStorage::open(&root, 64, &["text/plain"]).unwrap();
+        let slot = root
+            .join(owner.to_string())
+            .join(format!("{}.write-lock", local.id));
+        std::fs::write(&slot, b"").unwrap();
+        assert!(ledger
+            .abandon_unresolved_local(&storage, local)
+            .await
+            .is_err());
+        assert!(ledger.local_fence_requested(local).await.unwrap());
+        assert!(ledger.finish_upload(local).await.is_err());
+        assert!(ledger.abandon_upload(local).await.is_err());
+        assert!(ledger.request_upload_fence(local).await.is_err());
+        assert!(other
+            .save_reserved(local, "note.txt", b"late", i64::MAX)
+            .await
+            .is_err());
+        // Simulate a cooperating writer releasing its slot after settlement.
+        std::fs::remove_file(&slot).unwrap();
+        ledger
+            .abandon_unresolved_local(&storage, local)
+            .await
+            .unwrap();
+        ledger
+            .abandon_unresolved_local(&other, local)
+            .await
+            .unwrap();
+        assert_eq!(
+            ledger.upload_state(local).await.unwrap(),
+            Some(UploadState::Abandoned)
+        );
+        assert!(other
+            .save_reserved(local, "note.txt", b"late", i64::MAX)
+            .await
+            .is_err());
+        assert_eq!(
+            ledger
+                .cleanup_local_residue(&storage, local)
+                .await
+                .unwrap(),
+            AbandonedCleanup::Missing
+        );
+        assert_eq!(std::fs::read(&slot).unwrap(), b"FXL1");
         std::fs::remove_dir_all(root).unwrap();
     }
 
