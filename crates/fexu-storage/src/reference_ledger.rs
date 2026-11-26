@@ -171,17 +171,18 @@ impl ReferenceLedger {
 
     /// Observe upload state without retiring the ID or authorizing deletion.
     /// Missing records include legacy enrollments.
-    pub async fn upload_state(
-        &self,
-        media: MediaRef,
-    ) -> Result<Option<UploadState>, StorageError> {
+    pub async fn upload_state(&self, media: MediaRef) -> Result<Option<UploadState>, StorageError> {
         let query = statement(
             &self.db,
             "SELECT state FROM _fexu_media_uploads WHERE owner = ? AND file_id = ?",
             "SELECT state FROM _fexu_media_uploads WHERE owner = $1 AND file_id = $2",
             media,
         )?;
-        let row = self.db.query_one(query).await.map_err(|_| StorageError::Failed)?;
+        let row = self
+            .db
+            .query_one(query)
+            .await
+            .map_err(|_| StorageError::Failed)?;
         let Some(row) = row else {
             return Ok(None);
         };
@@ -316,19 +317,19 @@ impl ReferenceLedger {
     ) -> Result<(), StorageError> {
         let query = statement(
             tx,
-            "UPDATE _fexu_media_uploads SET state = 2
-             WHERE owner = ? AND file_id = ? AND state = 1",
-            "UPDATE _fexu_media_uploads SET state = 2
-             WHERE owner = $1 AND file_id = $2 AND state = 1",
+            "UPDATE _fexu_media_references SET refs = 1
+             WHERE owner = ? AND file_id = ? AND retired = 0 AND refs = 0",
+            "UPDATE _fexu_media_references SET refs = 1
+             WHERE owner = $1 AND file_id = $2 AND retired = 0 AND refs = 0",
             media,
         )?;
         change_one(tx, query).await?;
         let query = statement(
             tx,
-            "UPDATE _fexu_media_references SET refs = 1
-             WHERE owner = ? AND file_id = ? AND retired = 0 AND refs = 0",
-            "UPDATE _fexu_media_references SET refs = 1
-             WHERE owner = $1 AND file_id = $2 AND retired = 0 AND refs = 0",
+            "UPDATE _fexu_media_uploads SET state = 2
+             WHERE owner = ? AND file_id = ? AND state = 1",
+            "UPDATE _fexu_media_uploads SET state = 2
+             WHERE owner = $1 AND file_id = $2 AND state = 1",
             media,
         )?;
         change_one(tx, query).await
@@ -340,9 +341,15 @@ impl ReferenceLedger {
         let query = statement(
             tx,
             "UPDATE _fexu_media_references SET refs = refs + 1
-             WHERE owner = ? AND file_id = ? AND retired = 0 AND refs < 9223372036854775807",
+             WHERE owner = ? AND file_id = ? AND retired = 0 AND refs < 9223372036854775807
+             AND NOT EXISTS (SELECT 1 FROM _fexu_media_uploads u
+                 WHERE u.owner = _fexu_media_references.owner
+                 AND u.file_id = _fexu_media_references.file_id AND u.state <> 2)",
             "UPDATE _fexu_media_references SET refs = refs + 1
-             WHERE owner = $1 AND file_id = $2 AND retired = 0 AND refs < 9223372036854775807",
+             WHERE owner = $1 AND file_id = $2 AND retired = 0 AND refs < 9223372036854775807
+             AND NOT EXISTS (SELECT 1 FROM _fexu_media_uploads u
+                 WHERE u.owner = _fexu_media_references.owner
+                 AND u.file_id = _fexu_media_references.file_id AND u.state <> 2)",
             media,
         )?;
         change_one(tx, query).await
@@ -394,9 +401,15 @@ impl ReferenceCheck for ReferenceLedger {
         let query = statement(
             &tx,
             "UPDATE _fexu_media_references SET retired = 1
-             WHERE owner = ? AND file_id = ? AND refs = 0 AND retired = 0",
+             WHERE owner = ? AND file_id = ? AND refs = 0 AND retired = 0
+             AND NOT EXISTS (SELECT 1 FROM _fexu_media_uploads u
+                 WHERE u.owner = _fexu_media_references.owner
+                 AND u.file_id = _fexu_media_references.file_id AND u.state IN (0, 1))",
             "UPDATE _fexu_media_references SET retired = 1
-             WHERE owner = $1 AND file_id = $2 AND refs = 0 AND retired = 0",
+             WHERE owner = $1 AND file_id = $2 AND refs = 0 AND retired = 0
+             AND NOT EXISTS (SELECT 1 FROM _fexu_media_uploads u
+                 WHERE u.owner = _fexu_media_references.owner
+                 AND u.file_id = _fexu_media_references.file_id AND u.state IN (0, 1))",
             media,
         )?;
         tx.execute(query).await.map_err(|_| StorageError::Failed)?;
@@ -420,6 +433,7 @@ impl ReferenceCheck for ReferenceLedger {
                 match (refs, retired) {
                     (0, 1) => ReferenceDecision::Unreferenced(()),
                     (1..=i64::MAX, 0) => ReferenceDecision::Referenced,
+                    (0, 0) => ReferenceDecision::Unknown,
                     _ => return Err(StorageError::Failed),
                 }
             }
