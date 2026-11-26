@@ -156,6 +156,7 @@ pub struct CommitReport {
 }
 
 /// A pre-enrolled staging result, deliberately without legacy delete methods.
+#[must_use = "commit or reconcile the enrolled uploads"]
 pub struct ReservedStagedMedia {
     staged: StagedMedia,
     ledger: crate::ReferenceLedger,
@@ -196,6 +197,8 @@ impl UploadPlan {
 
     /// Enroll each new ID before writing its bytes. No legacy abort or delete
     /// is performed on error; enrolled candidates remain discoverable.
+    /// The caller must exclude cleanup during in-flight writes and use the
+    /// same storage namespace for staging and commit.
     pub async fn stage_referenced<S: Storage + ?Sized>(
         self,
         storage: &S,
