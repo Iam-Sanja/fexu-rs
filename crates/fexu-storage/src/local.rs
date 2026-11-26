@@ -159,14 +159,8 @@ impl LocalStorage {
         bytes: &[u8],
         expires_at: Option<i64>,
     ) -> Result<StoredFile, StorageError> {
-        self.save_at(
-            owner,
-            Uuid::new_v4(),
-            original_name,
-            bytes,
-            expires_at,
-        )
-        .await
+        self.save_at(owner, Uuid::new_v4(), original_name, bytes, expires_at)
+            .await
     }
 
     async fn save_at(
@@ -196,6 +190,11 @@ impl LocalStorage {
         let partial = directory.join(format!("{id}.partial"));
         let target = directory.join(id.to_string());
         let meta_path = directory.join(format!("{id}.json"));
+        // Refuse an existing sidecar even when its data is missing.
+        match std::fs::symlink_metadata(&meta_path) {
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            _ => return Err(StorageError::Failed),
+        }
         let mut pending = PendingFiles::default();
         // Claim the temporary name exclusively before tracking it. A losing
         // writer must never remove a path belonging to another writer.
