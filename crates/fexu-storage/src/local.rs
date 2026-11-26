@@ -417,8 +417,14 @@ impl Storage for LocalStorage {
         bytes: &[u8],
         expires_at: i64,
     ) -> Result<StoredFile, StorageError> {
-        self.save_at(media.owner, media.id, original_name, bytes, Some(expires_at))
-            .await
+        self.save_at(
+            media.owner,
+            media.id,
+            original_name,
+            bytes,
+            Some(expires_at),
+        )
+        .await
     }
 
     async fn retain(&self, owner: Uuid, id: Uuid) -> Result<StoredFile, StorageError> {
