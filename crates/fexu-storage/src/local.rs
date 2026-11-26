@@ -187,6 +187,8 @@ impl LocalStorage {
         let directory = self.rooted_owner(owner, true)?;
         self.enforce_quota(&directory, bytes.len() as u64)?;
         stored.id = id;
+        // A permanent discard marker occupies the exclusive writer slot.
+        // Check it before publishing any bytes, under the same slot protocol.
         let partial = directory.join(format!("{id}.partial"));
         let target = directory.join(id.to_string());
         let meta_path = directory.join(format!("{id}.json"));
@@ -195,6 +197,15 @@ impl LocalStorage {
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
             _ => return Err(StorageError::Failed),
         }
+        let slot = directory.join(format!("{id}.write-lock"));
+        let mut admission = PendingFiles::default();
+        let lock = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&slot)
+            .map_err(|_| StorageError::Failed)?;
+        admission.track(slot.clone());
+        drop(lock);
         let mut pending = PendingFiles::default();
         // Claim the temporary name exclusively before tracking it. A losing
         // writer must never remove a path belonging to another writer.
@@ -223,6 +234,44 @@ impl LocalStorage {
         ensure_regular_inside(&self.root, &meta_path)?;
         pending.commit();
         Ok(stored)
+    }
+
+    // A successful exclusive creation proves no cooperating writer holds the
+    // slot. Leave it permanently occupied to exclude all later writers.
+    // An existing slot is ambiguous (active, crashed, or already fenced).
+    pub(crate) fn fence_local_writer(&self, media: crate::MediaRef) -> Result<(), StorageError> {
+        let _guard = self
+            .gate
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let directory = self.rooted_owner(media.owner, true)?;
+        let slot = directory.join(format!("{}.write-lock", media.id));
+        let mut file = match std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&slot)
+        {
+            Ok(file) => file,
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+                // A live or crashed writer owns an empty slot. Never steal it.
+                if !regular_file(&slot) {
+                    return Err(StorageError::Failed);
+                }
+                let path = Self::contained(&directory, &slot)?;
+                let mut file = std::fs::File::open(path).map_err(|_| StorageError::Failed)?;
+                let mut marker = [0; 5];
+                let count = std::io::Read::read(&mut file, &mut marker)
+                    .map_err(|_| StorageError::Failed)?;
+                if count == 4 && &marker[..4] == b"FXL1" {
+                    return Ok(());
+                }
+                return Err(StorageError::Failed);
+            }
+            Err(_) => return Err(StorageError::Failed),
+        };
+        std::io::Write::write_all(&mut file, b"FXL1").map_err(|_| StorageError::Failed)?;
+        file.sync_all().map_err(|_| StorageError::Failed)?;
+        Ok(())
     }
 
     // Only for permanently retired, settled IDs in a trusted local root.
