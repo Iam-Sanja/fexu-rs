@@ -275,7 +275,8 @@ impl ReferenceLedger {
         storage: &S,
         media: MediaRef,
     ) -> Result<crate::StoredFile, StorageError> {
-        let UploadObservation::Present(file) = self.inspect_unresolved(storage, media).await? else {
+        let UploadObservation::Present(file) = self.inspect_unresolved(storage, media).await?
+        else {
             return Err(StorageError::Failed);
         };
         self.finish_upload(media).await?;
@@ -983,7 +984,11 @@ mod tests {
                 .unwrap(),
             UploadObservation::NotUploading
         );
-        assert!(ledger.unresolved_uploads(None, 10).await.unwrap().is_empty());
+        assert!(ledger
+            .unresolved_uploads(None, 10)
+            .await
+            .unwrap()
+            .is_empty());
         ledger.abandon_upload(interrupted).await.unwrap();
         assert_eq!(
             ledger
