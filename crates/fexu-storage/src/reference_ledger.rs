@@ -108,8 +108,8 @@ impl ReferenceLedger {
     }
 
     /// Allocate and durably enroll an immutable ID before writing bytes.
-    /// The caller must authorize the upload and exclude cleanup until the
-    /// write has settled. Failed writes leave an enrolled candidate.
+    /// The caller must authorize the upload. Failed or ambiguous writes stay
+    /// Uploading until an operator establishes that all writes have settled.
     pub async fn stage_reserved<S: crate::Storage + ?Sized>(
         &self,
         storage: &S,
@@ -535,6 +535,22 @@ mod tests {
             .unwrap_err();
         assert_eq!(failed.error, StorageError::TooLarge);
         assert_eq!(
+            ledger.upload_state(failed.media).await.unwrap(),
+            Some(UploadState::Uploading)
+        );
+        assert_eq!(
+            ledger
+                .cleanup_abandoned(&storage, failed.media)
+                .await
+                .unwrap(),
+            AbandonedCleanup::Unknown
+        );
+        ledger.abandon_upload(failed.media).await.unwrap();
+        assert_eq!(
+            ledger.upload_state(failed.media).await.unwrap(),
+            Some(UploadState::Abandoned)
+        );
+        assert_eq!(
             ledger.orphan_candidates(None, 10).await.unwrap(),
             vec![failed.media]
         );
@@ -556,8 +572,24 @@ mod tests {
             .is_err());
         assert_eq!(storage.read(owner, file.id).await.unwrap().1, b"hello");
         let tx = db.begin().await.unwrap();
-        ReferenceLedger::attach(&tx, media).await.unwrap();
+        assert!(ReferenceLedger::attach(&tx, media).await.is_err());
+        tx.rollback().await.unwrap();
+        assert_eq!(
+            ledger.upload_state(media).await.unwrap(),
+            Some(UploadState::Staged)
+        );
+        assert_eq!(
+            ledger.cleanup_abandoned(&storage, media).await.unwrap(),
+            AbandonedCleanup::Unknown
+        );
+        let tx = db.begin().await.unwrap();
+        ReferenceLedger::claim_reserved(&tx, media).await.unwrap();
         tx.commit().await.unwrap();
+        assert_eq!(
+            ledger.upload_state(media).await.unwrap(),
+            Some(UploadState::Committed)
+        );
+        assert!(ledger.abandon_upload(media).await.is_err());
         assert_eq!(
             ledger.cleanup_abandoned(&storage, media).await.unwrap(),
             AbandonedCleanup::Referenced
