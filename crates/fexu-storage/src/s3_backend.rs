@@ -467,6 +467,31 @@ mod tests {
 
     #[tokio::test]
     #[ignore = "requires isolated TLS S3 fixture"]
+    async fn s3_cleanup_reserved_collision_contract() {
+        let first = recovery_fixture();
+        let second = recovery_fixture();
+        let media = crate::MediaRef {
+            owner: Uuid::new_v4(),
+            id: Uuid::new_v4(),
+        };
+        let stored = first
+            .save_reserved(media, "note.txt", b"original", now() + 300)
+            .await
+            .unwrap();
+        assert_eq!(stored.id, media.id);
+        assert!(second
+            .save_reserved(media, "note.txt", b"overwrite", now() + 300)
+            .await
+            .is_err());
+        assert_eq!(
+            first.read(media.owner, media.id).await.unwrap().1,
+            b"original"
+        );
+        first.delete(media.owner, media.id).await.unwrap();
+    }
+
+    #[tokio::test]
+    #[ignore = "requires isolated TLS S3 fixture"]
     async fn s3_cleanup_stale_etag_contract() {
         let first = recovery_fixture();
         let second = recovery_fixture();
