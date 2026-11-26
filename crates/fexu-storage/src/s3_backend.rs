@@ -369,6 +369,27 @@ impl Storage for S3Storage {
         Ok(meta)
     }
 
+    async fn save_reserved(
+        &self,
+        media: crate::MediaRef,
+        original_name: &str,
+        bytes: &[u8],
+        expires_at: i64,
+    ) -> Result<StoredFile, StorageError> {
+        let mut meta = prepare_file(
+            media.owner,
+            original_name,
+            bytes,
+            Some(expires_at),
+            self.limits.max_bytes,
+            &self.allow,
+            self.check.as_deref(),
+        )?;
+        meta.id = media.id;
+        self.put(&meta, bytes, PutMode::Create).await?;
+        Ok(meta)
+    }
+
     async fn read(&self, owner: Uuid, id: Uuid) -> Result<(StoredFile, Vec<u8>), StorageError> {
         let (meta, bytes, _) = self.load(owner, id).await?;
         if expired(&meta) {
@@ -442,6 +463,31 @@ mod tests {
             Some(&ca),
         )
         .unwrap()
+    }
+
+    #[tokio::test]
+    #[ignore = "requires isolated TLS S3 fixture"]
+    async fn s3_cleanup_reserved_collision_contract() {
+        let first = recovery_fixture();
+        let second = recovery_fixture();
+        let media = crate::MediaRef {
+            owner: Uuid::new_v4(),
+            id: Uuid::new_v4(),
+        };
+        let stored = first
+            .save_reserved(media, "note.txt", b"original", now() + 300)
+            .await
+            .unwrap();
+        assert_eq!(stored.id, media.id);
+        assert!(second
+            .save_reserved(media, "note.txt", b"overwrite", now() + 300)
+            .await
+            .is_err());
+        assert_eq!(
+            first.read(media.owner, media.id).await.unwrap().1,
+            b"original"
+        );
+        first.delete(media.owner, media.id).await.unwrap();
     }
 
     #[tokio::test]

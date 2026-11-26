@@ -2,6 +2,8 @@
 
 ## Unreleased — toward v0.3.0
 
+- Add opt-in pre-enrolled upload IDs and collision-rejecting local and S3 writes; failed attempts remain discoverable after durable enrollment. Local publication now requires hard-link support.
+
 - Add bounded keyset discovery of enrolled zero-reference media and explicit irreversible retirement before abandoned-file deletion. Unknown and referenced IDs remain protected; no automatic eligibility or sweep is enabled.
 
 - Add an explicit reference-aware staged media commit with transactional model callback, fresh-ID enrollment and pre-commit retention. Old files are never directly deleted; ambiguous failures preserve candidates for recovery.

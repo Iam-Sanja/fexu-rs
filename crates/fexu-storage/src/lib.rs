@@ -38,7 +38,7 @@ pub use png::{decode_png, validate_image, ImageValidation};
 pub use reconciliation::{
     reconcile_expired, ExpiryCleanup, ReconciliationOutcome, ReferenceCheck, ReferenceDecision,
 };
-pub use reference_ledger::{AbandonedCleanup, ReferenceLedger};
+pub use reference_ledger::{AbandonedCleanup, ReferenceLedger, ReservedUploadError};
 pub use s3::{
     credentials_from_env, prepare as prepare_s3, S3Credentials, S3Plan, ACCESS_KEY_ENV,
     SECRET_KEY_ENV,
@@ -102,6 +102,20 @@ pub trait Storage: Send + Sync {
             return Err(StorageError::Failed);
         }
         self.save(owner, original_name, bytes).await
+    }
+
+    /// Create a staged object at a fresh, server-allocated ID. Never reuse IDs,
+    /// including after failure or deletion. Backends must refuse collisions.
+    /// This low-level method requires an external admission protocol.
+    async fn save_reserved(
+        &self,
+        media: MediaRef,
+        original_name: &str,
+        bytes: &[u8],
+        expires_at: i64,
+    ) -> Result<StoredFile, StorageError> {
+        let _ = (media, original_name, bytes, expires_at);
+        Err(StorageError::Failed)
     }
 
     /// Clears an expiry written by [`Storage::save_expiring`].

@@ -159,11 +159,23 @@ impl LocalStorage {
         bytes: &[u8],
         expires_at: Option<i64>,
     ) -> Result<StoredFile, StorageError> {
+        self.save_at(owner, Uuid::new_v4(), original_name, bytes, expires_at)
+            .await
+    }
+
+    async fn save_at(
+        &self,
+        owner: Uuid,
+        id: Uuid,
+        original_name: &str,
+        bytes: &[u8],
+        expires_at: Option<i64>,
+    ) -> Result<StoredFile, StorageError> {
         let _guard = self
             .gate
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
-        let stored = prepare_file(
+        let mut stored = prepare_file(
             owner,
             original_name,
             bytes,
@@ -174,21 +186,40 @@ impl LocalStorage {
         )?;
         let directory = self.rooted_owner(owner, true)?;
         self.enforce_quota(&directory, bytes.len() as u64)?;
-        let id = stored.id;
+        stored.id = id;
         let partial = directory.join(format!("{id}.partial"));
         let target = directory.join(id.to_string());
         let meta_path = directory.join(format!("{id}.json"));
-        let mut pending = PendingFiles::default();
-        pending.track(partial.clone());
-        pending.track(target.clone());
-        pending.track(meta_path.clone());
-        write_new(&partial, bytes)?;
-        if std::fs::rename(&partial, &target).is_err() {
-            return Err(StorageError::Failed);
+        // Refuse an existing sidecar even when its data is missing.
+        match std::fs::symlink_metadata(&meta_path) {
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            _ => return Err(StorageError::Failed),
         }
+        let mut pending = PendingFiles::default();
+        // Claim the temporary name exclusively before tracking it. A losing
+        // writer must never remove a path belonging to another writer.
+        let mut file = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&partial)
+            .map_err(|_| StorageError::Failed)?;
+        pending.track(partial.clone());
+        std::io::Write::write_all(&mut file, bytes).map_err(|_| StorageError::Failed)?;
+        drop(file);
+        // Hard-link publication is atomic and fails if the target exists.
+        std::fs::hard_link(&partial, &target).map_err(|_| StorageError::Failed)?;
+        pending.track(target.clone());
         ensure_regular_inside(&self.root, &target)?;
         let json = serde_json::to_vec(&stored).map_err(|_| StorageError::Failed)?;
-        write_new(&meta_path, &json)?;
+        let mut meta = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&meta_path)
+            .map_err(|_| StorageError::Failed)?;
+        pending.track(meta_path.clone());
+        std::io::Write::write_all(&mut meta, &json).map_err(|_| StorageError::Failed)?;
+        drop(meta);
+        std::fs::remove_file(&partial).map_err(|_| StorageError::Failed)?;
         ensure_regular_inside(&self.root, &meta_path)?;
         pending.commit();
         Ok(stored)
@@ -377,6 +408,23 @@ impl Storage for LocalStorage {
     ) -> Result<StoredFile, StorageError> {
         self.save_until(owner, original_name, bytes, expires_at)
             .await
+    }
+
+    async fn save_reserved(
+        &self,
+        media: crate::MediaRef,
+        original_name: &str,
+        bytes: &[u8],
+        expires_at: i64,
+    ) -> Result<StoredFile, StorageError> {
+        self.save_at(
+            media.owner,
+            media.id,
+            original_name,
+            bytes,
+            Some(expires_at),
+        )
+        .await
     }
 
     async fn retain(&self, owner: Uuid, id: Uuid) -> Result<StoredFile, StorageError> {

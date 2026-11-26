@@ -24,6 +24,14 @@ pub enum AbandonedCleanup {
     Missing,
 }
 
+/// An attempted reserved upload. Do not infer registration or write success
+/// from an error; inspect the ledger and storage before recovery.
+#[derive(Debug)]
+pub struct ReservedUploadError {
+    pub media: MediaRef,
+    pub error: StorageError,
+}
+
 fn statement(
     db: &impl ConnectionTrait,
     sqlite: &str,
@@ -73,6 +81,30 @@ impl ReferenceLedger {
     /// An existing or retired ID must never be registered again.
     pub async fn register(&self, media: MediaRef) -> Result<(), StorageError> {
         register_on(&self.db, media).await
+    }
+
+    /// Allocate and durably enroll an immutable ID before writing bytes.
+    /// The caller must authorize the upload and exclude cleanup until the
+    /// write has settled. Failed writes leave an enrolled candidate.
+    pub async fn stage_reserved<S: crate::Storage + ?Sized>(
+        &self,
+        storage: &S,
+        owner: uuid::Uuid,
+        original_name: &str,
+        bytes: &[u8],
+        expires_at: i64,
+    ) -> Result<crate::StoredFile, ReservedUploadError> {
+        let media = MediaRef {
+            owner,
+            id: uuid::Uuid::new_v4(),
+        };
+        self.register(media)
+            .await
+            .map_err(|error| ReservedUploadError { media, error })?;
+        storage
+            .save_reserved(media, original_name, bytes, expires_at)
+            .await
+            .map_err(|error| ReservedUploadError { media, error })
     }
 
     /// List a bounded, deterministic page of enrolled zero-reference IDs.
@@ -342,6 +374,68 @@ mod tests {
         } else {
             assert_eq!(decision, ReferenceDecision::Unreferenced(()));
         }
+    }
+
+    async fn reserved_contract(db: &DatabaseConnection) {
+        use crate::{LocalStorage, Storage};
+
+        let root = std::env::temp_dir().join(format!("fexu-reserved-{}", Uuid::new_v4()));
+        let storage = LocalStorage::open(&root, 64, &["text/plain"]).unwrap();
+        let ledger = ReferenceLedger::new(db.clone());
+        ledger.initialize().await.unwrap();
+        let owner = Uuid::new_v4();
+        let failed = ledger
+            .stage_reserved(&storage, owner, "note.txt", &[b'x'; 65], 100)
+            .await
+            .unwrap_err();
+        assert_eq!(failed.error, StorageError::TooLarge);
+        assert_eq!(
+            ledger.orphan_candidates(None, 10).await.unwrap(),
+            vec![failed.media]
+        );
+        assert_eq!(
+            ledger
+                .cleanup_abandoned(&storage, failed.media)
+                .await
+                .unwrap(),
+            AbandonedCleanup::Missing
+        );
+        let file = ledger
+            .stage_reserved(&storage, owner, "note.txt", b"hello", i64::MAX)
+            .await
+            .unwrap();
+        let media = MediaRef { owner, id: file.id };
+        assert!(storage
+            .save_reserved(media, "note.txt", b"overwrite", i64::MAX)
+            .await
+            .is_err());
+        assert_eq!(storage.read(owner, file.id).await.unwrap().1, b"hello");
+        let tx = db.begin().await.unwrap();
+        ReferenceLedger::attach(&tx, media).await.unwrap();
+        tx.commit().await.unwrap();
+        assert_eq!(
+            ledger.cleanup_abandoned(&storage, media).await.unwrap(),
+            AbandonedCleanup::Referenced
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[tokio::test]
+    async fn sqlite_reserved_upload_contract() {
+        let db = fexu_db::connect("sqlite::memory:").await.unwrap();
+        reserved_contract(&db).await;
+        db.close().await.unwrap();
+    }
+
+    #[tokio::test]
+    #[ignore = "requires disposable PostgreSQL"]
+    async fn postgres_reserved_upload_contract() {
+        let url = std::env::var("DATABASE_URL").unwrap();
+        let fixture = fexu_db::DisposablePostgres::create(&url).await.unwrap();
+        let db = fexu_db::connect(fixture.url()).await.unwrap();
+        reserved_contract(&db).await;
+        db.close().await.unwrap();
+        fixture.drop_database().await.unwrap();
     }
 
     async fn orphan_contract(db: &DatabaseConnection) {
