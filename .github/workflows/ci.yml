@@ -368,6 +368,7 @@ jobs:
           require_passed -p fexu-auth --lib -- --ignored postgres_account_security_roundtrip
           require_passed -p fexu-auth --lib -- --ignored postgres_persisted_auth_and_session_survive_migrations_and_reconnect
           require_passed -p fexu-jobs --lib -- --ignored postgres_job_claim_and_rollback
+          require_passed -p fexu-jobs --lib -- --ignored postgres_storage_cleanup_job_contract
           require_passed -p fexu --test money -- --ignored postgres_decimal_and_choice_roundtrip
           require_passed -p fexu-migrations --lib fixtures::tests::postgres_fixture_roundtrip -- --ignored
           require_passed -p fexu-migrations --lib down::tests::postgres_reverts_backfill_and_foreign_key -- --ignored
