@@ -104,6 +104,20 @@ pub trait Storage: Send + Sync {
         self.save(owner, original_name, bytes).await
     }
 
+    /// Create a staged object at a fresh, server-allocated ID. Never reuse IDs,
+    /// including after failure or deletion. Backends must refuse collisions.
+    /// This low-level method requires an external admission protocol.
+    async fn save_reserved(
+        &self,
+        media: MediaRef,
+        original_name: &str,
+        bytes: &[u8],
+        expires_at: i64,
+    ) -> Result<StoredFile, StorageError> {
+        let _ = (media, original_name, bytes, expires_at);
+        Err(StorageError::Failed)
+    }
+
     /// Clears an expiry written by [`Storage::save_expiring`].
     ///
     /// The default fails. A database commit does not call this method.
