@@ -1014,6 +1014,7 @@ dependencies = [
  "fexu-db",
  "fexu-mail",
  "fexu-migrations",
+ "fexu-storage",
  "serde",
  "serde_json",
  "thiserror",

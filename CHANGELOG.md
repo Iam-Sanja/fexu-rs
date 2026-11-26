@@ -2,6 +2,8 @@
 
 ## Unreleased — toward v0.3.0
 
+- Integrate bounded abandoned-upload cleanup into explicitly registered persistent jobs and recurring schedules, with trusted worker-bound storage and retryable failures.
+
 - Add bounded resumable abandoned-upload cleanup worker batches with continuation and page-query error reporting.
 
 - Add explicit offline recovery of settled local writer slots with durable discard requests, converting empty slots to permanent markers without unlinking them.
