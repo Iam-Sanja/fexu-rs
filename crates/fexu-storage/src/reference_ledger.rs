@@ -24,6 +24,15 @@ pub enum AbandonedCleanup {
     Missing,
 }
 
+/// Durable write status for uploads enrolled through `stage_reserved`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UploadState {
+    Uploading,
+    Staged,
+    Committed,
+    Abandoned,
+}
+
 /// An attempted reserved upload. Do not infer registration or write success
 /// from an error; inspect the ledger and storage before recovery.
 #[derive(Debug)]
@@ -78,6 +87,17 @@ impl ReferenceLedger {
             )
             .await
             .map_err(|_| StorageError::Failed)?;
+        self.db
+            .execute_unprepared(
+                "CREATE TABLE IF NOT EXISTS _fexu_media_uploads (
+                    owner TEXT NOT NULL,
+                    file_id TEXT NOT NULL,
+                    state INTEGER NOT NULL CHECK (state IN (0, 1, 2, 3)),
+                    PRIMARY KEY (owner, file_id)
+                )",
+            )
+            .await
+            .map_err(|_| StorageError::Failed)?;
         Ok(())
     }
 
@@ -88,8 +108,8 @@ impl ReferenceLedger {
     }
 
     /// Allocate and durably enroll an immutable ID before writing bytes.
-    /// The caller must authorize the upload and exclude cleanup until the
-    /// write has settled. Failed writes leave an enrolled candidate.
+    /// The caller must authorize the upload. Failed or ambiguous writes stay
+    /// Uploading until an operator establishes that all writes have settled.
     pub async fn stage_reserved<S: crate::Storage + ?Sized>(
         &self,
         storage: &S,
@@ -102,7 +122,7 @@ impl ReferenceLedger {
             owner,
             id: uuid::Uuid::new_v4(),
         };
-        self.register(media)
+        self.begin_upload(media)
             .await
             .map_err(|error| ReservedUploadError { media, error })?;
         let file = storage
@@ -115,7 +135,82 @@ impl ReferenceLedger {
                 error: StorageError::Failed,
             });
         }
+        self.finish_upload(media)
+            .await
+            .map_err(|error| ReservedUploadError { media, error })?;
         Ok(file)
+    }
+
+    // Enrollment and the in-flight marker must become visible together.
+    async fn begin_upload(&self, media: MediaRef) -> Result<(), StorageError> {
+        let tx = self.db.begin().await.map_err(|_| StorageError::Failed)?;
+        register_on(&tx, media).await?;
+        let query = statement(
+            &tx,
+            "INSERT INTO _fexu_media_uploads VALUES (?, ?, 0)",
+            "INSERT INTO _fexu_media_uploads VALUES ($1, $2, 0)",
+            media,
+        )?;
+        change_one(&tx, query).await?;
+        tx.commit().await.map_err(|_| StorageError::Failed)
+    }
+
+    async fn finish_upload(&self, media: MediaRef) -> Result<(), StorageError> {
+        let tx = self.db.begin().await.map_err(|_| StorageError::Failed)?;
+        let query = statement(
+            &tx,
+            "UPDATE _fexu_media_uploads SET state = 1
+             WHERE owner = ? AND file_id = ? AND state = 0",
+            "UPDATE _fexu_media_uploads SET state = 1
+             WHERE owner = $1 AND file_id = $2 AND state = 0",
+            media,
+        )?;
+        change_one(&tx, query).await?;
+        tx.commit().await.map_err(|_| StorageError::Failed)
+    }
+
+    /// Observe upload state without retiring the ID or authorizing deletion.
+    /// Missing records include legacy enrollments.
+    pub async fn upload_state(&self, media: MediaRef) -> Result<Option<UploadState>, StorageError> {
+        let query = statement(
+            &self.db,
+            "SELECT state FROM _fexu_media_uploads WHERE owner = ? AND file_id = ?",
+            "SELECT state FROM _fexu_media_uploads WHERE owner = $1 AND file_id = $2",
+            media,
+        )?;
+        let row = self
+            .db
+            .query_one(query)
+            .await
+            .map_err(|_| StorageError::Failed)?;
+        let Some(row) = row else {
+            return Ok(None);
+        };
+        let state: i32 = row.try_get("", "state").map_err(|_| StorageError::Failed)?;
+        match state {
+            0 => Ok(Some(UploadState::Uploading)),
+            1 => Ok(Some(UploadState::Staged)),
+            2 => Ok(Some(UploadState::Committed)),
+            3 => Ok(Some(UploadState::Abandoned)),
+            _ => Err(StorageError::Failed),
+        }
+    }
+
+    /// Confirm an upload is permanently abandoned. Only call after proving
+    /// that all storage writes have settled, including ambiguous responses.
+    /// This does not delete bytes or authorize cleanup of referenced files.
+    pub async fn abandon_upload(&self, media: MediaRef) -> Result<(), StorageError> {
+        let tx = self.db.begin().await.map_err(|_| StorageError::Failed)?;
+        let query = statement(
+            &tx,
+            "UPDATE _fexu_media_uploads SET state = 3
+             WHERE owner = ? AND file_id = ? AND state IN (0, 1, 3)",
+            "UPDATE _fexu_media_uploads SET state = 3
+             WHERE owner = $1 AND file_id = $2 AND state IN (0, 1, 3)",
+            media,
+        )?;
+        change_one(&tx, query).await?;
+        tx.commit().await.map_err(|_| StorageError::Failed)
     }
 
     /// List a bounded, deterministic page of enrolled zero-reference IDs.
@@ -228,6 +323,15 @@ impl ReferenceLedger {
              WHERE owner = $1 AND file_id = $2 AND retired = 0 AND refs = 0",
             media,
         )?;
+        change_one(tx, query).await?;
+        let query = statement(
+            tx,
+            "UPDATE _fexu_media_uploads SET state = 2
+             WHERE owner = ? AND file_id = ? AND state = 1",
+            "UPDATE _fexu_media_uploads SET state = 2
+             WHERE owner = $1 AND file_id = $2 AND state = 1",
+            media,
+        )?;
         change_one(tx, query).await
     }
 
@@ -237,9 +341,15 @@ impl ReferenceLedger {
         let query = statement(
             tx,
             "UPDATE _fexu_media_references SET refs = refs + 1
-             WHERE owner = ? AND file_id = ? AND retired = 0 AND refs < 9223372036854775807",
+             WHERE owner = ? AND file_id = ? AND retired = 0 AND refs < 9223372036854775807
+             AND NOT EXISTS (SELECT 1 FROM _fexu_media_uploads u
+                 WHERE u.owner = _fexu_media_references.owner
+                 AND u.file_id = _fexu_media_references.file_id AND u.state <> 2)",
             "UPDATE _fexu_media_references SET refs = refs + 1
-             WHERE owner = $1 AND file_id = $2 AND retired = 0 AND refs < 9223372036854775807",
+             WHERE owner = $1 AND file_id = $2 AND retired = 0 AND refs < 9223372036854775807
+             AND NOT EXISTS (SELECT 1 FROM _fexu_media_uploads u
+                 WHERE u.owner = _fexu_media_references.owner
+                 AND u.file_id = _fexu_media_references.file_id AND u.state <> 2)",
             media,
         )?;
         change_one(tx, query).await
@@ -291,9 +401,15 @@ impl ReferenceCheck for ReferenceLedger {
         let query = statement(
             &tx,
             "UPDATE _fexu_media_references SET retired = 1
-             WHERE owner = ? AND file_id = ? AND refs = 0 AND retired = 0",
+             WHERE owner = ? AND file_id = ? AND refs = 0 AND retired = 0
+             AND NOT EXISTS (SELECT 1 FROM _fexu_media_uploads u
+                 WHERE u.owner = _fexu_media_references.owner
+                 AND u.file_id = _fexu_media_references.file_id AND u.state IN (0, 1))",
             "UPDATE _fexu_media_references SET retired = 1
-             WHERE owner = $1 AND file_id = $2 AND refs = 0 AND retired = 0",
+             WHERE owner = $1 AND file_id = $2 AND refs = 0 AND retired = 0
+             AND NOT EXISTS (SELECT 1 FROM _fexu_media_uploads u
+                 WHERE u.owner = _fexu_media_references.owner
+                 AND u.file_id = _fexu_media_references.file_id AND u.state IN (0, 1))",
             media,
         )?;
         tx.execute(query).await.map_err(|_| StorageError::Failed)?;
@@ -317,6 +433,7 @@ impl ReferenceCheck for ReferenceLedger {
                 match (refs, retired) {
                     (0, 1) => ReferenceDecision::Unreferenced(()),
                     (1..=i64::MAX, 0) => ReferenceDecision::Referenced,
+                    (0, 0) => ReferenceDecision::Unknown,
                     _ => return Err(StorageError::Failed),
                 }
             }
@@ -418,6 +535,22 @@ mod tests {
             .unwrap_err();
         assert_eq!(failed.error, StorageError::TooLarge);
         assert_eq!(
+            ledger.upload_state(failed.media).await.unwrap(),
+            Some(UploadState::Uploading)
+        );
+        assert_eq!(
+            ledger
+                .cleanup_abandoned(&storage, failed.media)
+                .await
+                .unwrap(),
+            AbandonedCleanup::Unknown
+        );
+        ledger.abandon_upload(failed.media).await.unwrap();
+        assert_eq!(
+            ledger.upload_state(failed.media).await.unwrap(),
+            Some(UploadState::Abandoned)
+        );
+        assert_eq!(
             ledger.orphan_candidates(None, 10).await.unwrap(),
             vec![failed.media]
         );
@@ -439,8 +572,24 @@ mod tests {
             .is_err());
         assert_eq!(storage.read(owner, file.id).await.unwrap().1, b"hello");
         let tx = db.begin().await.unwrap();
-        ReferenceLedger::attach(&tx, media).await.unwrap();
+        assert!(ReferenceLedger::attach(&tx, media).await.is_err());
+        tx.rollback().await.unwrap();
+        assert_eq!(
+            ledger.upload_state(media).await.unwrap(),
+            Some(UploadState::Staged)
+        );
+        assert_eq!(
+            ledger.cleanup_abandoned(&storage, media).await.unwrap(),
+            AbandonedCleanup::Unknown
+        );
+        let tx = db.begin().await.unwrap();
+        ReferenceLedger::claim_reserved(&tx, media).await.unwrap();
         tx.commit().await.unwrap();
+        assert_eq!(
+            ledger.upload_state(media).await.unwrap(),
+            Some(UploadState::Committed)
+        );
+        assert!(ledger.abandon_upload(media).await.is_err());
         assert_eq!(
             ledger.cleanup_abandoned(&storage, media).await.unwrap(),
             AbandonedCleanup::Referenced

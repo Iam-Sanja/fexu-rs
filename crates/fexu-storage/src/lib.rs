@@ -38,7 +38,7 @@ pub use png::{decode_png, validate_image, ImageValidation};
 pub use reconciliation::{
     reconcile_expired, ExpiryCleanup, ReconciliationOutcome, ReferenceCheck, ReferenceDecision,
 };
-pub use reference_ledger::{AbandonedCleanup, ReferenceLedger, ReservedUploadError};
+pub use reference_ledger::{AbandonedCleanup, ReferenceLedger, ReservedUploadError, UploadState};
 pub use s3::{
     credentials_from_env, prepare as prepare_s3, S3Credentials, S3Plan, ACCESS_KEY_ENV,
     SECRET_KEY_ENV,

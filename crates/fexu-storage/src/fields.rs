@@ -1867,6 +1867,10 @@ mod tests {
         ));
         assert_eq!(rejected.candidates.len(), 1);
         assert_eq!(
+            ledger.upload_state(rejected.candidates[0]).await.unwrap(),
+            Some(crate::UploadState::Staged)
+        );
+        assert_eq!(
             ledger.orphan_candidates(None, 10).await.unwrap(),
             rejected.candidates
         );
@@ -1887,6 +1891,11 @@ mod tests {
             owner,
             id: retired.created()[0].file.id,
         };
+        assert_eq!(
+            ledger.check(media).await.unwrap(),
+            ReferenceDecision::Unknown
+        );
+        ledger.abandon_upload(media).await.unwrap();
         assert_eq!(
             ledger.check(media).await.unwrap(),
             ReferenceDecision::Unreferenced(())
@@ -1932,6 +1941,10 @@ mod tests {
             .unwrap();
         let new = report.bound[0].media.unwrap();
         assert_eq!(report.detached, vec![old]);
+        assert_eq!(
+            ledger.upload_state(new).await.unwrap(),
+            Some(crate::UploadState::Committed)
+        );
         assert_eq!(
             ledger.check(old).await.unwrap(),
             ReferenceDecision::Referenced
