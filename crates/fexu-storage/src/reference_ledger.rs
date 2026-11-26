@@ -811,6 +811,33 @@ impl ReferenceLedger {
         }
     }
 
+    /// Reconcile the four known local paths of an explicitly abandoned ID.
+    /// Unlike ordinary cleanup, this also checks IDs with existing receipts.
+    /// The caller must establish local writer settlement and use the original
+    /// trusted storage root, excluding concurrent raw filesystem operations.
+    pub async fn cleanup_local_residue(
+        &self,
+        storage: &crate::LocalStorage,
+        media: MediaRef,
+    ) -> Result<AbandonedCleanup, StorageError> {
+        if self.upload_state(media).await? != Some(UploadState::Abandoned)
+            || self.upload_fence_requested(media).await?
+        {
+            return Ok(AbandonedCleanup::Unknown);
+        }
+        match self.check(media).await? {
+            ReferenceDecision::Unknown => Ok(AbandonedCleanup::Unknown),
+            ReferenceDecision::Referenced => Ok(AbandonedCleanup::Referenced),
+            ReferenceDecision::Unreferenced(()) => {
+                if storage.cleanup_retired(media)? {
+                    Ok(AbandonedCleanup::Removed)
+                } else {
+                    Ok(AbandonedCleanup::Missing)
+                }
+            }
+        }
+    }
+
     /// Retire an enrolled zero-reference ID and remove its bytes.
     ///
     /// Call only for candidates that are permanently abandoned, including
@@ -1435,6 +1462,63 @@ mod tests {
             ledger.upload_state(uploading).await.unwrap(),
             Some(UploadState::Uploading)
         );
+        let directory = root.join(owner.to_string());
+        let residue = abandoned[0];
+        let partial = directory.join(format!("{}.partial", residue.id));
+        let temporary = directory.join(format!("{}.json.tmp", residue.id));
+        let sidecar = directory.join(format!("{}.json", residue.id));
+        std::fs::write(&partial, b"partial").unwrap();
+        std::fs::write(&temporary, b"broken").unwrap();
+        std::fs::write(&sidecar, b"truncated").unwrap();
+        // Unexpected directories must block the entire preflight.
+        let data = directory.join(residue.id.to_string());
+        std::fs::create_dir(&data).unwrap();
+        assert!(ledger
+            .cleanup_local_residue(&storage, residue)
+            .await
+            .is_err());
+        assert!(partial.exists() && temporary.exists() && sidecar.exists());
+        std::fs::remove_dir(&data).unwrap();
+        std::fs::write(&data, b"orphan").unwrap();
+        assert_eq!(
+            ledger
+                .cleanup_local_residue(&storage, residue)
+                .await
+                .unwrap(),
+            AbandonedCleanup::Removed
+        );
+        assert!(!partial.exists() && !temporary.exists() && !sidecar.exists() && !data.exists());
+        assert_eq!(
+            ledger
+                .cleanup_local_residue(&storage, residue)
+                .await
+                .unwrap(),
+            AbandonedCleanup::Missing
+        );
+        assert_eq!(
+            ledger.cleanup_receipt(residue).await.unwrap(),
+            Some(CleanupReceipt::Removed)
+        );
+        let staged_media = MediaRef {
+            owner,
+            id: staged.id,
+        };
+        assert_eq!(
+            ledger
+                .cleanup_local_residue(&storage, staged_media)
+                .await
+                .unwrap(),
+            AbandonedCleanup::Unknown
+        );
+        assert!(storage.exists(owner, staged.id).await.unwrap());
+        assert_eq!(
+            ledger
+                .cleanup_local_residue(&storage, uploading)
+                .await
+                .unwrap(),
+            AbandonedCleanup::Unknown
+        );
+        assert!(storage.exists(owner, legacy.id).await.unwrap());
         std::fs::remove_dir_all(root).unwrap();
     }
 

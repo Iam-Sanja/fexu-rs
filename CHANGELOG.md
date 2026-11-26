@@ -2,6 +2,8 @@
 
 ## Unreleased — toward v0.3.0
 
+- Add ledger-gated targeted local residue reconciliation for settled abandoned uploads, including IDs with prior backend cleanup receipts.
+
 - Add irreversible ledger-backed S3 discard requests and permanent conditional-write fence markers to block delayed uploads without deleting the marker.
 
 - Journal original upload size, SHA-256, deadline and sanitized filename before reserved storage writes; reject recovery of mismatched or unjournaled data.
