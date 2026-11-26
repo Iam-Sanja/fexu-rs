@@ -99,7 +99,10 @@ impl JobHandler for StorageCleanupHandler {
 
 /// Explicitly enqueue one cleanup job or a recurring schedule.
 /// The worker must register a handler bound to the correct namespace.
-pub async fn enqueue_storage_cleanup(queue: &Queue, when: When) -> Result<EnqueueOutcome, JobError> {
+pub async fn enqueue_storage_cleanup(
+    queue: &Queue,
+    when: When,
+) -> Result<EnqueueOutcome, JobError> {
     queue
         .enqueue::<StorageCleanupHandler>(&StorageCleanup {}, when)
         .await
