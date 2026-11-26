@@ -2,6 +2,8 @@
 
 ## Unreleased — toward v0.3.0
 
+- Add explicit transactional cleanup admission for previously committed media with zero remaining references, preserving shared references and rollback safety.
+
 - Integrate bounded abandoned-upload cleanup into explicitly registered persistent jobs and recurring schedules, with trusted worker-bound storage and retryable failures.
 
 - Add bounded resumable abandoned-upload cleanup worker batches with continuation and page-query error reporting.
