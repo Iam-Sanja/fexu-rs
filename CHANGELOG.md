@@ -2,6 +2,8 @@
 
 ## Unreleased — toward v0.3.0
 
+- Add irreversible ledger-backed S3 discard requests and permanent conditional-write fence markers to block delayed uploads without deleting the marker.
+
 - Journal original upload size, SHA-256, deadline and sanitized filename before reserved storage writes; reject recovery of mismatched or unjournaled data.
 
 - Add bounded unresolved-upload discovery, non-destructive integrity inspection and explicit settled-upload recovery without timeout-based deletion.
