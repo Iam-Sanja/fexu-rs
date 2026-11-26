@@ -176,6 +176,16 @@ impl ReferenceLedger {
             )
             .await
             .map_err(|_| StorageError::Failed)?;
+        self.db
+            .execute_unprepared(
+                "CREATE TABLE IF NOT EXISTS _fexu_media_upload_fences (
+                    owner TEXT NOT NULL,
+                    file_id TEXT NOT NULL,
+                    PRIMARY KEY (owner, file_id)
+                )",
+            )
+            .await
+            .map_err(|_| StorageError::Failed)?;
         Ok(())
     }
 
@@ -298,8 +308,101 @@ impl ReferenceLedger {
         }))
     }
 
+    // First acquire the upload row's write lock, then read the fence request
+    // in a separate statement (PostgreSQL READ COMMITTED / SQLite).
+    async fn lock_upload(
+        tx: &DatabaseTransaction,
+        media: MediaRef,
+    ) -> Result<(), StorageError> {
+        let query = statement(
+            tx,
+            "UPDATE _fexu_media_uploads SET state = state
+             WHERE owner = ? AND file_id = ? AND state IN (0, 1, 3)",
+            "UPDATE _fexu_media_uploads SET state = state
+             WHERE owner = $1 AND file_id = $2 AND state IN (0, 1, 3)",
+            media,
+        )?;
+        change_one(tx, query).await
+    }
+
+    async fn has_fence(
+        db: &impl ConnectionTrait,
+        media: MediaRef,
+    ) -> Result<bool, StorageError> {
+        let query = statement(
+            db,
+            "SELECT file_id FROM _fexu_media_upload_fences WHERE owner = ? AND file_id = ?",
+            "SELECT file_id FROM _fexu_media_upload_fences WHERE owner = $1 AND file_id = $2",
+            media,
+        )?;
+        Ok(db
+            .query_one(query)
+            .await
+            .map_err(|_| StorageError::Failed)?
+            .is_some())
+    }
+
+    /// True once irreversible S3 discard has been requested, even if the
+    /// remote marker has not yet been confirmed.
+    pub async fn upload_fence_requested(&self, media: MediaRef) -> Result<bool, StorageError> {
+        Self::has_fence(&self.db, media).await
+    }
+
+    #[cfg(any(feature = "s3-storage", test))]
+    async fn request_upload_fence(&self, media: MediaRef) -> Result<(), StorageError> {
+        let tx = self.db.begin().await.map_err(|_| StorageError::Failed)?;
+        Self::lock_upload(&tx, media).await?;
+        let query = statement(
+            &tx,
+            "INSERT INTO _fexu_media_upload_fences
+             SELECT owner, file_id FROM _fexu_media_uploads
+             WHERE owner = ? AND file_id = ? AND state = 0
+             ON CONFLICT (owner, file_id) DO NOTHING",
+            "INSERT INTO _fexu_media_upload_fences
+             SELECT owner, file_id FROM _fexu_media_uploads
+             WHERE owner = $1 AND file_id = $2 AND state = 0
+             ON CONFLICT (owner, file_id) DO NOTHING",
+            media,
+        )?;
+        tx.execute(query).await.map_err(|_| StorageError::Failed)?;
+        if !Self::has_fence(&tx, media).await? {
+            return Err(StorageError::Failed);
+        }
+        tx.commit().await.map_err(|_| StorageError::Failed)
+    }
+
+    /// Irreversibly discard an unresolved upload in the original S3 namespace.
+    /// Only authorized operators may call this. The durable request blocks
+    /// staging before remote I/O; errors leave a retryable protected request.
+    /// The permanent marker must never be deleted by bucket lifecycle rules.
+    #[cfg(feature = "s3-storage")]
+    pub async fn abandon_unresolved_s3(
+        &self,
+        storage: &crate::S3Storage,
+        media: MediaRef,
+    ) -> Result<(), StorageError> {
+        self.request_upload_fence(media).await?;
+        storage.fence_upload(media).await?;
+        let tx = self.db.begin().await.map_err(|_| StorageError::Failed)?;
+        Self::lock_upload(&tx, media).await?;
+        let query = statement(
+            &tx,
+            "UPDATE _fexu_media_uploads SET state = 3
+             WHERE owner = ? AND file_id = ? AND state IN (0, 3)",
+            "UPDATE _fexu_media_uploads SET state = 3
+             WHERE owner = $1 AND file_id = $2 AND state IN (0, 3)",
+            media,
+        )?;
+        change_one(&tx, query).await?;
+        tx.commit().await.map_err(|_| StorageError::Failed)
+    }
+
     async fn finish_upload(&self, media: MediaRef) -> Result<(), StorageError> {
         let tx = self.db.begin().await.map_err(|_| StorageError::Failed)?;
+        Self::lock_upload(&tx, media).await?;
+        if Self::has_fence(&tx, media).await? {
+            return Err(StorageError::Failed);
+        }
         let query = statement(
             &tx,
             "UPDATE _fexu_media_uploads SET state = 1
@@ -403,6 +506,10 @@ impl ReferenceLedger {
     /// This does not delete bytes or authorize cleanup of referenced files.
     pub async fn abandon_upload(&self, media: MediaRef) -> Result<(), StorageError> {
         let tx = self.db.begin().await.map_err(|_| StorageError::Failed)?;
+        Self::lock_upload(&tx, media).await?;
+        if Self::has_fence(&tx, media).await? {
+            return Err(StorageError::Failed);
+        }
         let query = statement(
             &tx,
             "UPDATE _fexu_media_uploads SET state = 3
