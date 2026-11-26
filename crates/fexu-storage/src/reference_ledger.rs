@@ -1752,6 +1752,65 @@ mod tests {
             AbandonedCleanup::Unknown
         );
         assert!(storage.exists(owner, legacy.id).await.unwrap());
+        let mut work = Vec::new();
+        for _ in 0..3 {
+            let file = ledger
+                .stage_reserved(&storage, owner, "note.txt", b"worker", i64::MAX)
+                .await
+                .unwrap();
+            let media = MediaRef { owner, id: file.id };
+            ledger.abandon_upload(media).await.unwrap();
+            work.push(media);
+        }
+        work.sort_by_key(|item| item.id);
+        assert!(ledger
+            .cleanup_abandoned_batch(&storage, None, 1000, 2)
+            .await
+            .is_err());
+        assert!(ledger
+            .cleanup_abandoned_batch(&storage, None, 1, 0)
+            .await
+            .is_err());
+        assert!(ledger
+            .cleanup_abandoned_batch(&storage, None, 0, 1)
+            .await
+            .is_err());
+        assert!(ledger
+            .cleanup_abandoned_batch(&storage, None, 1, 17)
+            .await
+            .is_err());
+        let batch = ledger
+            .cleanup_abandoned_batch(&storage, None, 1, 2)
+            .await
+            .unwrap();
+        assert_eq!(batch.items.len(), 2);
+        assert_eq!(batch.items[0].media, work[0]);
+        assert_eq!(batch.items[1].media, work[1]);
+        assert_eq!(batch.next_after, Some(work[1]));
+        assert!(!batch.reached_end);
+        assert!(batch.scan_error.is_none());
+        assert!(batch
+            .items
+            .iter()
+            .all(|item| item.outcome == Ok(AbandonedCleanup::Removed)));
+        let batch = reopened
+            .cleanup_abandoned_batch(&storage, batch.next_after, 2, 2)
+            .await
+            .unwrap();
+        assert_eq!(batch.items.len(), 1);
+        assert_eq!(batch.items[0].media, work[2]);
+        assert_eq!(batch.items[0].outcome, Ok(AbandonedCleanup::Removed));
+        assert!(batch.reached_end);
+        assert_eq!(batch.next_after, None);
+        assert!(batch.scan_error.is_none());
+        let batch = ledger
+            .cleanup_abandoned_batch(&storage, None, 2, 2)
+            .await
+            .unwrap();
+        assert!(batch.items.is_empty() && batch.reached_end);
+        assert!(storage.exists(owner, staged.id).await.unwrap());
+        assert!(storage.exists(owner, committed.id).await.unwrap());
+        assert!(storage.exists(owner, legacy.id).await.unwrap());
         std::fs::remove_dir_all(root).unwrap();
     }
 
