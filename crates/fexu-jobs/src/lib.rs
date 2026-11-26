@@ -13,8 +13,8 @@ mod mail;
 mod queue;
 mod registry;
 mod schedule;
-mod storage;
 mod schema;
+mod storage;
 mod worker;
 
 pub use clock::{Clock, ManualClock, SystemClock};
