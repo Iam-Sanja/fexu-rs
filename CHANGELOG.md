@@ -2,6 +2,8 @@
 
 ## Unreleased — toward v0.3.0
 
+- Track reserved uploads durably from in-flight write to staged, committed or explicitly abandoned; block reference-aware retirement while uploads remain active or staged.
+
 - Connect pre-enrolled media staging to the model transaction through a dedicated wrapper that prevents legacy direct deletion and preserves rollback candidates.
 
 - Add opt-in pre-enrolled upload IDs and collision-rejecting local and S3 writes; failed attempts remain discoverable after durable enrollment. Local publication now requires hard-link support.
