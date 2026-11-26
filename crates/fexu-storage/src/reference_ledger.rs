@@ -203,6 +203,23 @@ impl ReferenceLedger {
         register_on(tx, media).await
     }
 
+    /// Claim an enrolled, previously unreferenced ID for its first model save.
+    /// A retired, unknown or already attached ID cannot be claimed.
+    pub(crate) async fn claim_reserved(
+        tx: &DatabaseTransaction,
+        media: MediaRef,
+    ) -> Result<(), StorageError> {
+        let query = statement(
+            tx,
+            "UPDATE _fexu_media_references SET refs = 1
+             WHERE owner = ? AND file_id = ? AND retired = 0 AND refs = 0",
+            "UPDATE _fexu_media_references SET refs = 1
+             WHERE owner = $1 AND file_id = $2 AND retired = 0 AND refs = 0",
+            media,
+        )?;
+        change_one(tx, query).await
+    }
+
     /// Call in the same transaction as the corresponding model reference
     /// insertion. Roll back the whole transaction on any error.
     pub async fn attach(tx: &DatabaseTransaction, media: MediaRef) -> Result<(), StorageError> {
