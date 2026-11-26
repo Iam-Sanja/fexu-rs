@@ -263,7 +263,7 @@ impl ReferenceLedger {
     }
 
     /// Read the original intent without changing upload state.
-    /// Older enrollments may have no intent and cannot be recovered automatically.
+    /// Older enrollments may have no intent and cannot use settled recovery.
     pub async fn upload_intent(&self, media: MediaRef) -> Result<Option<UploadIntent>, StorageError> {
         let query = statement(
             &self.db,
@@ -371,7 +371,7 @@ impl ReferenceLedger {
 
     /// Recover a validated upload after an operator has established that
     /// all original writes have settled. This never creates a model reference.
-    /// Missing or expired data remains unresolved; a concurrent state change
+    /// Missing, mismatched or unjournaled data remains unresolved; a concurrent state change
     /// fails closed. The caller must still authorize any subsequent model save.
     pub async fn recover_settled_upload<S: crate::Storage + ?Sized>(
         &self,
@@ -1046,7 +1046,12 @@ mod tests {
             owner,
             id: Uuid::new_v4(),
         };
-        ledger.begin_upload(interrupted).await.unwrap();
+        let intent = UploadIntent::new("recover.txt", b"recover", i64::MAX).unwrap();
+        ledger.begin_upload(interrupted, &intent).await.unwrap();
+        assert_eq!(
+            ledger.upload_intent(interrupted).await.unwrap(),
+            Some(intent)
+        );
         let written = storage
             .save_reserved(interrupted, "recover.txt", b"recover", i64::MAX)
             .await
@@ -1107,6 +1112,49 @@ mod tests {
                 .unwrap(),
             AbandonedCleanup::Removed
         );
+        // A self-consistent but different payload must not be recovered.
+        let mismatch = MediaRef {
+            owner,
+            id: Uuid::new_v4(),
+        };
+        let intent = UploadIntent::new("recover.txt", b"correct", i64::MAX).unwrap();
+        ledger.begin_upload(mismatch, &intent).await.unwrap();
+        storage
+            .save_reserved(mismatch, "recover.txt", b"another", i64::MAX)
+            .await
+            .unwrap();
+        assert!(matches!(
+            ledger.inspect_unresolved(&storage, mismatch).await.unwrap(),
+            UploadObservation::Present(_)
+        ));
+        assert!(ledger
+            .recover_settled_upload(&storage, mismatch)
+            .await
+            .is_err());
+        assert_eq!(
+            ledger.upload_state(mismatch).await.unwrap(),
+            Some(UploadState::Uploading)
+        );
+        assert_eq!(
+            ledger.cleanup_abandoned(&storage, mismatch).await.unwrap(),
+            AbandonedCleanup::Unknown
+        );
+        // Simulate an older tracked upload with no original intent record.
+        let tx = db.begin().await.unwrap();
+        let query = statement(
+            &tx,
+            "DELETE FROM _fexu_media_upload_intents WHERE owner = ? AND file_id = ?",
+            "DELETE FROM _fexu_media_upload_intents WHERE owner = $1 AND file_id = $2",
+            mismatch,
+        )
+        .unwrap();
+        change_one(&tx, query).await.unwrap();
+        tx.commit().await.unwrap();
+        assert_eq!(ledger.upload_intent(mismatch).await.unwrap(), None);
+        assert!(ledger
+            .recover_settled_upload(&storage, mismatch)
+            .await
+            .is_err());
         std::fs::remove_dir_all(root).unwrap();
     }
 
@@ -1175,7 +1223,8 @@ mod tests {
             owner,
             id: Uuid::new_v4(),
         };
-        ledger.begin_upload(uploading).await.unwrap();
+        let intent = UploadIntent::new("note.txt", b"pending", i64::MAX).unwrap();
+        ledger.begin_upload(uploading, &intent).await.unwrap();
 
         assert!(ledger.abandoned_candidates(None, 0).await.is_err());
         assert!(ledger.abandoned_candidates(None, 1001).await.is_err());
@@ -1216,7 +1265,8 @@ mod tests {
             owner,
             id: Uuid::new_v4(),
         };
-        ledger.begin_upload(missing).await.unwrap();
+        let intent = UploadIntent::new("note.txt", b"pending", i64::MAX).unwrap();
+        ledger.begin_upload(missing, &intent).await.unwrap();
         ledger.abandon_upload(missing).await.unwrap();
         assert_eq!(
             ledger.check(missing).await.unwrap(),
