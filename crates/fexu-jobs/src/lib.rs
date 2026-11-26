@@ -13,6 +13,7 @@ mod mail;
 mod queue;
 mod registry;
 mod schedule;
+mod storage;
 mod schema;
 mod worker;
 
@@ -29,6 +30,9 @@ pub use registry::{JobContext, JobHandler, JobRegistry};
 pub use schema::{
     apply_migrations, embedded_migrations, migration_status, migrations_dir,
     render_migration_status, table_ready, JOBS, JOB_HISTORY,
+};
+pub use storage::{
+    enqueue_storage_cleanup, StorageCleanup, StorageCleanupHandler, STORAGE_CLEANUP_HANDLER,
 };
 pub use worker::{stop_flag, Worker};
 
