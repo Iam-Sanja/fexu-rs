@@ -47,6 +47,16 @@ pub enum UploadState {
     Abandoned,
 }
 
+/// Non-authoritative observation of an unresolved write. No variant
+/// establishes that a delayed write cannot still complete.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum UploadObservation {
+    NotUploading,
+    Present(crate::StoredFile),
+    Missing,
+    Expired,
+}
+
 /// An attempted reserved upload. Do not infer registration or write success
 /// from an error; inspect the ledger and storage before recovery.
 #[derive(Debug)]
@@ -221,6 +231,41 @@ impl ReferenceLedger {
         }
     }
 
+    /// Inspect a currently unresolved upload without changing its state.
+    /// A valid readable object is evidence of presence, not of writer
+    /// settlement. Missing, expired and failed reads never authorize deletion.
+    /// Use the same authorized storage namespace as the original upload.
+    pub async fn inspect_unresolved<S: crate::Storage + ?Sized>(
+        &self,
+        storage: &S,
+        media: MediaRef,
+    ) -> Result<UploadObservation, StorageError> {
+        if self.upload_state(media).await? != Some(UploadState::Uploading) {
+            return Ok(UploadObservation::NotUploading);
+        }
+        let observed = match storage.read(media.owner, media.id).await {
+            Ok((file, bytes)) => {
+                if file.owner != media.owner
+                    || file.id != media.id
+                    || file.expires_at.is_none()
+                    || file.size != bytes.len() as u64
+                    || file.sha256.is_empty()
+                    || !crate::local::bytes_match(&file, &bytes)
+                {
+                    return Err(StorageError::Failed);
+                }
+                UploadObservation::Present(file)
+            }
+            Err(StorageError::NotFound) => UploadObservation::Missing,
+            Err(StorageError::Expired) => UploadObservation::Expired,
+            Err(error) => return Err(error),
+        };
+        if self.upload_state(media).await? != Some(UploadState::Uploading) {
+            return Ok(UploadObservation::NotUploading);
+        }
+        Ok(observed)
+    }
+
     /// Confirm an upload is permanently abandoned. Only call after proving
     /// that all storage writes have settled, including ambiguous responses.
     /// This does not delete bytes or authorize cleanup of referenced files.
@@ -349,6 +394,72 @@ impl ReferenceLedger {
                  WHERE r.refs = 0 AND u.state = 3
                  AND NOT EXISTS (SELECT 1 FROM _fexu_media_cleanup_receipts c
                      WHERE c.owner = r.owner AND c.file_id = r.file_id) AND (r.owner, r.file_id) > ($1, $2)
+                 ORDER BY r.owner, r.file_id LIMIT $3",
+                vec![
+                    Value::from(cursor.owner.to_string()),
+                    Value::from(cursor.id.to_string()),
+                    Value::from(i64::from(limit)),
+                ],
+            ),
+            _ => return Err(StorageError::Failed),
+        };
+        let rows = self
+            .db
+            .query_all(Statement::from_sql_and_values(backend, sql, values))
+            .await
+            .map_err(|_| StorageError::Failed)?;
+        rows.into_iter()
+            .map(|row| {
+                let owner: String = row.try_get("", "owner").map_err(|_| StorageError::Failed)?;
+                let id: String = row
+                    .try_get("", "file_id")
+                    .map_err(|_| StorageError::Failed)?;
+                let owner = uuid::Uuid::parse_str(&owner).map_err(|_| StorageError::Failed)?;
+                let id = uuid::Uuid::parse_str(&id).map_err(|_| StorageError::Failed)?;
+                Ok(MediaRef { owner, id })
+            })
+            .collect()
+    }
+
+    /// Discover unresolved uploads, including writes still in progress.
+    /// Results are observations only; neither age nor absence authorizes cleanup.
+    pub async fn unresolved_uploads(
+        &self,
+        after: Option<MediaRef>,
+        limit: u32,
+    ) -> Result<Vec<MediaRef>, StorageError> {
+        if !(1..=1000).contains(&limit) {
+            return Err(StorageError::Failed);
+        }
+        let backend = self.db.get_database_backend();
+        let (sql, values) = match (backend, after) {
+            (DatabaseBackend::Sqlite, None) => (
+                "SELECT r.owner, r.file_id FROM _fexu_media_references r
+                 JOIN _fexu_media_uploads u ON u.owner = r.owner AND u.file_id = r.file_id
+                 WHERE r.refs = 0 AND r.retired = 0 AND u.state = 0 ORDER BY r.owner, r.file_id LIMIT ?",
+                vec![Value::from(i64::from(limit))],
+            ),
+            (DatabaseBackend::Postgres, None) => (
+                "SELECT r.owner, r.file_id FROM _fexu_media_references r
+                 JOIN _fexu_media_uploads u ON u.owner = r.owner AND u.file_id = r.file_id
+                 WHERE r.refs = 0 AND r.retired = 0 AND u.state = 0 ORDER BY r.owner, r.file_id LIMIT $1",
+                vec![Value::from(i64::from(limit))],
+            ),
+            (DatabaseBackend::Sqlite, Some(cursor)) => (
+                "SELECT r.owner, r.file_id FROM _fexu_media_references r
+                 JOIN _fexu_media_uploads u ON u.owner = r.owner AND u.file_id = r.file_id
+                 WHERE r.refs = 0 AND r.retired = 0 AND u.state = 0 AND (r.owner, r.file_id) > (?, ?)
+                 ORDER BY r.owner, r.file_id LIMIT ?",
+                vec![
+                    Value::from(cursor.owner.to_string()),
+                    Value::from(cursor.id.to_string()),
+                    Value::from(i64::from(limit)),
+                ],
+            ),
+            (DatabaseBackend::Postgres, Some(cursor)) => (
+                "SELECT r.owner, r.file_id FROM _fexu_media_references r
+                 JOIN _fexu_media_uploads u ON u.owner = r.owner AND u.file_id = r.file_id
+                 WHERE r.refs = 0 AND r.retired = 0 AND u.state = 0 AND (r.owner, r.file_id) > ($1, $2)
                  ORDER BY r.owner, r.file_id LIMIT $3",
                 vec![
                     Value::from(cursor.owner.to_string()),
