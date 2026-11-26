@@ -278,6 +278,49 @@ impl LocalStorage {
         Ok(())
     }
 
+    // Offline maintenance only: all writers and other recovery operators
+    // must be stopped. Convert an empty slot in place, never unlink it.
+    pub(crate) fn recover_settled_slot(&self, media: crate::MediaRef) -> Result<(), StorageError> {
+        let _guard = self
+            .gate
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let directory = self.rooted_owner(media.owner, true)?;
+        let slot = directory.join(format!("{}.write-lock", media.id));
+        let mut file = match std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&slot)
+        {
+            Ok(file) => file,
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+                if !regular_file(&slot) || Self::contained(&directory, &slot)? != slot {
+                    return Err(StorageError::Failed);
+                }
+                let mut file = std::fs::OpenOptions::new()
+                    .read(true)
+                    .write(true)
+                    .open(&slot)
+                    .map_err(|_| StorageError::Failed)?;
+                let mut marker = [0; 5];
+                let count = std::io::Read::read(&mut file, &mut marker)
+                    .map_err(|_| StorageError::Failed)?;
+                if count == 4 && &marker[..4] == b"FXL1" {
+                    return file.sync_all().map_err(|_| StorageError::Failed);
+                }
+                // Only an empty slot can be converted. Unknown or partial
+                // marker contents require separate offline investigation.
+                if count != 0 {
+                    return Err(StorageError::Failed);
+                }
+                file
+            }
+            Err(_) => return Err(StorageError::Failed),
+        };
+        std::io::Write::write_all(&mut file, b"FXL1").map_err(|_| StorageError::Failed)?;
+        file.sync_all().map_err(|_| StorageError::Failed)
+    }
+
     // Only for permanently retired, settled IDs in a trusted local root.
     // Preflight every managed path before deleting any of them.
     pub(crate) fn cleanup_retired(&self, media: crate::MediaRef) -> Result<bool, StorageError> {
