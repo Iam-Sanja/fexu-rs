@@ -266,6 +266,22 @@ impl ReferenceLedger {
         Ok(observed)
     }
 
+    /// Recover a validated upload after an operator has established that
+    /// all original writes have settled. This never creates a model reference.
+    /// Missing or expired data remains unresolved; a concurrent state change
+    /// fails closed. The caller must still authorize any subsequent model save.
+    pub async fn recover_settled_upload<S: crate::Storage + ?Sized>(
+        &self,
+        storage: &S,
+        media: MediaRef,
+    ) -> Result<crate::StoredFile, StorageError> {
+        let UploadObservation::Present(file) = self.inspect_unresolved(storage, media).await? else {
+            return Err(StorageError::Failed);
+        };
+        self.finish_upload(media).await?;
+        Ok(file)
+    }
+
     /// Confirm an upload is permanently abandoned. Only call after proving
     /// that all storage writes have settled, including ambiguous responses.
     /// This does not delete bytes or authorize cleanup of referenced files.
@@ -847,6 +863,25 @@ mod tests {
                 .unwrap(),
             AbandonedCleanup::Unknown
         );
+        assert_eq!(
+            ledger.unresolved_uploads(None, 10).await.unwrap(),
+            vec![failed.media]
+        );
+        assert_eq!(
+            ledger
+                .inspect_unresolved(&storage, failed.media)
+                .await
+                .unwrap(),
+            UploadObservation::Missing
+        );
+        assert!(ledger
+            .recover_settled_upload(&storage, failed.media)
+            .await
+            .is_err());
+        assert_eq!(
+            ledger.upload_state(failed.media).await.unwrap(),
+            Some(UploadState::Uploading)
+        );
         ledger.abandon_upload(failed.media).await.unwrap();
         assert_eq!(
             ledger.upload_state(failed.media).await.unwrap(),
@@ -895,6 +930,67 @@ mod tests {
         assert_eq!(
             ledger.cleanup_abandoned(&storage, media).await.unwrap(),
             AbandonedCleanup::Referenced
+        );
+        let interrupted = MediaRef {
+            owner,
+            id: Uuid::new_v4(),
+        };
+        ledger.begin_upload(interrupted).await.unwrap();
+        let written = storage
+            .save_reserved(interrupted, "recover.txt", b"recover", i64::MAX)
+            .await
+            .unwrap();
+        assert_eq!(
+            ledger.unresolved_uploads(None, 10).await.unwrap(),
+            vec![interrupted]
+        );
+        assert!(ledger.unresolved_uploads(None, 0).await.is_err());
+        assert!(ledger.unresolved_uploads(None, 1001).await.is_err());
+        assert!(ledger
+            .unresolved_uploads(Some(interrupted), 1)
+            .await
+            .unwrap()
+            .is_empty());
+        assert_eq!(
+            ledger
+                .inspect_unresolved(&storage, interrupted)
+                .await
+                .unwrap(),
+            UploadObservation::Present(written.clone())
+        );
+        assert_eq!(
+            ledger
+                .cleanup_abandoned(&storage, interrupted)
+                .await
+                .unwrap(),
+            AbandonedCleanup::Unknown
+        );
+        assert_eq!(
+            ledger
+                .recover_settled_upload(&storage, interrupted)
+                .await
+                .unwrap(),
+            written
+        );
+        assert_eq!(
+            ledger.upload_state(interrupted).await.unwrap(),
+            Some(UploadState::Staged)
+        );
+        assert_eq!(
+            ledger
+                .inspect_unresolved(&storage, interrupted)
+                .await
+                .unwrap(),
+            UploadObservation::NotUploading
+        );
+        assert!(ledger.unresolved_uploads(None, 10).await.unwrap().is_empty());
+        ledger.abandon_upload(interrupted).await.unwrap();
+        assert_eq!(
+            ledger
+                .cleanup_abandoned(&storage, interrupted)
+                .await
+                .unwrap(),
+            AbandonedCleanup::Removed
         );
         std::fs::remove_dir_all(root).unwrap();
     }
