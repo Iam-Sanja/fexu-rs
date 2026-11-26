@@ -2,6 +2,8 @@
 
 ## Unreleased — toward v0.3.0
 
+- Add bounded unresolved-upload discovery, non-destructive integrity inspection and explicit settled-upload recovery without timeout-based deletion.
+
 - Persist backend cleanup receipts for abandoned-upload pages, exclude recorded results from subsequent discovery, and retry interrupted cleanup without reusing retired IDs.
 
 - Add bounded cleanup pages for explicitly abandoned tracked uploads, with per-ID results and protection of active, staged, committed and legacy IDs.
