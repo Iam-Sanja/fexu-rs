@@ -1875,3 +1875,97 @@ async fn postgres_job_claim_and_rollback() {
         JobStatus::Pending
     );
 }
+
+
+async fn storage_cleanup_job_contract(db: fexu_db::driver::DatabaseConnection) {
+    use fexu_storage::{LocalStorage, MediaRef, ReferenceLedger, Storage};
+
+    apply_migrations(&db).await.unwrap();
+    let clock = ManualClock::new(1_700_000_000);
+    let queue = Queue::new(db.clone(), Arc::new(clock.clone()), JobPolicy::default());
+    let ledger = ReferenceLedger::new(db.clone());
+    ledger.initialize().await.unwrap();
+    let root = std::env::temp_dir().join(format!("fexu-cleanup-job-{}", uuid::Uuid::new_v4()));
+    let storage = Arc::new(LocalStorage::open(&root, 64, &["text/plain"]).unwrap());
+    let owner = uuid::Uuid::new_v4();
+    let mut discarded = Vec::new();
+    for _ in 0..2 {
+        let file = ledger
+            .stage_reserved(storage.as_ref(), owner, "note.txt", b"discard", i64::MAX)
+            .await
+            .unwrap();
+        let media = MediaRef { owner, id: file.id };
+        ledger.abandon_upload(media).await.unwrap();
+        discarded.push(media);
+    }
+    discarded.sort_by_key(|media| media.id);
+    let staged = ledger
+        .stage_reserved(storage.as_ref(), owner, "keep.txt", b"keep", i64::MAX)
+        .await
+        .unwrap();
+    assert!(StorageCleanupHandler::new(ledger.clone(), storage.clone(), 0, 1).is_err());
+    let mut registry = JobRegistry::new();
+    registry
+        .register(StorageCleanupHandler::new(ledger.clone(), storage.clone(), 1, 1).unwrap())
+        .unwrap();
+    let when = When::every("storage-cleanup-contract", 60);
+    let EnqueueOutcome::Created(id) = enqueue_storage_cleanup(&queue, when.clone()).await.unwrap()
+    else {
+        panic!("new cleanup schedule");
+    };
+    assert_eq!(
+        enqueue_storage_cleanup(&queue, when).await.unwrap(),
+        EnqueueOutcome::Existing(id)
+    );
+    let runner = worker(queue.clone(), registry);
+    assert!(runner.run_once().await.unwrap());
+    assert_eq!(queue.get(id).await.unwrap().status, JobStatus::Succeeded);
+    assert!(ledger.cleanup_receipt(discarded[0]).await.unwrap().is_some());
+    assert!(ledger.cleanup_receipt(discarded[1]).await.unwrap().is_none());
+    assert!(!runner.run_once().await.unwrap());
+    clock.advance(60);
+    assert!(runner.run_once().await.unwrap());
+    for media in discarded {
+        assert!(ledger.cleanup_receipt(media).await.unwrap().is_some());
+        assert!(!storage.exists(media.owner, media.id).await.unwrap());
+    }
+    assert!(storage.exists(owner, staged.id).await.unwrap());
+    let invalid = queue
+        .enqueue_json(
+            STORAGE_CLEANUP_HANDLER,
+            1,
+            &serde_json::json!({"path": "/unexpected"}),
+            When::now(),
+        )
+        .await
+        .unwrap();
+    let EnqueueOutcome::Created(invalid) = invalid else {
+        panic!("new invalid job");
+    };
+    assert!(runner.run_once().await.unwrap());
+    assert_eq!(
+        queue.get(invalid).await.unwrap().error_code.as_deref(),
+        Some("job.payload.invalid")
+    );
+    drop(runner);
+    drop(queue);
+    drop(ledger);
+    db.close().await.unwrap();
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[tokio::test]
+async fn sqlite_storage_cleanup_job_contract() {
+    let db = fexu_db::connect("sqlite::memory:").await.unwrap();
+    storage_cleanup_job_contract(db).await;
+}
+
+#[tokio::test]
+#[ignore = "requires disposable PostgreSQL"]
+async fn postgres_storage_cleanup_job_contract() {
+    let url = std::env::var("DATABASE_URL").unwrap();
+    let fixture = fexu_db::DisposablePostgres::create(&url).await.unwrap();
+    let db = fexu_db::connect(fixture.url()).await.unwrap();
+    storage_cleanup_job_contract(db).await;
+    fixture.drop_database().await.unwrap();
+}
