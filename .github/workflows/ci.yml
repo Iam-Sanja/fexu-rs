@@ -380,6 +380,7 @@ jobs:
           require_passed -p fexu-db --lib -- --ignored berlin_civil_time_roundtrips_as_one_postgres_timestamptz
           require_passed -p fexu-storage --lib -- --ignored postgres_reference_ledger_contract
           require_passed -p fexu-storage --lib -- --ignored postgres_orphan_candidates_contract
+          require_passed -p fexu-storage --lib -- --ignored postgres_reserved_upload_contract
           require_passed -p fexu-storage --lib -- --ignored postgres_referenced_model_commit_contract
           require_passed -p fexu-storage --lib -- --ignored postgres_rollback_removes_the_staged_file_only_through_abort
           require_passed -p fexu-forms --lib -- --ignored postgres_media_form_abort_follows_the_database
