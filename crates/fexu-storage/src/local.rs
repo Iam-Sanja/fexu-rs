@@ -225,6 +225,49 @@ impl LocalStorage {
         Ok(stored)
     }
 
+    // Only for permanently retired, settled IDs in a trusted local root.
+    // Preflight every managed path before deleting any of them.
+    pub(crate) fn cleanup_retired(&self, media: crate::MediaRef) -> Result<bool, StorageError> {
+        let _guard = self
+            .gate
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let root = canonicalize_existing(&self.root)?;
+        let owner = root.join(media.owner.to_string());
+        match std::fs::symlink_metadata(&owner) {
+            Ok(meta) if meta.is_dir() && !meta.file_type().is_symlink() => {}
+            Ok(_) => return Err(StorageError::Failed),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+            Err(_) => return Err(StorageError::Failed),
+        }
+        let directory = self.rooted_owner(media.owner, false)?;
+        let id = media.id;
+        let paths = [
+            directory.join(id.to_string()),
+            directory.join(format!("{id}.json")),
+            directory.join(format!("{id}.partial")),
+            directory.join(format!("{id}.json.tmp")),
+        ];
+        let mut present = Vec::new();
+        for path in paths {
+            match std::fs::symlink_metadata(&path) {
+                Ok(meta) if meta.is_file() && !meta.file_type().is_symlink() => {
+                    if Self::contained(&directory, &path)? != path {
+                        return Err(StorageError::Failed);
+                    }
+                    present.push(path);
+                }
+                Ok(_) => return Err(StorageError::Failed),
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                Err(_) => return Err(StorageError::Failed),
+            }
+        }
+        for path in &present {
+            std::fs::remove_file(path).map_err(|_| StorageError::Failed)?;
+        }
+        Ok(!present.is_empty())
+    }
+
     pub fn cleanup_orphans(&self, now: i64) -> Result<CleanupReport, StorageError> {
         let _guard = self
             .gate
