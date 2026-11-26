@@ -24,6 +24,14 @@ pub enum AbandonedCleanup {
     Missing,
 }
 
+/// An attempted reserved upload. Do not infer registration or write success
+/// from an error; inspect the ledger and storage before recovery.
+#[derive(Debug)]
+pub struct ReservedUploadError {
+    pub media: MediaRef,
+    pub error: StorageError,
+}
+
 fn statement(
     db: &impl ConnectionTrait,
     sqlite: &str,
@@ -73,6 +81,30 @@ impl ReferenceLedger {
     /// An existing or retired ID must never be registered again.
     pub async fn register(&self, media: MediaRef) -> Result<(), StorageError> {
         register_on(&self.db, media).await
+    }
+
+    /// Allocate and durably enroll an immutable ID before writing bytes.
+    /// The caller must authorize the upload and exclude cleanup until the
+    /// write has settled. Failed writes leave an enrolled candidate.
+    pub async fn stage_reserved<S: crate::Storage + ?Sized>(
+        &self,
+        storage: &S,
+        owner: uuid::Uuid,
+        original_name: &str,
+        bytes: &[u8],
+        expires_at: i64,
+    ) -> Result<crate::StoredFile, ReservedUploadError> {
+        let media = MediaRef {
+            owner,
+            id: uuid::Uuid::new_v4(),
+        };
+        self.register(media)
+            .await
+            .map_err(|error| ReservedUploadError { media, error })?;
+        storage
+            .save_reserved(media, original_name, bytes, expires_at)
+            .await
+            .map_err(|error| ReservedUploadError { media, error })
     }
 
     /// List a bounded, deterministic page of enrolled zero-reference IDs.
