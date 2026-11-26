@@ -6,6 +6,7 @@ use fexu_db::driver::{
     ConnectionTrait, DatabaseBackend, DatabaseConnection, DatabaseTransaction, Statement,
     TransactionTrait, Value,
 };
+use sha2::{Digest, Sha256};
 
 /// Counts model references in the same transaction as each model write.
 /// Retirement is permanent, including when a subsequent storage request fails.
@@ -45,6 +46,34 @@ pub enum UploadState {
     Staged,
     Committed,
     Abandoned,
+}
+
+/// Immutable expected upload properties, recorded before storage I/O.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UploadIntent {
+    pub size: i64,
+    pub sha256: String,
+    pub expires_at: i64,
+    pub original_name: String,
+}
+
+impl UploadIntent {
+    fn new(original_name: &str, bytes: &[u8], expires_at: i64) -> Result<Self, StorageError> {
+        let size = i64::try_from(bytes.len()).map_err(|_| StorageError::TooLarge)?;
+        Ok(Self {
+            size,
+            sha256: crate::local::hex(Sha256::digest(bytes)),
+            expires_at,
+            original_name: crate::sanitize_name(original_name),
+        })
+    }
+
+    fn matches(&self, file: &crate::StoredFile) -> bool {
+        u64::try_from(self.size).ok() == Some(file.size)
+            && self.sha256 == file.sha256
+            && Some(self.expires_at) == file.expires_at
+            && self.original_name == file.original_name
+    }
 }
 
 /// Non-authoritative observation of an unresolved write. No variant
@@ -133,6 +162,20 @@ impl ReferenceLedger {
             )
             .await
             .map_err(|_| StorageError::Failed)?;
+        self.db
+            .execute_unprepared(
+                "CREATE TABLE IF NOT EXISTS _fexu_media_upload_intents (
+                    owner TEXT NOT NULL,
+                    file_id TEXT NOT NULL,
+                    size BIGINT NOT NULL CHECK (size >= 0),
+                    sha256 TEXT NOT NULL,
+                    expires_at BIGINT NOT NULL,
+                    original_name TEXT NOT NULL,
+                    PRIMARY KEY (owner, file_id)
+                )",
+            )
+            .await
+            .map_err(|_| StorageError::Failed)?;
         Ok(())
     }
 
@@ -157,14 +200,16 @@ impl ReferenceLedger {
             owner,
             id: uuid::Uuid::new_v4(),
         };
-        self.begin_upload(media)
+        let intent = UploadIntent::new(original_name, bytes, expires_at)
+            .map_err(|error| ReservedUploadError { media, error })?;
+        self.begin_upload(media, &intent)
             .await
             .map_err(|error| ReservedUploadError { media, error })?;
         let file = storage
             .save_reserved(media, original_name, bytes, expires_at)
             .await
             .map_err(|error| ReservedUploadError { media, error })?;
-        if file.owner != media.owner || file.id != media.id || file.expires_at != Some(expires_at) {
+        if file.owner != media.owner || file.id != media.id || !intent.matches(&file) {
             return Err(ReservedUploadError {
                 media,
                 error: StorageError::Failed,
@@ -177,7 +222,11 @@ impl ReferenceLedger {
     }
 
     // Enrollment and the in-flight marker must become visible together.
-    async fn begin_upload(&self, media: MediaRef) -> Result<(), StorageError> {
+    async fn begin_upload(
+        &self,
+        media: MediaRef,
+        intent: &UploadIntent,
+    ) -> Result<(), StorageError> {
         let tx = self.db.begin().await.map_err(|_| StorageError::Failed)?;
         register_on(&tx, media).await?;
         let query = statement(
@@ -187,7 +236,66 @@ impl ReferenceLedger {
             media,
         )?;
         change_one(&tx, query).await?;
+        let backend = tx.get_database_backend();
+        let sql = match backend {
+            DatabaseBackend::Sqlite => {
+                "INSERT INTO _fexu_media_upload_intents VALUES (?, ?, ?, ?, ?, ?)"
+            }
+            DatabaseBackend::Postgres => {
+                "INSERT INTO _fexu_media_upload_intents VALUES ($1, $2, $3, $4, $5, $6)"
+            }
+            _ => return Err(StorageError::Failed),
+        };
+        let query = Statement::from_sql_and_values(
+            backend,
+            sql,
+            [
+                Value::from(media.owner.to_string()),
+                Value::from(media.id.to_string()),
+                Value::from(intent.size),
+                Value::from(intent.sha256.clone()),
+                Value::from(intent.expires_at),
+                Value::from(intent.original_name.clone()),
+            ],
+        );
+        change_one(&tx, query).await?;
         tx.commit().await.map_err(|_| StorageError::Failed)
+    }
+
+    /// Read the original intent without changing upload state.
+    /// Older enrollments may have no intent and cannot use settled recovery.
+    pub async fn upload_intent(
+        &self,
+        media: MediaRef,
+    ) -> Result<Option<UploadIntent>, StorageError> {
+        let query = statement(
+            &self.db,
+            "SELECT size, sha256, expires_at, original_name FROM _fexu_media_upload_intents
+             WHERE owner = ? AND file_id = ?",
+            "SELECT size, sha256, expires_at, original_name FROM _fexu_media_upload_intents
+             WHERE owner = $1 AND file_id = $2",
+            media,
+        )?;
+        let row = self
+            .db
+            .query_one(query)
+            .await
+            .map_err(|_| StorageError::Failed)?;
+        let Some(row) = row else {
+            return Ok(None);
+        };
+        Ok(Some(UploadIntent {
+            size: row.try_get("", "size").map_err(|_| StorageError::Failed)?,
+            sha256: row
+                .try_get("", "sha256")
+                .map_err(|_| StorageError::Failed)?,
+            expires_at: row
+                .try_get("", "expires_at")
+                .map_err(|_| StorageError::Failed)?,
+            original_name: row
+                .try_get("", "original_name")
+                .map_err(|_| StorageError::Failed)?,
+        }))
     }
 
     async fn finish_upload(&self, media: MediaRef) -> Result<(), StorageError> {
@@ -268,7 +376,7 @@ impl ReferenceLedger {
 
     /// Recover a validated upload after an operator has established that
     /// all original writes have settled. This never creates a model reference.
-    /// Missing or expired data remains unresolved; a concurrent state change
+    /// Missing, mismatched or unjournaled data remains unresolved; a concurrent state change
     /// fails closed. The caller must still authorize any subsequent model save.
     pub async fn recover_settled_upload<S: crate::Storage + ?Sized>(
         &self,
@@ -279,6 +387,13 @@ impl ReferenceLedger {
         else {
             return Err(StorageError::Failed);
         };
+        let intent = self
+            .upload_intent(media)
+            .await?
+            .ok_or(StorageError::Failed)?;
+        if !intent.matches(&file) {
+            return Err(StorageError::Failed);
+        }
         self.finish_upload(media).await?;
         Ok(file)
     }
@@ -936,7 +1051,12 @@ mod tests {
             owner,
             id: Uuid::new_v4(),
         };
-        ledger.begin_upload(interrupted).await.unwrap();
+        let intent = UploadIntent::new("recover.txt", b"recover", i64::MAX).unwrap();
+        ledger.begin_upload(interrupted, &intent).await.unwrap();
+        assert_eq!(
+            ledger.upload_intent(interrupted).await.unwrap(),
+            Some(intent)
+        );
         let written = storage
             .save_reserved(interrupted, "recover.txt", b"recover", i64::MAX)
             .await
@@ -997,6 +1117,49 @@ mod tests {
                 .unwrap(),
             AbandonedCleanup::Removed
         );
+        // A self-consistent but different payload must not be recovered.
+        let mismatch = MediaRef {
+            owner,
+            id: Uuid::new_v4(),
+        };
+        let intent = UploadIntent::new("recover.txt", b"correct", i64::MAX).unwrap();
+        ledger.begin_upload(mismatch, &intent).await.unwrap();
+        storage
+            .save_reserved(mismatch, "recover.txt", b"another", i64::MAX)
+            .await
+            .unwrap();
+        assert!(matches!(
+            ledger.inspect_unresolved(&storage, mismatch).await.unwrap(),
+            UploadObservation::Present(_)
+        ));
+        assert!(ledger
+            .recover_settled_upload(&storage, mismatch)
+            .await
+            .is_err());
+        assert_eq!(
+            ledger.upload_state(mismatch).await.unwrap(),
+            Some(UploadState::Uploading)
+        );
+        assert_eq!(
+            ledger.cleanup_abandoned(&storage, mismatch).await.unwrap(),
+            AbandonedCleanup::Unknown
+        );
+        // Simulate an older tracked upload with no original intent record.
+        let tx = db.begin().await.unwrap();
+        let query = statement(
+            &tx,
+            "DELETE FROM _fexu_media_upload_intents WHERE owner = ? AND file_id = ?",
+            "DELETE FROM _fexu_media_upload_intents WHERE owner = $1 AND file_id = $2",
+            mismatch,
+        )
+        .unwrap();
+        change_one(&tx, query).await.unwrap();
+        tx.commit().await.unwrap();
+        assert_eq!(ledger.upload_intent(mismatch).await.unwrap(), None);
+        assert!(ledger
+            .recover_settled_upload(&storage, mismatch)
+            .await
+            .is_err());
         std::fs::remove_dir_all(root).unwrap();
     }
 
@@ -1065,7 +1228,8 @@ mod tests {
             owner,
             id: Uuid::new_v4(),
         };
-        ledger.begin_upload(uploading).await.unwrap();
+        let intent = UploadIntent::new("note.txt", b"pending", i64::MAX).unwrap();
+        ledger.begin_upload(uploading, &intent).await.unwrap();
 
         assert!(ledger.abandoned_candidates(None, 0).await.is_err());
         assert!(ledger.abandoned_candidates(None, 1001).await.is_err());
@@ -1106,7 +1270,8 @@ mod tests {
             owner,
             id: Uuid::new_v4(),
         };
-        ledger.begin_upload(missing).await.unwrap();
+        let intent = UploadIntent::new("note.txt", b"pending", i64::MAX).unwrap();
+        ledger.begin_upload(missing, &intent).await.unwrap();
         ledger.abandon_upload(missing).await.unwrap();
         assert_eq!(
             ledger.check(missing).await.unwrap(),

@@ -2,6 +2,8 @@
 
 ## Unreleased — toward v0.3.0
 
+- Journal original upload size, SHA-256, deadline and sanitized filename before reserved storage writes; reject recovery of mismatched or unjournaled data.
+
 - Add bounded unresolved-upload discovery, non-destructive integrity inspection and explicit settled-upload recovery without timeout-based deletion.
 
 - Persist backend cleanup receipts for abandoned-upload pages, exclude recorded results from subsequent discovery, and retry interrupted cleanup without reusing retired IDs.

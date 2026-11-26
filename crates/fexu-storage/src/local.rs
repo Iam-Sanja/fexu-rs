@@ -882,7 +882,7 @@ fn unix_now() -> i64 {
         .unwrap_or(0)
 }
 
-fn hex(bytes: impl AsRef<[u8]>) -> String {
+pub(crate) fn hex(bytes: impl AsRef<[u8]>) -> String {
     bytes
         .as_ref()
         .iter()
