@@ -2,6 +2,8 @@
 
 ## Unreleased — toward v0.3.0
 
+- Add exclusive local writer slots and durable local discard requests; never automatically steal an occupied slot.
+
 - Add ledger-gated targeted local residue reconciliation for settled abandoned uploads, including IDs with prior backend cleanup receipts.
 
 - Add irreversible ledger-backed S3 discard requests and permanent conditional-write fence markers to block delayed uploads without deleting the marker.
