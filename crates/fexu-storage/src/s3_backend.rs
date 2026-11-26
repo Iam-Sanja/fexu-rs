@@ -369,6 +369,27 @@ impl Storage for S3Storage {
         Ok(meta)
     }
 
+    async fn save_reserved(
+        &self,
+        media: crate::MediaRef,
+        original_name: &str,
+        bytes: &[u8],
+        expires_at: i64,
+    ) -> Result<StoredFile, StorageError> {
+        let mut meta = prepare_file(
+            media.owner,
+            original_name,
+            bytes,
+            Some(expires_at),
+            self.limits.max_bytes,
+            &self.allow,
+            self.check.as_deref(),
+        )?;
+        meta.id = media.id;
+        self.put(&meta, bytes, PutMode::Create).await?;
+        Ok(meta)
+    }
+
     async fn read(&self, owner: Uuid, id: Uuid) -> Result<(StoredFile, Vec<u8>), StorageError> {
         let (meta, bytes, _) = self.load(owner, id).await?;
         if expired(&meta) {
