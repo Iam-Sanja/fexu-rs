@@ -59,6 +59,10 @@ impl ReferenceLedger {
         Self { db }
     }
 
+    pub(crate) fn database(&self) -> &DatabaseConnection {
+        &self.db
+    }
+
     /// Explicit setup only; no automatic runtime schema mutation.
     pub async fn initialize(&self) -> Result<(), StorageError> {
         self.db
@@ -101,10 +105,20 @@ impl ReferenceLedger {
         self.register(media)
             .await
             .map_err(|error| ReservedUploadError { media, error })?;
-        storage
+        let file = storage
             .save_reserved(media, original_name, bytes, expires_at)
             .await
-            .map_err(|error| ReservedUploadError { media, error })
+            .map_err(|error| ReservedUploadError { media, error })?;
+        if file.owner != media.owner
+            || file.id != media.id
+            || file.expires_at != Some(expires_at)
+        {
+            return Err(ReservedUploadError {
+                media,
+                error: StorageError::Failed,
+            });
+        }
+        Ok(file)
     }
 
     /// List a bounded, deterministic page of enrolled zero-reference IDs.
