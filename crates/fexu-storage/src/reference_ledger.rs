@@ -879,10 +879,47 @@ mod tests {
             .cleanup_abandoned_page(&storage, None, 10)
             .await
             .unwrap();
-        assert_eq!(retry.len(), 2);
-        for item in retry {
-            assert_eq!(item.outcome, Ok(AbandonedCleanup::Missing));
+        assert!(retry.is_empty());
+        let reopened = ReferenceLedger::new(db.clone());
+        reopened.initialize().await.unwrap();
+        for media in &abandoned {
+            assert_eq!(
+                reopened.cleanup_receipt(*media).await.unwrap(),
+                Some(CleanupReceipt::Removed)
+            );
         }
+        // Simulate interruption after retirement and storage deletion but
+        // before recording a receipt. The next page records Missing.
+        let missing = MediaRef {
+            owner,
+            id: Uuid::new_v4(),
+        };
+        ledger.begin_upload(missing).await.unwrap();
+        ledger.abandon_upload(missing).await.unwrap();
+        assert_eq!(
+            ledger.check(missing).await.unwrap(),
+            ReferenceDecision::Unreferenced(())
+        );
+        assert_eq!(ledger.cleanup_receipt(missing).await.unwrap(), None);
+        let retry = reopened
+            .cleanup_abandoned_page(&storage, None, 10)
+            .await
+            .unwrap();
+        assert_eq!(retry.len(), 1);
+        assert_eq!(retry[0].media, missing);
+        assert_eq!(retry[0].outcome, Ok(AbandonedCleanup::Missing));
+        assert_eq!(
+            reopened.cleanup_receipt(missing).await.unwrap(),
+            Some(CleanupReceipt::Missing)
+        );
+        assert!(reopened
+            .abandoned_candidates(None, 10)
+            .await
+            .unwrap()
+            .is_empty());
+        let tx = db.begin().await.unwrap();
+        assert!(ReferenceLedger::attach(&tx, missing).await.is_err());
+        tx.rollback().await.unwrap();
         assert!(storage.exists(owner, staged.id).await.unwrap());
         assert!(storage.exists(owner, committed.id).await.unwrap());
         assert!(storage.exists(owner, legacy.id).await.unwrap());
