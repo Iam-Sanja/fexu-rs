@@ -155,6 +155,20 @@ pub struct CommitReport {
     pub retain_failed: Vec<MediaRef>,
 }
 
+/// A pre-enrolled staging result, deliberately without legacy delete methods.
+#[must_use = "commit or reconcile the enrolled uploads"]
+pub struct ReservedStagedMedia {
+    staged: StagedMedia,
+    ledger: crate::ReferenceLedger,
+}
+
+/// Failed reserved staging leaves all enrolled IDs available for reconciliation.
+#[derive(Debug)]
+pub struct ReservedStageError {
+    pub error: StorageError,
+    pub candidates: Vec<MediaRef>,
+}
+
 impl UploadPlan {
     pub fn fields(&self) -> impl Iterator<Item = PlannedField<'_>> {
         self.decisions.iter().map(|decision| match decision {
@@ -178,6 +192,105 @@ impl UploadPlan {
                 retire: *retire,
                 pixels_decoded: upload.pixels_decoded,
             },
+        })
+    }
+
+    /// Enroll each new ID before writing its bytes. No legacy abort or delete
+    /// is performed on error; enrolled candidates remain discoverable.
+    /// The caller must exclude cleanup during in-flight writes and use the
+    /// same storage namespace for staging and commit.
+    pub async fn stage_referenced<S: Storage + ?Sized>(
+        self,
+        storage: &S,
+        ledger: &crate::ReferenceLedger,
+        now: i64,
+        ttl: i64,
+    ) -> Result<ReservedStagedMedia, ReservedStageError> {
+        if !(1..=MAX_STAGING_TTL).contains(&ttl) || now.checked_add(ttl).is_none() {
+            return Err(ReservedStageError {
+                error: StorageError::Failed,
+                candidates: Vec::new(),
+            });
+        }
+        let mut created = Vec::new();
+        let mut removals = Vec::new();
+        let mut kept = Vec::new();
+        let mut previous = Vec::new();
+        let mut candidates = Vec::new();
+        for decision in self.decisions {
+            previous.push(match &decision {
+                Decision::Absent { field } => BoundMedia {
+                    field: field.clone(),
+                    media: None,
+                },
+                Decision::Keep { field, media } | Decision::Remove { field, media } => BoundMedia {
+                    field: field.clone(),
+                    media: Some(*media),
+                },
+                Decision::Stage { field, retire, .. } => BoundMedia {
+                    field: field.clone(),
+                    media: *retire,
+                },
+            });
+            match decision {
+                Decision::Absent { field } => kept.push(BoundMedia { field, media: None }),
+                Decision::Keep { field, media } => kept.push(BoundMedia {
+                    field,
+                    media: Some(media),
+                }),
+                Decision::Remove { field, media } => {
+                    kept.push(BoundMedia { field, media: None });
+                    removals.push(media);
+                }
+                Decision::Stage {
+                    field,
+                    upload,
+                    retire,
+                } => {
+                    let file = match ledger
+                        .stage_reserved(
+                            storage,
+                            self.owner,
+                            &upload.original_name,
+                            &upload.bytes,
+                            now + ttl,
+                        )
+                        .await
+                    {
+                        Ok(file) => file,
+                        Err(error) => {
+                            candidates.push(error.media);
+                            return Err(ReservedStageError {
+                                error: error.error,
+                                candidates,
+                            });
+                        }
+                    };
+                    candidates.push(MediaRef {
+                        owner: self.owner,
+                        id: file.id,
+                    });
+                    if let Some(old) = retire {
+                        removals.push(old);
+                    }
+                    created.push(StagedFile {
+                        field,
+                        file,
+                        retire,
+                        pixels_decoded: upload.pixels_decoded,
+                    });
+                }
+            }
+        }
+        Ok(ReservedStagedMedia {
+            staged: StagedMedia {
+                owner: self.owner,
+                created,
+                removals,
+                kept,
+                previous,
+            },
+            ledger: ledger.clone(),
         })
     }
 
@@ -291,6 +404,34 @@ pub struct ReferencedSaveError<E> {
     pub candidates: Vec<MediaRef>,
 }
 
+impl ReservedStagedMedia {
+    pub fn created(&self) -> &[StagedFile] {
+        self.staged.created()
+    }
+
+    /// Commit using the same ledger database that enrolled the uploads.
+    /// The callback has the same compare-and-write obligations as
+    /// [`StagedMedia::commit_referenced`]. Dropping this value never deletes
+    /// bytes; cleanup must be separately authorized after writes settle.
+    pub async fn commit<S, T, E, F>(
+        self,
+        storage: &S,
+        save: F,
+    ) -> Result<(T, ReferencedCommitReport), ReferencedSaveError<E>>
+    where
+        S: Storage + ?Sized,
+        F: AsyncFnOnce(
+            &fexu_db::driver::DatabaseTransaction,
+            &[BoundMedia],
+            &[BoundMedia],
+        ) -> Result<T, E>,
+    {
+        self.staged
+            .commit_with_enrollment(storage, self.ledger.database(), true, save)
+            .await
+    }
+}
+
 impl StagedMedia {
     /// Persist a model change and its ledger updates in one transaction.
     ///
@@ -307,6 +448,24 @@ impl StagedMedia {
         self,
         storage: &S,
         db: &fexu_db::driver::DatabaseConnection,
+        save: F,
+    ) -> Result<(T, ReferencedCommitReport), ReferencedSaveError<E>>
+    where
+        S: Storage + ?Sized,
+        F: AsyncFnOnce(
+            &fexu_db::driver::DatabaseTransaction,
+            &[BoundMedia],
+            &[BoundMedia],
+        ) -> Result<T, E>,
+    {
+        self.commit_with_enrollment(storage, db, false, save).await
+    }
+
+    async fn commit_with_enrollment<S, T, E, F>(
+        self,
+        storage: &S,
+        db: &fexu_db::driver::DatabaseConnection,
+        reserved: bool,
         save: F,
     ) -> Result<(T, ReferencedCommitReport), ReferencedSaveError<E>>
     where
@@ -346,12 +505,18 @@ impl StagedMedia {
         let result = async {
             // Acquire the writer lock before reading model state on SQLite.
             for media in &candidates {
-                ReferenceLedger::register_tx(&tx, *media)
-                    .await
-                    .map_err(ReferencedSaveFailure::Ledger)?;
-                ReferenceLedger::attach(&tx, *media)
-                    .await
-                    .map_err(ReferencedSaveFailure::Ledger)?;
+                if reserved {
+                    ReferenceLedger::claim_reserved(&tx, *media)
+                        .await
+                        .map_err(ReferencedSaveFailure::Ledger)?;
+                } else {
+                    ReferenceLedger::register_tx(&tx, *media)
+                        .await
+                        .map_err(ReferencedSaveFailure::Ledger)?;
+                    ReferenceLedger::attach(&tx, *media)
+                        .await
+                        .map_err(ReferencedSaveFailure::Ledger)?;
+                }
             }
             let value = save(&tx, &self.previous, &bound)
                 .await
@@ -1618,6 +1783,204 @@ mod tests {
             old.id.to_string()
         );
         std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    async fn reserved_model_roundtrip(db: &fexu_db::driver::DatabaseConnection) {
+        use crate::{ReferenceCheck, ReferenceDecision, ReferenceLedger, ReferencedSaveFailure};
+        use fexu_db::driver::{DatabaseBackend, Statement, Value};
+        use std::time::{SystemTime, UNIX_EPOCH};
+
+        let directory = root();
+        let storage = LocalStorage::open(&directory, 64_000, &["text/plain"]).unwrap();
+        let ledger = ReferenceLedger::new(db.clone());
+        ledger.initialize().await.unwrap();
+        let backend = db.get_database_backend();
+        db.execute_unprepared(
+            "CREATE TABLE media_model (slot TEXT PRIMARY KEY, file_id TEXT NOT NULL)",
+        )
+        .await
+        .unwrap();
+        let owner = Uuid::new_v4();
+        let old = storage.save(owner, "old.txt", b"shared").await.unwrap();
+        let old = MediaRef { owner, id: old.id };
+        ledger.register(old).await.unwrap();
+        let tx = db.begin().await.unwrap();
+        for slot in ["first", "second"] {
+            ReferenceLedger::attach(&tx, old).await.unwrap();
+            let sql = match backend {
+                DatabaseBackend::Sqlite => "INSERT INTO media_model VALUES (?, ?)",
+                DatabaseBackend::Postgres => "INSERT INTO media_model VALUES ($1, $2)",
+                _ => unreachable!(),
+            };
+            tx.execute(Statement::from_sql_and_values(
+                backend,
+                sql,
+                [
+                    Value::from(slot.to_owned()),
+                    Value::from(old.id.to_string()),
+                ],
+            ))
+            .await
+            .unwrap();
+        }
+        tx.commit().await.unwrap();
+
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+        let stage = || {
+            prepare_media(
+                owner,
+                owner,
+                &OwnerAccess,
+                &policy(),
+                &[FieldSpec {
+                    name: "file",
+                    kind: MediaKind::File,
+                    required: true,
+                    readonly: false,
+                    existing: Some(old),
+                    clear: false,
+                    image_limits: None,
+                    incoming: Some(IncomingFile {
+                        original_name: "new.txt",
+                        declared_type: Some("text/plain"),
+                        bytes: b"replacement",
+                    }),
+                }],
+            )
+            .unwrap()
+        };
+
+        let staged = stage()
+            .stage_referenced(&storage, &ledger, now, 600)
+            .await
+            .unwrap();
+        let rejected = staged
+            .commit(&storage, async |_, _, _| Err::<(), _>("stale"))
+            .await
+            .unwrap_err();
+        assert!(matches!(
+            rejected.failure,
+            ReferencedSaveFailure::Model("stale")
+        ));
+        assert_eq!(rejected.candidates.len(), 1);
+        assert_eq!(
+            ledger.orphan_candidates(None, 10).await.unwrap(),
+            rejected.candidates
+        );
+        assert!(storage
+            .exists(owner, rejected.candidates[0].id)
+            .await
+            .unwrap());
+
+        let staged = stage()
+            .stage_referenced(&storage, &ledger, now, 600)
+            .await
+            .unwrap();
+        let retired = stage()
+            .stage_referenced(&storage, &ledger, now, 600)
+            .await
+            .unwrap();
+        let media = MediaRef {
+            owner,
+            id: retired.created()[0].file.id,
+        };
+        assert_eq!(
+            ledger.check(media).await.unwrap(),
+            ReferenceDecision::Unreferenced(())
+        );
+        let denied = retired
+            .commit(&storage, async |_, _, _| -> Result<(), ()> {
+                panic!("retired upload reached model callback")
+            })
+            .await
+            .unwrap_err();
+        assert!(matches!(denied.failure, ReferencedSaveFailure::Ledger(_)));
+
+        let (_, report) = staged
+            .commit(&storage, async |tx, previous, bound| {
+                assert_eq!(previous[0].media, Some(old));
+                let new = bound[0].media.unwrap();
+                let sql = match backend {
+                    DatabaseBackend::Sqlite => {
+                        "UPDATE media_model SET file_id = ? WHERE slot = 'first' AND file_id = ?"
+                    }
+                    DatabaseBackend::Postgres => {
+                        "UPDATE media_model SET file_id = $1 WHERE slot = 'first' AND file_id = $2"
+                    }
+                    _ => unreachable!(),
+                };
+                let changed = tx
+                    .execute(Statement::from_sql_and_values(
+                        backend,
+                        sql,
+                        [
+                            Value::from(new.id.to_string()),
+                            Value::from(old.id.to_string()),
+                        ],
+                    ))
+                    .await
+                    .map_err(|_| "database")?;
+                if changed.rows_affected() != 1 {
+                    return Err("stale");
+                }
+                Ok(())
+            })
+            .await
+            .unwrap();
+        let new = report.bound[0].media.unwrap();
+        assert_eq!(report.detached, vec![old]);
+        assert_eq!(
+            ledger.check(old).await.unwrap(),
+            ReferenceDecision::Referenced
+        );
+        assert_eq!(
+            ledger.check(new).await.unwrap(),
+            ReferenceDecision::Referenced
+        );
+        assert_eq!(storage.read(owner, old.id).await.unwrap().1, b"shared");
+        assert_eq!(storage.read(owner, new.id).await.unwrap().1, b"replacement");
+        assert_eq!(
+            storage.metadata(owner, new.id).await.unwrap().expires_at,
+            None
+        );
+        let rows = db
+            .query_all(Statement::from_string(
+                backend,
+                "SELECT file_id FROM media_model ORDER BY slot",
+            ))
+            .await
+            .unwrap();
+        assert_eq!(rows.len(), 2);
+        assert_eq!(
+            rows[0].try_get::<String>("", "file_id").unwrap(),
+            new.id.to_string()
+        );
+        assert_eq!(
+            rows[1].try_get::<String>("", "file_id").unwrap(),
+            old.id.to_string()
+        );
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[tokio::test]
+    async fn sqlite_reserved_model_commit_contract() {
+        let db = fexu_db::connect("sqlite::memory:").await.unwrap();
+        reserved_model_roundtrip(&db).await;
+        db.close().await.unwrap();
+    }
+
+    #[tokio::test]
+    #[ignore = "requires disposable PostgreSQL"]
+    async fn postgres_reserved_model_commit_contract() {
+        let url = std::env::var("DATABASE_URL").unwrap();
+        let fixture = fexu_db::DisposablePostgres::create(&url).await.unwrap();
+        let db = fexu_db::connect(fixture.url()).await.unwrap();
+        reserved_model_roundtrip(&db).await;
+        db.close().await.unwrap();
+        fixture.drop_database().await.unwrap();
     }
 
     #[tokio::test]

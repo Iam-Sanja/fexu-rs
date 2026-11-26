@@ -2,6 +2,8 @@
 
 ## Unreleased — toward v0.3.0
 
+- Connect pre-enrolled media staging to the model transaction through a dedicated wrapper that prevents legacy direct deletion and preserves rollback candidates.
+
 - Add opt-in pre-enrolled upload IDs and collision-rejecting local and S3 writes; failed attempts remain discoverable after durable enrollment. Local publication now requires hard-link support.
 
 - Add bounded keyset discovery of enrolled zero-reference media and explicit irreversible retirement before abandoned-file deletion. Unknown and referenced IDs remain protected; no automatic eligibility or sweep is enabled.

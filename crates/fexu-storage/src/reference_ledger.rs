@@ -59,6 +59,10 @@ impl ReferenceLedger {
         Self { db }
     }
 
+    pub(crate) fn database(&self) -> &DatabaseConnection {
+        &self.db
+    }
+
     /// Explicit setup only; no automatic runtime schema mutation.
     pub async fn initialize(&self) -> Result<(), StorageError> {
         self.db
@@ -101,10 +105,17 @@ impl ReferenceLedger {
         self.register(media)
             .await
             .map_err(|error| ReservedUploadError { media, error })?;
-        storage
+        let file = storage
             .save_reserved(media, original_name, bytes, expires_at)
             .await
-            .map_err(|error| ReservedUploadError { media, error })
+            .map_err(|error| ReservedUploadError { media, error })?;
+        if file.owner != media.owner || file.id != media.id || file.expires_at != Some(expires_at) {
+            return Err(ReservedUploadError {
+                media,
+                error: StorageError::Failed,
+            });
+        }
+        Ok(file)
     }
 
     /// List a bounded, deterministic page of enrolled zero-reference IDs.
@@ -201,6 +212,23 @@ impl ReferenceLedger {
         media: MediaRef,
     ) -> Result<(), StorageError> {
         register_on(tx, media).await
+    }
+
+    /// Claim an enrolled, previously unreferenced ID for its first model save.
+    /// A retired, unknown or already attached ID cannot be claimed.
+    pub(crate) async fn claim_reserved(
+        tx: &DatabaseTransaction,
+        media: MediaRef,
+    ) -> Result<(), StorageError> {
+        let query = statement(
+            tx,
+            "UPDATE _fexu_media_references SET refs = 1
+             WHERE owner = ? AND file_id = ? AND retired = 0 AND refs = 0",
+            "UPDATE _fexu_media_references SET refs = 1
+             WHERE owner = $1 AND file_id = $2 AND retired = 0 AND refs = 0",
+            media,
+        )?;
+        change_one(tx, query).await
     }
 
     /// Call in the same transaction as the corresponding model reference
