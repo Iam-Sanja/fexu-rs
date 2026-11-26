@@ -225,7 +225,7 @@ impl S3Storage {
         Ok(())
     }
 
-    // Called only by the ledger while the unresolved state is locked.
+    // Called only after the ledger durably blocks the staging transition.
     // A permanent marker occupies the exact conditional-create key.
     pub(crate) async fn fence_upload(&self, media: crate::MediaRef) -> Result<(), StorageError> {
         let marker = upload_fence(media.owner, media.id);
@@ -506,6 +506,47 @@ mod tests {
             Some(&ca),
         )
         .unwrap()
+    }
+
+    #[tokio::test]
+    #[ignore = "requires isolated TLS S3 fixture"]
+    async fn s3_cleanup_permanent_fence_contract() {
+        let first = recovery_fixture();
+        let second = recovery_fixture();
+        for present in [false, true] {
+            let media = crate::MediaRef {
+                owner: Uuid::new_v4(),
+                id: Uuid::new_v4(),
+            };
+            if present {
+                first
+                    .save_reserved(media, "note.txt", b"original", now() + 300)
+                    .await
+                    .unwrap();
+            }
+            first.fence_upload(media).await.unwrap();
+            second.fence_upload(media).await.unwrap();
+            assert!(second
+                .save_reserved(media, "note.txt", b"late", now() + 300)
+                .await
+                .is_err());
+            assert_eq!(
+                second.read(media.owner, media.id).await,
+                Err(StorageError::NotFound)
+            );
+            assert_eq!(
+                second.delete(media.owner, media.id).await,
+                Err(StorageError::NotFound)
+            );
+            assert!(!second
+                .cleanup_unreferenced_expired(media.owner, media.id)
+                .await
+                .unwrap());
+            assert_eq!(
+                second.load_raw(media.owner, media.id).await.unwrap().0,
+                upload_fence(media.owner, media.id)
+            );
+        }
     }
 
     #[tokio::test]
