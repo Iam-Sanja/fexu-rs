@@ -186,6 +186,16 @@ impl ReferenceLedger {
             )
             .await
             .map_err(|_| StorageError::Failed)?;
+        self.db
+            .execute_unprepared(
+                "CREATE TABLE IF NOT EXISTS _fexu_media_local_fences (
+                    owner TEXT NOT NULL,
+                    file_id TEXT NOT NULL,
+                    PRIMARY KEY (owner, file_id)
+                )",
+            )
+            .await
+            .map_err(|_| StorageError::Failed)?;
         Ok(())
     }
 
@@ -336,6 +346,73 @@ impl ReferenceLedger {
             .is_some())
     }
 
+    async fn has_local_fence(
+        db: &impl ConnectionTrait,
+        media: MediaRef,
+    ) -> Result<bool, StorageError> {
+        let query = statement(
+            db,
+            "SELECT file_id FROM _fexu_media_local_fences WHERE owner = ? AND file_id = ?",
+            "SELECT file_id FROM _fexu_media_local_fences WHERE owner = $1 AND file_id = $2",
+            media,
+        )?;
+        Ok(db
+            .query_one(query)
+            .await
+            .map_err(|_| StorageError::Failed)?
+            .is_some())
+    }
+
+    /// True once irreversible local discard has been requested.
+    pub async fn local_fence_requested(&self, media: MediaRef) -> Result<bool, StorageError> {
+        Self::has_local_fence(&self.db, media).await
+    }
+
+    /// Discard an unresolved upload using the original trusted local root.
+    /// All writers must use the exclusive slot protocol. An existing empty
+    /// slot is ambiguous and must never be stolen automatically.
+    pub async fn abandon_unresolved_local(
+        &self,
+        storage: &crate::LocalStorage,
+        media: MediaRef,
+    ) -> Result<(), StorageError> {
+        let tx = self.db.begin().await.map_err(|_| StorageError::Failed)?;
+        Self::lock_upload(&tx, media).await?;
+        if Self::has_fence(&tx, media).await? {
+            return Err(StorageError::Failed);
+        }
+        let query = statement(
+            &tx,
+            "INSERT INTO _fexu_media_local_fences
+             SELECT owner, file_id FROM _fexu_media_uploads
+             WHERE owner = ? AND file_id = ? AND state = 0
+             ON CONFLICT (owner, file_id) DO NOTHING",
+            "INSERT INTO _fexu_media_local_fences
+             SELECT owner, file_id FROM _fexu_media_uploads
+             WHERE owner = $1 AND file_id = $2 AND state = 0
+             ON CONFLICT (owner, file_id) DO NOTHING",
+            media,
+        )?;
+        tx.execute(query).await.map_err(|_| StorageError::Failed)?;
+        if !Self::has_local_fence(&tx, media).await? {
+            return Err(StorageError::Failed);
+        }
+        tx.commit().await.map_err(|_| StorageError::Failed)?;
+        storage.fence_local_writer(media)?;
+        let tx = self.db.begin().await.map_err(|_| StorageError::Failed)?;
+        Self::lock_upload(&tx, media).await?;
+        let query = statement(
+            &tx,
+            "UPDATE _fexu_media_uploads SET state = 3
+             WHERE owner = ? AND file_id = ? AND state IN (0, 3)",
+            "UPDATE _fexu_media_uploads SET state = 3
+             WHERE owner = $1 AND file_id = $2 AND state IN (0, 3)",
+            media,
+        )?;
+        change_one(&tx, query).await?;
+        tx.commit().await.map_err(|_| StorageError::Failed)
+    }
+
     /// True once irreversible S3 discard has been requested, even if the
     /// remote marker has not yet been confirmed.
     pub async fn upload_fence_requested(&self, media: MediaRef) -> Result<bool, StorageError> {
@@ -346,6 +423,9 @@ impl ReferenceLedger {
     async fn request_upload_fence(&self, media: MediaRef) -> Result<(), StorageError> {
         let tx = self.db.begin().await.map_err(|_| StorageError::Failed)?;
         Self::lock_upload(&tx, media).await?;
+        if Self::has_local_fence(&tx, media).await? {
+            return Err(StorageError::Failed);
+        }
         let query = statement(
             &tx,
             "INSERT INTO _fexu_media_upload_fences
@@ -394,7 +474,7 @@ impl ReferenceLedger {
     async fn finish_upload(&self, media: MediaRef) -> Result<(), StorageError> {
         let tx = self.db.begin().await.map_err(|_| StorageError::Failed)?;
         Self::lock_upload(&tx, media).await?;
-        if Self::has_fence(&tx, media).await? {
+        if Self::has_fence(&tx, media).await? || Self::has_local_fence(&tx, media).await? {
             return Err(StorageError::Failed);
         }
         let query = statement(
@@ -501,7 +581,7 @@ impl ReferenceLedger {
     pub async fn abandon_upload(&self, media: MediaRef) -> Result<(), StorageError> {
         let tx = self.db.begin().await.map_err(|_| StorageError::Failed)?;
         Self::lock_upload(&tx, media).await?;
-        if Self::has_fence(&tx, media).await? {
+        if Self::has_fence(&tx, media).await? || Self::has_local_fence(&tx, media).await? {
             return Err(StorageError::Failed);
         }
         let query = statement(
@@ -1318,6 +1398,52 @@ mod tests {
             AbandonedCleanup::Unknown
         );
         assert!(ledger.request_upload_fence(media).await.is_err());
+        let local = MediaRef {
+            owner,
+            id: Uuid::new_v4(),
+        };
+        let intent = UploadIntent::new("note.txt", b"late", i64::MAX).unwrap();
+        ledger.begin_upload(local, &intent).await.unwrap();
+        let other = LocalStorage::open(&root, 64, &["text/plain"]).unwrap();
+        let slot = root
+            .join(owner.to_string())
+            .join(format!("{}.write-lock", local.id));
+        std::fs::write(&slot, b"").unwrap();
+        assert!(ledger
+            .abandon_unresolved_local(&storage, local)
+            .await
+            .is_err());
+        assert!(ledger.local_fence_requested(local).await.unwrap());
+        assert!(ledger.finish_upload(local).await.is_err());
+        assert!(ledger.abandon_upload(local).await.is_err());
+        assert!(ledger.request_upload_fence(local).await.is_err());
+        assert!(other
+            .save_reserved(local, "note.txt", b"late", i64::MAX)
+            .await
+            .is_err());
+        // Simulate a cooperating writer releasing its slot after settlement.
+        std::fs::remove_file(&slot).unwrap();
+        ledger
+            .abandon_unresolved_local(&storage, local)
+            .await
+            .unwrap();
+        ledger
+            .abandon_unresolved_local(&other, local)
+            .await
+            .unwrap();
+        assert_eq!(
+            ledger.upload_state(local).await.unwrap(),
+            Some(UploadState::Abandoned)
+        );
+        assert!(other
+            .save_reserved(local, "note.txt", b"late", i64::MAX)
+            .await
+            .is_err());
+        assert_eq!(
+            ledger.cleanup_local_residue(&storage, local).await.unwrap(),
+            AbandonedCleanup::Missing
+        );
+        assert_eq!(std::fs::read(&slot).unwrap(), b"FXL1");
         std::fs::remove_dir_all(root).unwrap();
     }
 
