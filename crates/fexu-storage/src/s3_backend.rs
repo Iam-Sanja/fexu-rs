@@ -18,6 +18,7 @@ use uuid::Uuid;
 
 const MAGIC: &[u8; 4] = b"FXS1";
 const DELETED_MAGIC: &[u8; 4] = b"FXD1";
+const FENCED_MAGIC: &[u8; 4] = b"FXF1";
 const MAX_METADATA: usize = 4096;
 const MAX_FILE: u64 = 100 * 1024 * 1024;
 
@@ -161,7 +162,7 @@ impl S3Storage {
         id: Uuid,
     ) -> Result<(StoredFile, Vec<u8>, UpdateVersion), StorageError> {
         let (body, version) = self.load_raw(owner, id).await?;
-        if body == tombstone(owner, id) {
+        if body == tombstone(owner, id) || body == upload_fence(owner, id) {
             return Err(StorageError::NotFound);
         }
         let (meta, bytes) = decode(&body, owner, id, self.limits.max_bytes)?;
@@ -224,6 +225,37 @@ impl S3Storage {
         Ok(())
     }
 
+    // Called only by the ledger while the unresolved state is locked.
+    // A permanent marker occupies the exact conditional-create key.
+    pub(crate) async fn fence_upload(&self, media: crate::MediaRef) -> Result<(), StorageError> {
+        let marker = upload_fence(media.owner, media.id);
+        let mode = match self.load_raw(media.owner, media.id).await {
+            Ok((body, version)) => {
+                if body == marker {
+                    return Ok(());
+                }
+                if body != tombstone(media.owner, media.id) {
+                    decode(&body, media.owner, media.id, self.limits.max_bytes)?;
+                }
+                if version.e_tag.is_none() {
+                    return Err(StorageError::Failed);
+                }
+                PutMode::Update(version)
+            }
+            Err(StorageError::NotFound) => PutMode::Create,
+            Err(error) => return Err(error),
+        };
+        self.store
+            .put_opts(
+                &Self::path(media.owner, media.id),
+                marker.into(),
+                mode.into(),
+            )
+            .await
+            .map_err(map_error)?;
+        Ok(())
+    }
+
     /// Remove an expired object that the application has established is unreferenced.
     ///
     /// This is an operator-level operation, not an authorization or database
@@ -240,6 +272,9 @@ impl S3Storage {
             Err(StorageError::NotFound) => return Ok(false),
             Err(error) => return Err(error),
         };
+        if body == upload_fence(owner, id) {
+            return Ok(false);
+        }
         let marker = tombstone(owner, id);
         let path = Self::path(owner, id);
         if body != marker {
@@ -270,6 +305,14 @@ impl crate::ExpiryCleanup for S3Storage {
 fn tombstone(owner: Uuid, id: Uuid) -> Vec<u8> {
     let mut body = Vec::with_capacity(36);
     body.extend_from_slice(DELETED_MAGIC);
+    body.extend_from_slice(owner.as_bytes());
+    body.extend_from_slice(id.as_bytes());
+    body
+}
+
+fn upload_fence(owner: Uuid, id: Uuid) -> Vec<u8> {
+    let mut body = Vec::with_capacity(36);
+    body.extend_from_slice(FENCED_MAGIC);
     body.extend_from_slice(owner.as_bytes());
     body.extend_from_slice(id.as_bytes());
     body
