@@ -35,7 +35,7 @@
 | HTTP/API | Axum routing, model CRUD, model-derived OpenAPI 3.1, cursor lists, HTML views | Explicit authentication and policy configuration is still required; not every Django-style view is implemented |
 | Auth | Argon2id, sessions, role/object permissions, CSRF for protected browser routes, TOTP and password reset | OIDC is still a documented design, not a shipped implementation; see [#85](https://github.com/Iam-Sanja/fexu-rs/issues/85) |
 | Native admin | Server-rendered Axum/Tera CRUD, filters, actions, bulk workflows, scoped paginated relation pickers, inlines | No React dependency for basic admin; full browser/accessibility acceptance is still tracked by [#80](https://github.com/Iam-Sanja/fexu-rs/issues/80) |
-| Forms and media | Standalone/model forms, contracts, custom widgets, relation fields, formsets, multipart media fields and staged storage lifecycle | End-to-end acceptance remains tracked by [#84](https://github.com/Iam-Sanja/fexu-rs/issues/84); DB and filesystem do **not** share an atomic transaction; no working S3 network client |
+| Forms and media | Standalone/model forms, contracts, custom widgets, relation fields, formsets, multipart media fields and staged storage lifecycle | End-to-end acceptance remains tracked by [#84](https://github.com/Iam-Sanja/fexu-rs/issues/84); DB and filesystem do **not** share an atomic transaction; optional S3 network client exists in development source; production lifecycle acceptance remains open |
 | Services/tooling | Project/app CLI, developer diagnostics, local cache, mail, persistent jobs, local storage | Shared cache, remote storage and multi-instance worker guarantees remain scoped future work |
 
 
@@ -45,7 +45,7 @@ See the [0.3.0 acceptance plan](release-candidate-0.3.md) for release gates.
 
 **Goal:** optional services and operational reliability appropriate for more demanding deployments, with evidence-based limits.
 
-- **Storage [#96](https://github.com/Iam-Sanja/fexu-rs/issues/96):** backend-neutral local/S3-compatible implementation, authorization, quotas, orphan cleanup, user deletion and media corruption/restore tests. Full image decoding and malware scanning must not be claimed unless actually integrated.
+- **Storage [#96](https://github.com/Iam-Sanja/fexu-rs/issues/96):** backend-neutral local/S3-compatible implementation, authorization, quotas, orphan cleanup, user deletion and media corruption/restore tests. Per-ID settled quota release passed in #296; opt-in local fenced quota cleanup is the next development slice. Scheduled integration, remote release, historical reconciliation and production acceptance remain open. Full image decoding and malware scanning must not be claimed unless actually integrated.
 - **Identity [#85](https://github.com/Iam-Sanja/fexu-rs/issues/85), [#172–175](https://github.com/Iam-Sanja/fexu-rs/issues/172):** opt-in OIDC authorization code + PKCE, account linking and replay controls, tested against a local mock provider and existing session/CSRF requirements.
 - **Runtime [#87](https://github.com/Iam-Sanja/fexu-rs/issues/87), [#88](https://github.com/Iam-Sanja/fexu-rs/issues/88):** worker crash/restart, idempotency/outbox and scheduling guarantees; optional shared cache with defined consistency and invalidation contracts.
 - **Reusable apps [#86](https://github.com/Iam-Sanja/fexu-rs/issues/86):** compile-time-compatible versioned app distribution and upgrade lifecycle.
