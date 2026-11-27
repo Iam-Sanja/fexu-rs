@@ -581,10 +581,7 @@ mod tests {
             ledger.upload_state(media).await.unwrap(),
             Some(crate::UploadState::Uploading)
         );
-        assert!(!ledger
-            .release_fenced_s3_quota(&first, media)
-            .await
-            .unwrap());
+        assert!(!ledger.release_fenced_s3_quota(&first, media).await.unwrap());
         ledger.abandon_unresolved_s3(&first, media).await.unwrap();
         assert!(ledger.upload_fence_requested(media).await.unwrap());
         assert_eq!(
