@@ -228,6 +228,18 @@ impl ReferenceLedger {
             )
             .await
             .map_err(|_| StorageError::Failed)?;
+        self.db
+            .execute_unprepared(
+                "CREATE TABLE IF NOT EXISTS _fexu_media_quota_charges (
+                    owner TEXT NOT NULL,
+                    file_id TEXT NOT NULL,
+                    size BIGINT NOT NULL CHECK (size >= 0),
+                    released INTEGER NOT NULL CHECK (released IN (0, 1)),
+                    PRIMARY KEY (owner, file_id)
+                )",
+            )
+            .await
+            .map_err(|_| StorageError::Failed)?;
         Ok(())
     }
 
@@ -312,6 +324,26 @@ impl ReferenceLedger {
             ],
         );
         change_one(&tx, query).await?;
+        let sql = match backend {
+            DatabaseBackend::Sqlite => "INSERT INTO _fexu_media_quota_charges VALUES (?, ?, ?, 0)",
+            DatabaseBackend::Postgres => {
+                "INSERT INTO _fexu_media_quota_charges VALUES ($1, $2, $3, 0)"
+            }
+            _ => return Err(StorageError::Failed),
+        };
+        change_one(
+            &tx,
+            Statement::from_sql_and_values(
+                backend,
+                sql,
+                [
+                    Value::from(media.owner.to_string()),
+                    Value::from(media.id.to_string()),
+                    Value::from(intent.size),
+                ],
+            ),
+        )
+        .await?;
         tx.commit().await.map_err(|_| StorageError::Failed)
     }
 
@@ -447,8 +479,8 @@ impl ReferenceLedger {
         tx.commit().await.map_err(|_| StorageError::Failed)
     }
 
-    /// Read the conservative reservation counters. Cleanup does not release
-    /// them yet: a backend receipt alone cannot prove physical residue is gone.
+    /// Read conservative reservation counters. Cleanup does not automatically
+    /// release them: a backend receipt alone cannot prove residue is gone.
     pub async fn owner_quota(&self, owner: uuid::Uuid) -> Result<Option<OwnerQuota>, StorageError> {
         let backend = self.db.get_database_backend();
         let sql = match backend {
@@ -488,6 +520,84 @@ impl ReferenceLedger {
                 .try_get("", "reserved_bytes")
                 .map_err(|_| StorageError::Failed)?,
         }))
+    }
+
+    /// Release a journaled logical quota charge exactly once.
+    /// Only an authorized operator may call this after confirming permanent
+    /// abandonment, settlement of all writes and removal of storage residue
+    /// in the original trusted namespace. A cleanup receipt is necessary but
+    /// is not sufficient evidence of these conditions. No physical deletion
+    /// is performed here. Older unjournaled reservations stay charged.
+    /// Returns false for ineligible, unjournaled or already released IDs.
+    pub async fn release_settled_quota(&self, media: MediaRef) -> Result<bool, StorageError> {
+        let tx = self.db.begin().await.map_err(|_| StorageError::Failed)?;
+        Self::lock_owner_quota(&tx, media.owner).await?;
+        let query = statement(
+            &tx,
+            "SELECT q.size FROM _fexu_media_quota_charges q
+             JOIN _fexu_media_references r ON r.owner = q.owner AND r.file_id = q.file_id
+             JOIN _fexu_media_uploads u ON u.owner = q.owner AND u.file_id = q.file_id
+             JOIN _fexu_media_cleanup_receipts c ON c.owner = q.owner AND c.file_id = q.file_id
+             WHERE q.owner = ? AND q.file_id = ? AND q.released = 0
+             AND r.refs = 0 AND r.retired = 1 AND u.state = 3 AND c.outcome IN (1, 2)",
+            "SELECT q.size FROM _fexu_media_quota_charges q
+             JOIN _fexu_media_references r ON r.owner = q.owner AND r.file_id = q.file_id
+             JOIN _fexu_media_uploads u ON u.owner = q.owner AND u.file_id = q.file_id
+             JOIN _fexu_media_cleanup_receipts c ON c.owner = q.owner AND c.file_id = q.file_id
+             WHERE q.owner = $1 AND q.file_id = $2 AND q.released = 0
+             AND r.refs = 0 AND r.retired = 1 AND u.state = 3 AND c.outcome IN (1, 2)",
+            media,
+        )?;
+        let row = tx
+            .query_one(query)
+            .await
+            .map_err(|_| StorageError::Failed)?;
+        let Some(row) = row else {
+            tx.rollback().await.map_err(|_| StorageError::Failed)?;
+            return Ok(false);
+        };
+        let size: i64 = row.try_get("", "size").map_err(|_| StorageError::Failed)?;
+        if size < 0 {
+            return Err(StorageError::Failed);
+        }
+        let query = statement(
+            &tx,
+            "UPDATE _fexu_media_quota_charges SET released = 1
+             WHERE owner = ? AND file_id = ? AND released = 0",
+            "UPDATE _fexu_media_quota_charges SET released = 1
+             WHERE owner = $1 AND file_id = $2 AND released = 0",
+            media,
+        )?;
+        change_one(&tx, query).await?;
+        let backend = tx.get_database_backend();
+        let sql = match backend {
+            DatabaseBackend::Sqlite => {
+                "UPDATE _fexu_media_owner_quotas
+                 SET reserved_files = reserved_files - 1, reserved_bytes = reserved_bytes - ?
+                 WHERE owner = ? AND reserved_files > 0 AND reserved_bytes >= ?"
+            }
+            DatabaseBackend::Postgres => {
+                "UPDATE _fexu_media_owner_quotas
+                 SET reserved_files = reserved_files - 1, reserved_bytes = reserved_bytes - $1
+                 WHERE owner = $2 AND reserved_files > 0 AND reserved_bytes >= $3"
+            }
+            _ => return Err(StorageError::Failed),
+        };
+        change_one(
+            &tx,
+            Statement::from_sql_and_values(
+                backend,
+                sql,
+                [
+                    Value::from(size),
+                    Value::from(media.owner.to_string()),
+                    Value::from(size),
+                ],
+            ),
+        )
+        .await?;
+        tx.commit().await.map_err(|_| StorageError::Failed)?;
+        Ok(true)
     }
 
     /// Read the original intent without changing upload state.
@@ -1829,7 +1939,9 @@ mod tests {
             .unwrap_err();
         assert_eq!(denied.error, StorageError::QuotaExceeded);
         assert_eq!(other.upload_state(denied.media).await.unwrap(), None);
+        assert!(!ledger.release_settled_quota(failed_media).await.unwrap());
         ledger.abandon_upload(failed_media).await.unwrap();
+        assert!(!ledger.release_settled_quota(failed_media).await.unwrap());
         assert_eq!(
             ledger
                 .cleanup_abandoned_page(&storage, None, 100)
@@ -1845,6 +1957,47 @@ mod tests {
         assert_eq!(quota.reserved_files, 2);
         assert_eq!(quota.reserved_bytes, 8);
         assert!(storage.exists(limited, winner.id).await.unwrap());
+        let (left, right) = tokio::join!(
+            ledger.release_settled_quota(failed_media),
+            other.release_settled_quota(failed_media)
+        );
+        assert_ne!(left.unwrap(), right.unwrap());
+        assert!(!ledger.release_settled_quota(failed_media).await.unwrap());
+        let quota = other.owner_quota(limited).await.unwrap().unwrap();
+        assert_eq!(quota.reserved_files, 1);
+        assert_eq!(quota.reserved_bytes, 5);
+        let winner_media = MediaRef {
+            owner: limited,
+            id: winner.id,
+        };
+        assert!(!ledger.release_settled_quota(winner_media).await.unwrap());
+        let next = ledger
+            .stage_reserved(&storage, limited, "next.txt", b"123", i64::MAX)
+            .await
+            .unwrap();
+        let next_media = MediaRef {
+            owner: limited,
+            id: next.id,
+        };
+        // Simulate an older reservation with no per-ID charge journal.
+        let query = statement(
+            db,
+            "DELETE FROM _fexu_media_quota_charges WHERE owner = ? AND file_id = ?",
+            "DELETE FROM _fexu_media_quota_charges WHERE owner = $1 AND file_id = $2",
+            next_media,
+        )
+        .unwrap();
+        db.execute(query).await.unwrap();
+        ledger.abandon_upload(next_media).await.unwrap();
+        ledger
+            .cleanup_abandoned_page(&storage, None, 100)
+            .await
+            .unwrap();
+        assert!(ledger.cleanup_receipt(next_media).await.unwrap().is_some());
+        assert!(!ledger.release_settled_quota(next_media).await.unwrap());
+        let quota = other.owner_quota(limited).await.unwrap().unwrap();
+        assert_eq!(quota.reserved_files, 2);
+        assert_eq!(quota.reserved_bytes, 8);
         let zero = Uuid::new_v4();
         ledger.configure_owner_quota(zero, 0, 0).await.unwrap();
         assert_eq!(

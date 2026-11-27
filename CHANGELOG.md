@@ -2,6 +2,8 @@
 
 ## Unreleased — toward v0.3.0
 
+- Journal reserved-upload quota charges per ID and permit explicit once-only release after settled cleanup and durable receipt; older unjournaled charges remain conservative.
+
 - Add persistent per-owner reserved-upload admission budgets with atomic file and byte counters; conservative reservations are not released by cleanup yet.
 
 - Add opt-in detached-media cleanup policy to reserved model saves, preserving default retention and transactional rollback.
