@@ -1474,6 +1474,59 @@ impl ReferenceLedger {
         self.release_settled_quota(media).await
     }
 
+    /// Permanently fence an explicitly abandoned, zero-reference S3 ID.
+    /// Use only the original authorized bucket. Settle destructive operations
+    /// before calling; ordinary deletes and expiry cleanup must not overlap.
+    /// The durable request survives failures. Retry conditional-write errors.
+    /// This does not release quota or verify historical object versions.
+    #[cfg(feature = "s3-storage")]
+    pub async fn fence_abandoned_s3(
+        &self,
+        storage: &crate::S3Storage,
+        media: MediaRef,
+    ) -> Result<bool, StorageError> {
+        if self.upload_state(media).await? != Some(UploadState::Abandoned)
+            || self.local_fence_requested(media).await?
+        {
+            return Ok(false);
+        }
+        match self.check(media).await? {
+            ReferenceDecision::Unknown | ReferenceDecision::Referenced => return Ok(false),
+            ReferenceDecision::Unreferenced(()) => {}
+        }
+        let tx = self.db.begin().await.map_err(|_| StorageError::Failed)?;
+        Self::lock_upload(&tx, media).await?;
+        if Self::has_local_fence(&tx, media).await? {
+            return Err(StorageError::Failed);
+        }
+        let query = statement(
+            &tx,
+            "INSERT INTO _fexu_media_upload_fences
+             SELECT u.owner, u.file_id FROM _fexu_media_uploads u
+             JOIN _fexu_media_references r ON r.owner = u.owner AND r.file_id = u.file_id
+             WHERE u.owner = ? AND u.file_id = ? AND u.state = 3
+             AND r.refs = 0 AND r.retired = 1
+             ON CONFLICT (owner, file_id) DO NOTHING",
+            "INSERT INTO _fexu_media_upload_fences
+             SELECT u.owner, u.file_id FROM _fexu_media_uploads u
+             JOIN _fexu_media_references r ON r.owner = u.owner AND r.file_id = u.file_id
+             WHERE u.owner = $1 AND u.file_id = $2 AND u.state = 3
+             AND r.refs = 0 AND r.retired = 1
+             ON CONFLICT (owner, file_id) DO NOTHING",
+            media,
+        )?;
+        tx.execute(query).await.map_err(|_| StorageError::Failed)?;
+        if !Self::has_fence(&tx, media).await? {
+            return Err(StorageError::Failed);
+        }
+        tx.commit().await.map_err(|_| StorageError::Failed)?;
+        storage.fence_upload(media).await?;
+        storage.verify_upload_fence(media).await?;
+        self.record_cleanup_receipt(media, AbandonedCleanup::Missing)
+            .await?;
+        Ok(true)
+    }
+
     /// Release a previously fenced S3 reservation after operator settlement.
     /// The caller must verify the original bucket, settle all destructive
     /// operations and establish that no relevant historical object versions
