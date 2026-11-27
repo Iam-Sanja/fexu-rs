@@ -404,6 +404,14 @@ pub struct ReferencedSaveError<E> {
     pub candidates: Vec<MediaRef>,
 }
 
+/// Policy for detached media in a reserved model save.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum DetachedMediaPolicy {
+    #[default]
+    Retain,
+    Cleanup,
+}
+
 impl ReservedStagedMedia {
     pub fn created(&self) -> &[StagedFile] {
         self.staged.created()
@@ -427,7 +435,37 @@ impl ReservedStagedMedia {
         ) -> Result<T, E>,
     {
         self.staged
-            .commit_with_enrollment(storage, self.ledger.database(), true, save)
+            .commit_with_enrollment(
+                storage,
+                self.ledger.database(),
+                true,
+                DetachedMediaPolicy::Retain,
+                save,
+            )
+            .await
+    }
+
+    /// Opt in to permanent cleanup of detached tracked committed media.
+    /// The caller must authorize deletion and establish that external
+    /// references and original storage writes have settled. Shared, legacy
+    /// and otherwise ineligible IDs are not admitted. No bytes are deleted
+    /// here; the existing worker may act only after transaction commit.
+    pub async fn commit_with_policy<S, T, E, F>(
+        self,
+        storage: &S,
+        policy: DetachedMediaPolicy,
+        save: F,
+    ) -> Result<(T, ReferencedCommitReport), ReferencedSaveError<E>>
+    where
+        S: Storage + ?Sized,
+        F: AsyncFnOnce(
+            &fexu_db::driver::DatabaseTransaction,
+            &[BoundMedia],
+            &[BoundMedia],
+        ) -> Result<T, E>,
+    {
+        self.staged
+            .commit_with_enrollment(storage, self.ledger.database(), true, policy, save)
             .await
     }
 }
@@ -458,7 +496,8 @@ impl StagedMedia {
             &[BoundMedia],
         ) -> Result<T, E>,
     {
-        self.commit_with_enrollment(storage, db, false, save).await
+        self.commit_with_enrollment(storage, db, false, DetachedMediaPolicy::Retain, save)
+            .await
     }
 
     async fn commit_with_enrollment<S, T, E, F>(
@@ -466,6 +505,7 @@ impl StagedMedia {
         storage: &S,
         db: &fexu_db::driver::DatabaseConnection,
         reserved: bool,
+        policy: DetachedMediaPolicy,
         save: F,
     ) -> Result<(T, ReferencedCommitReport), ReferencedSaveError<E>>
     where
@@ -525,6 +565,13 @@ impl StagedMedia {
                 ReferenceLedger::detach(&tx, *media)
                     .await
                     .map_err(ReferencedSaveFailure::Ledger)?;
+            }
+            if policy == DetachedMediaPolicy::Cleanup {
+                for media in &self.removals {
+                    ReferenceLedger::admit_detached_cleanup(&tx, *media)
+                        .await
+                        .map_err(ReferencedSaveFailure::Ledger)?;
+                }
             }
             for media in &candidates {
                 storage
