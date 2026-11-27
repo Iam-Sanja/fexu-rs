@@ -2,6 +2,7 @@
 
 ## Unreleased — toward v0.3.0
 
+- Add explicit S3 quota release after operator-established settlement and verification of a permanent discard marker; missing markers fail closed even with a cleanup receipt.
 - Add bounded opt-in local quota cleanup jobs that resume unreleased journals even after durable cleanup receipts; dedicated local namespace required.
 - Add opt-in local abandoned-ID quota cleanup with permanent writer fencing, residue reconciliation even after an existing receipt, and once-only logical release.
 - Journal reserved-upload quota charges per ID and permit explicit once-only release after settled cleanup and durable receipt; older unjournaled charges remain conservative.

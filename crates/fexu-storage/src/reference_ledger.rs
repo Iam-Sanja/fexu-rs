@@ -1474,6 +1474,35 @@ impl ReferenceLedger {
         self.release_settled_quota(media).await
     }
 
+    /// Release a previously fenced S3 reservation after operator settlement.
+    /// The caller must verify the original bucket, settle all destructive
+    /// operations and establish that no relevant historical object versions
+    /// remain. Keep the permanent marker and prohibit raw mutation forever.
+    /// This checks the current marker, not bucket version history or backups.
+    /// Missing or unexpected markers fail closed, even with a prior receipt.
+    /// Only a newly released journaled charge returns true.
+    #[cfg(feature = "s3-storage")]
+    pub async fn release_fenced_s3_quota(
+        &self,
+        storage: &crate::S3Storage,
+        media: MediaRef,
+    ) -> Result<bool, StorageError> {
+        if self.upload_state(media).await? != Some(UploadState::Abandoned)
+            || !self.upload_fence_requested(media).await?
+            || self.local_fence_requested(media).await?
+        {
+            return Ok(false);
+        }
+        match self.check(media).await? {
+            ReferenceDecision::Unknown | ReferenceDecision::Referenced => return Ok(false),
+            ReferenceDecision::Unreferenced(()) => {}
+        }
+        storage.verify_upload_fence(media).await?;
+        self.record_cleanup_receipt(media, AbandonedCleanup::Missing)
+            .await?;
+        self.release_settled_quota(media).await
+    }
+
     /// Reconcile the four known local paths of an explicitly abandoned ID.
     /// Unlike ordinary cleanup, this also checks IDs with existing receipts.
     /// The caller must establish local writer settlement and use the original

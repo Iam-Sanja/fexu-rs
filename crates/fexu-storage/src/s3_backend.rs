@@ -256,6 +256,18 @@ impl S3Storage {
         Ok(())
     }
 
+    // Read only: a missing marker must not be recreated by quota release.
+    pub(crate) async fn verify_upload_fence(
+        &self,
+        media: crate::MediaRef,
+    ) -> Result<(), StorageError> {
+        let (body, _) = self.load_raw(media.owner, media.id).await?;
+        if body != upload_fence(media.owner, media.id) {
+            return Err(StorageError::Failed);
+        }
+        Ok(())
+    }
+
     /// Remove an expired object that the application has established is unreferenced.
     ///
     /// This is an operator-level operation, not an authorization or database
@@ -569,6 +581,7 @@ mod tests {
             ledger.upload_state(media).await.unwrap(),
             Some(crate::UploadState::Uploading)
         );
+        assert!(!ledger.release_fenced_s3_quota(&first, media).await.unwrap());
         ledger.abandon_unresolved_s3(&first, media).await.unwrap();
         assert!(ledger.upload_fence_requested(media).await.unwrap());
         assert_eq!(
@@ -598,6 +611,41 @@ mod tests {
         assert_eq!(
             second.load_raw(media.owner, media.id).await.unwrap().0,
             upload_fence(media.owner, media.id)
+        );
+        let quota = reopened.owner_quota(owner).await.unwrap().unwrap();
+        assert_eq!(quota.reserved_files, 1);
+        assert_eq!(quota.reserved_bytes, 7);
+        // Simulate an externally removed marker: a receipt is insufficient.
+        second
+            .store
+            .delete(&S3Storage::path(owner, media.id))
+            .await
+            .unwrap();
+        assert!(reopened
+            .release_fenced_s3_quota(&second, media)
+            .await
+            .is_err());
+        let quota = reopened.owner_quota(owner).await.unwrap().unwrap();
+        assert_eq!(quota.reserved_files, 1);
+        reopened
+            .abandon_unresolved_s3(&second, media)
+            .await
+            .unwrap();
+        let (left, right) = tokio::join!(
+            ledger.release_fenced_s3_quota(&first, media),
+            reopened.release_fenced_s3_quota(&second, media)
+        );
+        assert_ne!(left.unwrap(), right.unwrap());
+        assert!(!reopened
+            .release_fenced_s3_quota(&second, media)
+            .await
+            .unwrap());
+        let quota = reopened.owner_quota(owner).await.unwrap().unwrap();
+        assert_eq!(quota.reserved_files, 0);
+        assert_eq!(quota.reserved_bytes, 0);
+        assert_eq!(
+            second.load_raw(owner, media.id).await.unwrap().0,
+            upload_fence(owner, media.id)
         );
         db.close().await.unwrap();
     }
