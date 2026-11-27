@@ -1833,7 +1833,10 @@ mod tests {
     }
 
     async fn reserved_model_roundtrip(db: &fexu_db::driver::DatabaseConnection) {
-        use crate::{ReferenceCheck, ReferenceDecision, ReferenceLedger, ReferencedSaveFailure};
+        use crate::{
+            DetachedMediaPolicy, ReferenceCheck, ReferenceDecision, ReferenceLedger,
+            ReferencedSaveFailure,
+        };
         use fexu_db::driver::{DatabaseBackend, Statement, Value};
         use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -2029,7 +2032,9 @@ mod tests {
         ReferenceLedger::detach(&tx, old).await.unwrap();
         let sql = match backend {
             DatabaseBackend::Sqlite => "UPDATE media_model SET file_id = ? WHERE slot = 'second'",
-            DatabaseBackend::Postgres => "UPDATE media_model SET file_id = $1 WHERE slot = 'second'",
+            DatabaseBackend::Postgres => {
+                "UPDATE media_model SET file_id = $1 WHERE slot = 'second'"
+            }
             _ => unreachable!(),
         };
         tx.execute(Statement::from_sql_and_values(
@@ -2087,16 +2092,12 @@ mod tests {
             .await
             .unwrap();
         let rejected = staged
-            .commit_with_policy(
-                &storage,
-                DetachedMediaPolicy::Cleanup,
-                async |tx, _, _| {
-                    tx.execute_unprepared("DELETE FROM media_model WHERE slot = 'second'")
-                        .await
-                        .unwrap();
-                    Err::<(), _>("rollback")
-                },
-            )
+            .commit_with_policy(&storage, DetachedMediaPolicy::Cleanup, async |tx, _, _| {
+                tx.execute_unprepared("DELETE FROM media_model WHERE slot = 'second'")
+                    .await
+                    .unwrap();
+                Err::<(), _>("rollback")
+            })
             .await
             .unwrap_err();
         assert!(matches!(
