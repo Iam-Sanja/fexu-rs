@@ -325,9 +325,7 @@ impl ReferenceLedger {
         );
         change_one(&tx, query).await?;
         let sql = match backend {
-            DatabaseBackend::Sqlite => {
-                "INSERT INTO _fexu_media_quota_charges VALUES (?, ?, ?, 0)"
-            }
+            DatabaseBackend::Sqlite => "INSERT INTO _fexu_media_quota_charges VALUES (?, ?, ?, 0)",
             DatabaseBackend::Postgres => {
                 "INSERT INTO _fexu_media_quota_charges VALUES ($1, $2, $3, 0)"
             }
@@ -1995,11 +1993,7 @@ mod tests {
             .cleanup_abandoned_page(&storage, None, 100)
             .await
             .unwrap();
-        assert!(ledger
-            .cleanup_receipt(next_media)
-            .await
-            .unwrap()
-            .is_some());
+        assert!(ledger.cleanup_receipt(next_media).await.unwrap().is_some());
         assert!(!ledger.release_settled_quota(next_media).await.unwrap());
         let quota = other.owner_quota(limited).await.unwrap().unwrap();
         assert_eq!(quota.reserved_files, 2);
