@@ -1797,6 +1797,68 @@ mod tests {
             AbandonedCleanup::Missing
         );
         assert_eq!(std::fs::read(&slot).unwrap(), b"FXL1");
+        let limited = Uuid::new_v4();
+        ledger.configure_owner_quota(limited, 2, 8).await.unwrap();
+        let other = ReferenceLedger::new(db.clone());
+        let (first, second) = tokio::join!(
+            ledger.stage_reserved(&storage, limited, "a.txt", b"12345", i64::MAX),
+            other.stage_reserved(&storage, limited, "b.txt", b"12345", i64::MAX)
+        );
+        let (winner, denied) = match (first, second) {
+            (Ok(file), Err(error)) | (Err(error), Ok(file)) => (file, error),
+            _ => panic!("only one upload may fit the budget"),
+        };
+        assert_eq!(denied.error, StorageError::QuotaExceeded);
+        assert_eq!(ledger.upload_state(denied.media).await.unwrap(), None);
+        assert_eq!(
+            other.owner_quota(limited).await.unwrap(),
+            Some(OwnerQuota {
+                max_files: 2,
+                max_bytes: 8,
+                reserved_files: 1,
+                reserved_bytes: 5,
+            })
+        );
+        assert!(ledger.configure_owner_quota(limited, 3, 99).await.is_err());
+        let failed_media = MediaRef {
+            owner: limited,
+            id: Uuid::new_v4(),
+        };
+        let intent = UploadIntent::new("pending.txt", b"123", i64::MAX).unwrap();
+        ledger.begin_upload(failed_media, &intent).await.unwrap();
+        let denied = other
+            .stage_reserved(&storage, limited, "c.txt", b"x", i64::MAX)
+            .await
+            .unwrap_err();
+        assert_eq!(denied.error, StorageError::QuotaExceeded);
+        assert_eq!(other.upload_state(denied.media).await.unwrap(), None);
+        ledger.abandon_upload(failed_media).await.unwrap();
+        assert_eq!(
+            ledger
+                .cleanup_abandoned_page(&storage, None, 100)
+                .await
+                .unwrap()
+                .iter()
+                .find(|item| item.media == failed_media)
+                .unwrap()
+                .outcome,
+            Ok(AbandonedCleanup::Missing)
+        );
+        let quota = other.owner_quota(limited).await.unwrap().unwrap();
+        assert_eq!(quota.reserved_files, 2);
+        assert_eq!(quota.reserved_bytes, 8);
+        assert!(storage.exists(limited, winner.id).await.unwrap());
+        let zero = Uuid::new_v4();
+        ledger.configure_owner_quota(zero, 0, 0).await.unwrap();
+        assert_eq!(
+            ledger
+                .stage_reserved(&storage, zero, "no.txt", b"x", i64::MAX)
+                .await
+                .unwrap_err()
+                .error,
+            StorageError::QuotaExceeded
+        );
+        assert!(ledger.configure_owner_quota(owner, 10, 100).await.is_err());
         std::fs::remove_dir_all(root).unwrap();
     }
 
