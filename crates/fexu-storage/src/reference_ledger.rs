@@ -449,10 +449,7 @@ impl ReferenceLedger {
 
     /// Read the conservative reservation counters. Cleanup does not release
     /// them yet: a backend receipt alone cannot prove physical residue is gone.
-    pub async fn owner_quota(
-        &self,
-        owner: uuid::Uuid,
-    ) -> Result<Option<OwnerQuota>, StorageError> {
+    pub async fn owner_quota(&self, owner: uuid::Uuid) -> Result<Option<OwnerQuota>, StorageError> {
         let backend = self.db.get_database_backend();
         let sql = match backend {
             DatabaseBackend::Sqlite => {
