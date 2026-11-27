@@ -1259,6 +1259,14 @@ impl ReferenceLedger {
             });
         }
         let outcome = self.cleanup_abandoned(storage, media).await?;
+        self.record_cleanup_receipt(media, outcome).await
+    }
+
+    async fn record_cleanup_receipt(
+        &self,
+        media: MediaRef,
+        outcome: AbandonedCleanup,
+    ) -> Result<AbandonedCleanup, StorageError> {
         let (sqlite, postgres) = match outcome {
             AbandonedCleanup::Removed => (
                 "INSERT INTO _fexu_media_cleanup_receipts VALUES (?, ?, 1)
@@ -1286,6 +1294,37 @@ impl ReferenceLedger {
             Some(CleanupReceipt::Missing) => Ok(AbandonedCleanup::Missing),
             None => Err(StorageError::Failed),
         }
+    }
+
+    /// Reconcile and release a permanently abandoned local reservation.
+    /// An authorized caller must select the original trusted local root.
+    /// All writers must cooperate with the exclusive slot protocol; exclude
+    /// raw mutation, owner purge and legacy cleanup. Never steal a busy slot.
+    /// The permanent marker survives cleanup. Existing receipts do not skip
+    /// residue reconciliation. Returns true only for a newly released charge.
+    /// No automatic abandonment or remote quota release is performed.
+    pub async fn cleanup_and_release_local_quota(
+        &self,
+        storage: &crate::LocalStorage,
+        media: MediaRef,
+    ) -> Result<bool, StorageError> {
+        if self.upload_state(media).await? != Some(UploadState::Abandoned)
+            || self.upload_fence_requested(media).await?
+        {
+            return Ok(false);
+        }
+        match self.check(media).await? {
+            ReferenceDecision::Unknown | ReferenceDecision::Referenced => return Ok(false),
+            ReferenceDecision::Unreferenced(()) => {}
+        }
+        storage.fence_local_writer(media)?;
+        let outcome = if storage.cleanup_retired(media)? {
+            AbandonedCleanup::Removed
+        } else {
+            AbandonedCleanup::Missing
+        };
+        self.record_cleanup_receipt(media, outcome).await?;
+        self.release_settled_quota(media).await
     }
 
     /// Reconcile the four known local paths of an explicitly abandoned ID.
@@ -1998,6 +2037,66 @@ mod tests {
         let quota = other.owner_quota(limited).await.unwrap().unwrap();
         assert_eq!(quota.reserved_files, 2);
         assert_eq!(quota.reserved_bytes, 8);
+        // Local release must recheck residue even when a receipt exists.
+        let local_owner = Uuid::new_v4();
+        ledger
+            .configure_owner_quota(local_owner, 1, 3)
+            .await
+            .unwrap();
+        let local_file = ledger
+            .stage_reserved(&storage, local_owner, "local.txt", b"123", i64::MAX)
+            .await
+            .unwrap();
+        let local_media = MediaRef {
+            owner: local_owner,
+            id: local_file.id,
+        };
+        assert!(!ledger
+            .cleanup_and_release_local_quota(&storage, local_media)
+            .await
+            .unwrap());
+        ledger.abandon_upload(local_media).await.unwrap();
+        ledger
+            .cleanup_abandoned_page(&storage, None, 100)
+            .await
+            .unwrap();
+        assert!(ledger.cleanup_receipt(local_media).await.unwrap().is_some());
+        let directory = root.join(local_owner.to_string());
+        let slot = directory.join(format!("{}.write-lock", local_media.id));
+        let residue = directory.join(format!("{}.partial", local_media.id));
+        std::fs::write(&slot, b"").unwrap();
+        std::fs::write(&residue, b"123").unwrap();
+        assert!(ledger
+            .cleanup_and_release_local_quota(&storage, local_media)
+            .await
+            .is_err());
+        assert!(residue.exists());
+        let quota = ledger.owner_quota(local_owner).await.unwrap().unwrap();
+        assert_eq!(quota.reserved_bytes, 3);
+        // Simulate the writer settling and releasing its own slot.
+        std::fs::remove_file(&slot).unwrap();
+        let (left, right) = tokio::join!(
+            ledger.cleanup_and_release_local_quota(&storage, local_media),
+            other.cleanup_and_release_local_quota(&storage, local_media)
+        );
+        assert_ne!(left.unwrap(), right.unwrap());
+        assert!(!residue.exists());
+        assert_eq!(std::fs::read(&slot).unwrap(), b"FXL1");
+        assert!(!ledger
+            .cleanup_and_release_local_quota(&storage, local_media)
+            .await
+            .unwrap());
+        let quota = ledger.owner_quota(local_owner).await.unwrap().unwrap();
+        assert_eq!(quota.reserved_files, 0);
+        assert_eq!(quota.reserved_bytes, 0);
+        assert!(storage
+            .save_reserved(local_media, "late.txt", b"123", i64::MAX)
+            .await
+            .is_err());
+        assert!(!ledger
+            .cleanup_and_release_local_quota(&storage, next_media)
+            .await
+            .unwrap());
         let zero = Uuid::new_v4();
         ledger.configure_owner_quota(zero, 0, 0).await.unwrap();
         assert_eq!(

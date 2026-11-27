@@ -2,6 +2,7 @@
 
 ## Unreleased — toward v0.3.0
 
+- Add opt-in local abandoned-ID quota cleanup with permanent writer fencing, residue reconciliation even after an existing receipt, and once-only logical release.
 - Journal reserved-upload quota charges per ID and permit explicit once-only release after settled cleanup and durable receipt; older unjournaled charges remain conservative.
 
 - Add persistent per-owner reserved-upload admission budgets with atomic file and byte counters; conservative reservations are not released by cleanup yet.
