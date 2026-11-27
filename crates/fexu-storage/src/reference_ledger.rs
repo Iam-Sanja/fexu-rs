@@ -2472,7 +2472,11 @@ mod tests {
             Some(audit.quota)
         );
 
-        let audit = ledger.audit_owner_quota(local_owner).await.unwrap().unwrap();
+        let audit = ledger
+            .audit_owner_quota(local_owner)
+            .await
+            .unwrap()
+            .unwrap();
         assert!(audit.counters_match_journal());
         assert_eq!(audit.journaled_files, 0);
         assert_eq!(audit.journaled_bytes, 0);
@@ -2482,7 +2486,11 @@ mod tests {
             id: Uuid::new_v4(),
         };
         ledger.register(legacy).await.unwrap();
-        let audit = ledger.audit_owner_quota(local_owner).await.unwrap().unwrap();
+        let audit = ledger
+            .audit_owner_quota(local_owner)
+            .await
+            .unwrap()
+            .unwrap();
         assert_eq!(audit.legacy_references, 1);
         assert!(audit.counters_match_journal());
         let absent = Uuid::new_v4();
