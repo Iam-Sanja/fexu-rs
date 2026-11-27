@@ -108,7 +108,6 @@ pub async fn enqueue_storage_cleanup(
         .await
 }
 
-
 pub const LOCAL_QUOTA_CLEANUP_HANDLER: &str = "fexu_local_quota_cleanup";
 
 /// Bind only to a ledger dedicated to the original local storage namespace.
@@ -167,7 +166,11 @@ impl JobHandler for LocalQuotaCleanupHandler {
             .await
             .map_err(|_| JobError::retry("storage.quota.scan"))?;
         *cursor = batch.next_after;
-        let failed = batch.items.iter().filter(|item| item.outcome.is_err()).count();
+        let failed = batch
+            .items
+            .iter()
+            .filter(|item| item.outcome.is_err())
+            .count();
         let released = batch
             .items
             .iter()
