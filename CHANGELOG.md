@@ -2,6 +2,7 @@
 
 ## Unreleased — toward v0.3.0
 
+- Add atomic resizing of existing logical owner quotas without changing reservations; reject limits below current usage and absent budgets.
 - Add explicit permanent fencing of already abandoned S3 media, including IDs with existing cleanup receipts; keep quota release separate from marker publication.
 - Add explicit S3 quota release after operator-established settlement and verification of a permanent discard marker; missing markers fail closed even with a cleanup receipt.
 - Add bounded opt-in local quota cleanup jobs that resume unreleased journals even after durable cleanup receipts; dedicated local namespace required.
