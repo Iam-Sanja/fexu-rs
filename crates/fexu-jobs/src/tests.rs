@@ -1964,8 +1964,9 @@ async fn storage_cleanup_job_contract(db: fexu_db::driver::DatabaseConnection) {
         .register(LocalQuotaCleanupHandler::new(ledger.clone(), storage.clone(), 1, 1).unwrap())
         .unwrap();
     let when = When::every("local-quota-cleanup-contract", 60);
-    let EnqueueOutcome::Created(quota_job) =
-        enqueue_local_quota_cleanup(&queue, when.clone()).await.unwrap()
+    let EnqueueOutcome::Created(quota_job) = enqueue_local_quota_cleanup(&queue, when.clone())
+        .await
+        .unwrap()
     else {
         panic!("new quota cleanup schedule");
     };
@@ -1990,8 +1991,9 @@ async fn storage_cleanup_job_contract(db: fexu_db::driver::DatabaseConnection) {
         .register(LocalQuotaCleanupHandler::new(ledger.clone(), storage.clone(), 1, 1).unwrap())
         .unwrap();
     let runner = worker(queue.clone(), registry);
-    let EnqueueOutcome::Created(once) =
-        enqueue_local_quota_cleanup(&queue, When::now()).await.unwrap()
+    let EnqueueOutcome::Created(once) = enqueue_local_quota_cleanup(&queue, When::now())
+        .await
+        .unwrap()
     else {
         panic!("new quota cleanup invocation");
     };
