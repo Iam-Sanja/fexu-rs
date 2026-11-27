@@ -40,7 +40,8 @@ pub use reconciliation::{
 };
 pub use reference_ledger::{
     AbandonedCleanup, AbandonedCleanupItem, CleanupBatch, CleanupReceipt, OwnerQuota,
-    ReferenceLedger, ReservedUploadError, UploadIntent, UploadObservation, UploadState,
+    LocalQuotaCleanupBatch, LocalQuotaCleanupItem, ReferenceLedger, ReservedUploadError,
+    UploadIntent, UploadObservation, UploadState,
 };
 pub use s3::{
     credentials_from_env, prepare as prepare_s3, S3Credentials, S3Plan, ACCESS_KEY_ENV,
