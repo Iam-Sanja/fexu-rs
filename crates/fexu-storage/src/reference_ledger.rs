@@ -58,6 +58,15 @@ pub enum UploadState {
     Abandoned,
 }
 
+/// Conservative logical reservation budget, not filesystem usage.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct OwnerQuota {
+    pub max_files: i64,
+    pub max_bytes: i64,
+    pub reserved_files: i64,
+    pub reserved_bytes: i64,
+}
+
 /// Immutable expected upload properties, recorded before storage I/O.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UploadIntent {
@@ -206,6 +215,19 @@ impl ReferenceLedger {
             )
             .await
             .map_err(|_| StorageError::Failed)?;
+        self.db
+            .execute_unprepared(
+                "CREATE TABLE IF NOT EXISTS _fexu_media_owner_quotas (
+                    owner TEXT PRIMARY KEY NOT NULL,
+                    max_files BIGINT NOT NULL CHECK (max_files >= 0),
+                    max_bytes BIGINT NOT NULL CHECK (max_bytes >= 0),
+                    reserved_files BIGINT NOT NULL CHECK (reserved_files >= 0),
+                    reserved_bytes BIGINT NOT NULL CHECK (reserved_bytes >= 0),
+                    CHECK (reserved_files <= max_files AND reserved_bytes <= max_bytes)
+                )",
+            )
+            .await
+            .map_err(|_| StorageError::Failed)?;
         Ok(())
     }
 
@@ -258,6 +280,7 @@ impl ReferenceLedger {
         intent: &UploadIntent,
     ) -> Result<(), StorageError> {
         let tx = self.db.begin().await.map_err(|_| StorageError::Failed)?;
+        Self::reserve_quota(&tx, media.owner, intent.size).await?;
         register_on(&tx, media).await?;
         let query = statement(
             &tx,
@@ -290,6 +313,181 @@ impl ReferenceLedger {
         );
         change_one(&tx, query).await?;
         tx.commit().await.map_err(|_| StorageError::Failed)
+    }
+
+    // Every tracked admission locks the same owner row, even when unlimited.
+    // A sentinel budget of i64::MAX is unconfigured; counters are still charged.
+    async fn lock_owner_quota(
+        tx: &DatabaseTransaction,
+        owner: uuid::Uuid,
+    ) -> Result<(), StorageError> {
+        let backend = tx.get_database_backend();
+        let sql = match backend {
+            DatabaseBackend::Sqlite => {
+                "INSERT INTO _fexu_media_owner_quotas VALUES (?, 9223372036854775807,
+                 9223372036854775807, 0, 0) ON CONFLICT (owner) DO NOTHING"
+            }
+            DatabaseBackend::Postgres => {
+                "INSERT INTO _fexu_media_owner_quotas VALUES ($1, 9223372036854775807,
+                 9223372036854775807, 0, 0) ON CONFLICT (owner) DO NOTHING"
+            }
+            _ => return Err(StorageError::Failed),
+        };
+        tx.execute(Statement::from_sql_and_values(
+            backend,
+            sql,
+            [Value::from(owner.to_string())],
+        ))
+        .await
+        .map_err(|_| StorageError::Failed)?;
+        let sql = match backend {
+            DatabaseBackend::Sqlite => {
+                "UPDATE _fexu_media_owner_quotas SET max_files = max_files WHERE owner = ?"
+            }
+            DatabaseBackend::Postgres => {
+                "UPDATE _fexu_media_owner_quotas SET max_files = max_files WHERE owner = $1"
+            }
+            _ => return Err(StorageError::Failed),
+        };
+        change_one(
+            tx,
+            Statement::from_sql_and_values(backend, sql, [Value::from(owner.to_string())]),
+        )
+        .await
+    }
+
+    async fn reserve_quota(
+        tx: &DatabaseTransaction,
+        owner: uuid::Uuid,
+        size: i64,
+    ) -> Result<(), StorageError> {
+        if size < 0 {
+            return Err(StorageError::Failed);
+        }
+        Self::lock_owner_quota(tx, owner).await?;
+        let backend = tx.get_database_backend();
+        let sql = match backend {
+            DatabaseBackend::Sqlite => {
+                "UPDATE _fexu_media_owner_quotas
+                 SET reserved_files = reserved_files + 1, reserved_bytes = reserved_bytes + ?
+                 WHERE owner = ? AND reserved_files < max_files
+                 AND reserved_bytes <= max_bytes - ?"
+            }
+            DatabaseBackend::Postgres => {
+                "UPDATE _fexu_media_owner_quotas
+                 SET reserved_files = reserved_files + 1, reserved_bytes = reserved_bytes + $1
+                 WHERE owner = $2 AND reserved_files < max_files
+                 AND reserved_bytes <= max_bytes - $3"
+            }
+            _ => return Err(StorageError::Failed),
+        };
+        let changed = tx
+            .execute(Statement::from_sql_and_values(
+                backend,
+                sql,
+                [
+                    Value::from(size),
+                    Value::from(owner.to_string()),
+                    Value::from(size),
+                ],
+            ))
+            .await
+            .map_err(|_| StorageError::Failed)?;
+        match changed.rows_affected() {
+            1 => Ok(()),
+            0 => Err(StorageError::QuotaExceeded),
+            _ => Err(StorageError::Failed),
+        }
+    }
+
+    /// Configure a budget for an owner before its first ledger enrollment.
+    /// Changes after enrollment and adoption of existing owners require a
+    /// separate reconciliation procedure. Zero is a real limit, not unlimited.
+    /// All writers must use reserved admission; raw and legacy saves are excluded.
+    pub async fn configure_owner_quota(
+        &self,
+        owner: uuid::Uuid,
+        max_files: i64,
+        max_bytes: i64,
+    ) -> Result<(), StorageError> {
+        if max_files < 0 || max_bytes < 0 {
+            return Err(StorageError::Failed);
+        }
+        let tx = self.db.begin().await.map_err(|_| StorageError::Failed)?;
+        Self::lock_owner_quota(&tx, owner).await?;
+        let backend = tx.get_database_backend();
+        let sql = match backend {
+            DatabaseBackend::Sqlite => {
+                "UPDATE _fexu_media_owner_quotas SET max_files = ?, max_bytes = ?
+                 WHERE owner = ? AND reserved_files = 0 AND reserved_bytes = 0
+                 AND NOT EXISTS (SELECT 1 FROM _fexu_media_references r
+                     WHERE r.owner = _fexu_media_owner_quotas.owner)"
+            }
+            DatabaseBackend::Postgres => {
+                "UPDATE _fexu_media_owner_quotas SET max_files = $1, max_bytes = $2
+                 WHERE owner = $3 AND reserved_files = 0 AND reserved_bytes = 0
+                 AND NOT EXISTS (SELECT 1 FROM _fexu_media_references r
+                     WHERE r.owner = _fexu_media_owner_quotas.owner)"
+            }
+            _ => return Err(StorageError::Failed),
+        };
+        change_one(
+            &tx,
+            Statement::from_sql_and_values(
+                backend,
+                sql,
+                [
+                    Value::from(max_files),
+                    Value::from(max_bytes),
+                    Value::from(owner.to_string()),
+                ],
+            ),
+        )
+        .await?;
+        tx.commit().await.map_err(|_| StorageError::Failed)
+    }
+
+    /// Read the conservative reservation counters. Cleanup does not release
+    /// them yet: a backend receipt alone cannot prove physical residue is gone.
+    pub async fn owner_quota(&self, owner: uuid::Uuid) -> Result<Option<OwnerQuota>, StorageError> {
+        let backend = self.db.get_database_backend();
+        let sql = match backend {
+            DatabaseBackend::Sqlite => {
+                "SELECT max_files, max_bytes, reserved_files, reserved_bytes
+                 FROM _fexu_media_owner_quotas WHERE owner = ?"
+            }
+            DatabaseBackend::Postgres => {
+                "SELECT max_files, max_bytes, reserved_files, reserved_bytes
+                 FROM _fexu_media_owner_quotas WHERE owner = $1"
+            }
+            _ => return Err(StorageError::Failed),
+        };
+        let row = self
+            .db
+            .query_one(Statement::from_sql_and_values(
+                backend,
+                sql,
+                [Value::from(owner.to_string())],
+            ))
+            .await
+            .map_err(|_| StorageError::Failed)?;
+        let Some(row) = row else {
+            return Ok(None);
+        };
+        Ok(Some(OwnerQuota {
+            max_files: row
+                .try_get("", "max_files")
+                .map_err(|_| StorageError::Failed)?,
+            max_bytes: row
+                .try_get("", "max_bytes")
+                .map_err(|_| StorageError::Failed)?,
+            reserved_files: row
+                .try_get("", "reserved_files")
+                .map_err(|_| StorageError::Failed)?,
+            reserved_bytes: row
+                .try_get("", "reserved_bytes")
+                .map_err(|_| StorageError::Failed)?,
+        }))
     }
 
     /// Read the original intent without changing upload state.
@@ -1596,6 +1794,68 @@ mod tests {
             AbandonedCleanup::Missing
         );
         assert_eq!(std::fs::read(&slot).unwrap(), b"FXL1");
+        let limited = Uuid::new_v4();
+        ledger.configure_owner_quota(limited, 2, 8).await.unwrap();
+        let other = ReferenceLedger::new(db.clone());
+        let (first, second) = tokio::join!(
+            ledger.stage_reserved(&storage, limited, "a.txt", b"12345", i64::MAX),
+            other.stage_reserved(&storage, limited, "b.txt", b"12345", i64::MAX)
+        );
+        let (winner, denied) = match (first, second) {
+            (Ok(file), Err(error)) | (Err(error), Ok(file)) => (file, error),
+            _ => panic!("only one upload may fit the budget"),
+        };
+        assert_eq!(denied.error, StorageError::QuotaExceeded);
+        assert_eq!(ledger.upload_state(denied.media).await.unwrap(), None);
+        assert_eq!(
+            other.owner_quota(limited).await.unwrap(),
+            Some(OwnerQuota {
+                max_files: 2,
+                max_bytes: 8,
+                reserved_files: 1,
+                reserved_bytes: 5,
+            })
+        );
+        assert!(ledger.configure_owner_quota(limited, 3, 99).await.is_err());
+        let failed_media = MediaRef {
+            owner: limited,
+            id: Uuid::new_v4(),
+        };
+        let intent = UploadIntent::new("pending.txt", b"123", i64::MAX).unwrap();
+        ledger.begin_upload(failed_media, &intent).await.unwrap();
+        let denied = other
+            .stage_reserved(&storage, limited, "c.txt", b"x", i64::MAX)
+            .await
+            .unwrap_err();
+        assert_eq!(denied.error, StorageError::QuotaExceeded);
+        assert_eq!(other.upload_state(denied.media).await.unwrap(), None);
+        ledger.abandon_upload(failed_media).await.unwrap();
+        assert_eq!(
+            ledger
+                .cleanup_abandoned_page(&storage, None, 100)
+                .await
+                .unwrap()
+                .iter()
+                .find(|item| item.media == failed_media)
+                .unwrap()
+                .outcome,
+            Ok(AbandonedCleanup::Missing)
+        );
+        let quota = other.owner_quota(limited).await.unwrap().unwrap();
+        assert_eq!(quota.reserved_files, 2);
+        assert_eq!(quota.reserved_bytes, 8);
+        assert!(storage.exists(limited, winner.id).await.unwrap());
+        let zero = Uuid::new_v4();
+        ledger.configure_owner_quota(zero, 0, 0).await.unwrap();
+        assert_eq!(
+            ledger
+                .stage_reserved(&storage, zero, "no.txt", b"x", i64::MAX)
+                .await
+                .unwrap_err()
+                .error,
+            StorageError::QuotaExceeded
+        );
+        assert!(ledger.configure_owner_quota(owner, 10, 100).await.is_err());
         std::fs::remove_dir_all(root).unwrap();
     }
 

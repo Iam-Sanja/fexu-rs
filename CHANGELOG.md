@@ -2,6 +2,8 @@
 
 ## Unreleased — toward v0.3.0
 
+- Add persistent per-owner reserved-upload admission budgets with atomic file and byte counters; conservative reservations are not released by cleanup yet.
+
 - Add opt-in detached-media cleanup policy to reserved model saves, preserving default retention and transactional rollback.
 
 - Add explicit transactional cleanup admission for previously committed media with zero remaining references, preserving shared references and rollback safety.
