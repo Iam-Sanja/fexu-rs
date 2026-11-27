@@ -1941,7 +1941,9 @@ mod tests {
             .unwrap_err();
         assert_eq!(denied.error, StorageError::QuotaExceeded);
         assert_eq!(other.upload_state(denied.media).await.unwrap(), None);
+        assert!(!ledger.release_settled_quota(failed_media).await.unwrap());
         ledger.abandon_upload(failed_media).await.unwrap();
+        assert!(!ledger.release_settled_quota(failed_media).await.unwrap());
         assert_eq!(
             ledger
                 .cleanup_abandoned_page(&storage, None, 100)
@@ -1957,6 +1959,51 @@ mod tests {
         assert_eq!(quota.reserved_files, 2);
         assert_eq!(quota.reserved_bytes, 8);
         assert!(storage.exists(limited, winner.id).await.unwrap());
+        let (left, right) = tokio::join!(
+            ledger.release_settled_quota(failed_media),
+            other.release_settled_quota(failed_media)
+        );
+        assert_ne!(left.unwrap(), right.unwrap());
+        assert!(!ledger.release_settled_quota(failed_media).await.unwrap());
+        let quota = other.owner_quota(limited).await.unwrap().unwrap();
+        assert_eq!(quota.reserved_files, 1);
+        assert_eq!(quota.reserved_bytes, 5);
+        let winner_media = MediaRef {
+            owner: limited,
+            id: winner.id,
+        };
+        assert!(!ledger.release_settled_quota(winner_media).await.unwrap());
+        let next = ledger
+            .stage_reserved(&storage, limited, "next.txt", b"123", i64::MAX)
+            .await
+            .unwrap();
+        let next_media = MediaRef {
+            owner: limited,
+            id: next.id,
+        };
+        // Simulate an older reservation with no per-ID charge journal.
+        let query = statement(
+            db,
+            "DELETE FROM _fexu_media_quota_charges WHERE owner = ? AND file_id = ?",
+            "DELETE FROM _fexu_media_quota_charges WHERE owner = $1 AND file_id = $2",
+            next_media,
+        )
+        .unwrap();
+        db.execute(query).await.unwrap();
+        ledger.abandon_upload(next_media).await.unwrap();
+        ledger
+            .cleanup_abandoned_page(&storage, None, 100)
+            .await
+            .unwrap();
+        assert!(ledger
+            .cleanup_receipt(next_media)
+            .await
+            .unwrap()
+            .is_some());
+        assert!(!ledger.release_settled_quota(next_media).await.unwrap());
+        let quota = other.owner_quota(limited).await.unwrap().unwrap();
+        assert_eq!(quota.reserved_files, 2);
+        assert_eq!(quota.reserved_bytes, 8);
         let zero = Uuid::new_v4();
         ledger.configure_owner_quota(zero, 0, 0).await.unwrap();
         assert_eq!(
