@@ -2022,6 +2022,123 @@ mod tests {
             rows[1].try_get::<String>("", "file_id").unwrap(),
             old.id.to_string()
         );
+        // Share the tracked replacement between both rows, then remove
+        // each reference under the explicit cleanup policy.
+        let tx = db.begin().await.unwrap();
+        ReferenceLedger::attach(&tx, new).await.unwrap();
+        ReferenceLedger::detach(&tx, old).await.unwrap();
+        let sql = match backend {
+            DatabaseBackend::Sqlite => "UPDATE media_model SET file_id = ? WHERE slot = 'second'",
+            DatabaseBackend::Postgres => "UPDATE media_model SET file_id = $1 WHERE slot = 'second'",
+            _ => unreachable!(),
+        };
+        tx.execute(Statement::from_sql_and_values(
+            backend,
+            sql,
+            [Value::from(new.id.to_string())],
+        ))
+        .await
+        .unwrap();
+        tx.commit().await.unwrap();
+
+        let clear = || {
+            prepare_media(
+                owner,
+                owner,
+                &OwnerAccess,
+                &policy(),
+                &[FieldSpec {
+                    name: "file",
+                    kind: MediaKind::File,
+                    required: false,
+                    readonly: false,
+                    existing: Some(new),
+                    clear: true,
+                    image_limits: None,
+                    incoming: None,
+                }],
+            )
+            .unwrap()
+        };
+        let staged = clear()
+            .stage_referenced(&storage, &ledger, now, 600)
+            .await
+            .unwrap();
+        staged
+            .commit_with_policy(
+                &storage,
+                DetachedMediaPolicy::Cleanup,
+                async |tx, _, bound| {
+                    assert_eq!(bound[0].media, None);
+                    tx.execute_unprepared("DELETE FROM media_model WHERE slot = 'first'")
+                        .await
+                        .map_err(|_| "database")?;
+                    Ok::<_, &str>(())
+                },
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            ledger.upload_state(new).await.unwrap(),
+            Some(crate::UploadState::Committed)
+        );
+        let staged = clear()
+            .stage_referenced(&storage, &ledger, now, 600)
+            .await
+            .unwrap();
+        let rejected = staged
+            .commit_with_policy(
+                &storage,
+                DetachedMediaPolicy::Cleanup,
+                async |tx, _, _| {
+                    tx.execute_unprepared("DELETE FROM media_model WHERE slot = 'second'")
+                        .await
+                        .unwrap();
+                    Err::<(), _>("rollback")
+                },
+            )
+            .await
+            .unwrap_err();
+        assert!(matches!(
+            rejected.failure,
+            ReferencedSaveFailure::Model("rollback")
+        ));
+        assert_eq!(
+            ledger.check(new).await.unwrap(),
+            ReferenceDecision::Referenced
+        );
+        let staged = clear()
+            .stage_referenced(&storage, &ledger, now, 600)
+            .await
+            .unwrap();
+        staged
+            .commit_with_policy(
+                &storage,
+                DetachedMediaPolicy::Cleanup,
+                async |tx, _, bound| {
+                    assert_eq!(bound[0].media, None);
+                    let changed = tx
+                        .execute_unprepared("DELETE FROM media_model WHERE slot = 'second'")
+                        .await
+                        .map_err(|_| "database")?;
+                    if changed.rows_affected() != 1 {
+                        return Err("stale");
+                    }
+                    Ok(())
+                },
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            ledger.upload_state(new).await.unwrap(),
+            Some(crate::UploadState::Abandoned)
+        );
+        assert!(storage.exists(owner, new.id).await.unwrap());
+        assert_eq!(
+            ledger.cleanup_abandoned(&storage, new).await.unwrap(),
+            crate::AbandonedCleanup::Removed
+        );
+        assert!(storage.exists(owner, old.id).await.unwrap());
         std::fs::remove_dir_all(directory).unwrap();
     }
 
