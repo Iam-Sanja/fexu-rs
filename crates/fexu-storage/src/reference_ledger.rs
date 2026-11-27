@@ -449,8 +449,8 @@ impl ReferenceLedger {
     }
 
     /// Configure a budget for an owner before its first ledger enrollment.
-    /// Changes after enrollment and adoption of existing owners require a
-    /// separate reconciliation procedure. Zero is a real limit, not unlimited.
+    /// Use resize_owner_quota for an existing logical budget. Adoption of
+    /// legacy media requires separate reconciliation. Zero is a real limit.
     /// All writers must use reserved admission; raw and legacy saves are excluded.
     pub async fn configure_owner_quota(
         &self,
@@ -493,6 +493,54 @@ impl ReferenceLedger {
         )
         .await?;
         tx.commit().await.map_err(|_| StorageError::Failed)
+    }
+
+    /// Change an existing logical budget without rewriting its reservations.
+    /// Only an authorized operator may call this. All writers must use reserved
+    /// admission. This does not adopt legacy media or reconcile physical usage.
+    /// Returns false for an absent budget or limits below current reservations.
+    /// Admission, release and resizing serialize on the same owner row.
+    pub async fn resize_owner_quota(
+        &self,
+        owner: uuid::Uuid,
+        max_files: i64,
+        max_bytes: i64,
+    ) -> Result<bool, StorageError> {
+        if max_files < 0 || max_bytes < 0 {
+            return Err(StorageError::Failed);
+        }
+        let backend = self.db.get_database_backend();
+        let sql = match backend {
+            DatabaseBackend::Sqlite => {
+                "UPDATE _fexu_media_owner_quotas SET max_files = ?, max_bytes = ?
+                 WHERE owner = ? AND reserved_files <= ? AND reserved_bytes <= ?"
+            }
+            DatabaseBackend::Postgres => {
+                "UPDATE _fexu_media_owner_quotas SET max_files = $1, max_bytes = $2
+                 WHERE owner = $3 AND reserved_files <= $4 AND reserved_bytes <= $5"
+            }
+            _ => return Err(StorageError::Failed),
+        };
+        let changed = self
+            .db
+            .execute(Statement::from_sql_and_values(
+                backend,
+                sql,
+                [
+                    Value::from(max_files),
+                    Value::from(max_bytes),
+                    Value::from(owner.to_string()),
+                    Value::from(max_files),
+                    Value::from(max_bytes),
+                ],
+            ))
+            .await
+            .map_err(|_| StorageError::Failed)?;
+        match changed.rows_affected() {
+            0 => Ok(false),
+            1 => Ok(true),
+            _ => Err(StorageError::Failed),
+        }
     }
 
     /// Read conservative reservation counters. Cleanup does not automatically
@@ -2326,6 +2374,49 @@ mod tests {
             .cleanup_and_release_local_quota(&storage, next_media)
             .await
             .unwrap());
+        // Resize preserves even the historical unjournaled charge.
+        assert!(!ledger.resize_owner_quota(limited, 1, 8).await.unwrap());
+        assert!(!ledger.resize_owner_quota(limited, 2, 7).await.unwrap());
+        assert!(ledger.resize_owner_quota(limited, -1, 8).await.is_err());
+        assert_eq!(
+            other.owner_quota(limited).await.unwrap(),
+            Some(OwnerQuota {
+                max_files: 2,
+                max_bytes: 8,
+                reserved_files: 2,
+                reserved_bytes: 8,
+            })
+        );
+        assert!(ledger.resize_owner_quota(limited, 3, 10).await.unwrap());
+        let quota = other.owner_quota(limited).await.unwrap().unwrap();
+        assert_eq!(quota.max_files, 3);
+        assert_eq!(quota.max_bytes, 10);
+        assert_eq!(quota.reserved_files, 2);
+        assert_eq!(quota.reserved_bytes, 8);
+        assert!(ledger.resize_owner_quota(limited, 2, 8).await.unwrap());
+        let absent = Uuid::new_v4();
+        assert!(!ledger.resize_owner_quota(absent, 1, 1).await.unwrap());
+        assert_eq!(ledger.owner_quota(absent).await.unwrap(), None);
+
+        // A concurrent admission and shrink must never both succeed.
+        let racing = Uuid::new_v4();
+        ledger.configure_owner_quota(racing, 1, 3).await.unwrap();
+        let (resized, admitted) = tokio::join!(
+            ledger.resize_owner_quota(racing, 0, 0),
+            other.stage_reserved(&storage, racing, "race.txt", b"123", i64::MAX)
+        );
+        let resized = resized.unwrap();
+        assert_ne!(resized, admitted.is_ok());
+        let quota = ledger.owner_quota(racing).await.unwrap().unwrap();
+        if resized {
+            assert_eq!(admitted.unwrap_err().error, StorageError::QuotaExceeded);
+            assert_eq!(quota.max_files, 0);
+            assert_eq!(quota.reserved_files, 0);
+        } else {
+            assert_eq!(quota.max_files, 1);
+            assert_eq!(quota.reserved_files, 1);
+            assert_eq!(quota.reserved_bytes, 3);
+        }
         let zero = Uuid::new_v4();
         ledger.configure_owner_quota(zero, 0, 0).await.unwrap();
         assert_eq!(
