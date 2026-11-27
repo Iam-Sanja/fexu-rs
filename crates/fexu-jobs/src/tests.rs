@@ -1955,6 +1955,55 @@ async fn storage_cleanup_job_contract(db: fexu_db::driver::DatabaseConnection) {
         Some("job.payload.invalid")
     );
     drop(runner);
+    // Ordinary cleanup has already recorded receipts, but quota remains charged.
+    let quota = ledger.owner_quota(owner).await.unwrap().unwrap();
+    assert_eq!(quota.reserved_files, 3);
+    assert!(LocalQuotaCleanupHandler::new(ledger.clone(), storage.clone(), 0, 1).is_err());
+    let mut registry = JobRegistry::new();
+    registry
+        .register(LocalQuotaCleanupHandler::new(ledger.clone(), storage.clone(), 1, 1).unwrap())
+        .unwrap();
+    let when = When::every("local-quota-cleanup-contract", 60);
+    let EnqueueOutcome::Created(quota_job) = enqueue_local_quota_cleanup(&queue, when.clone())
+        .await
+        .unwrap()
+    else {
+        panic!("new quota cleanup schedule");
+    };
+    assert_eq!(
+        enqueue_local_quota_cleanup(&queue, when).await.unwrap(),
+        EnqueueOutcome::Existing(quota_job)
+    );
+    let runner = worker(queue.clone(), registry);
+    // Run the quota job before the ordinary recurring schedule is due again.
+    assert!(runner.run_once().await.unwrap());
+    assert_eq!(
+        queue.get(quota_job).await.unwrap().status,
+        JobStatus::Succeeded
+    );
+    let quota = ledger.owner_quota(owner).await.unwrap().unwrap();
+    assert_eq!(quota.reserved_files, 2);
+    assert_eq!(quota.reserved_bytes, 11);
+    // Restart the quota worker; a released charge must not consume its page.
+    drop(runner);
+    let mut registry = JobRegistry::new();
+    registry
+        .register(LocalQuotaCleanupHandler::new(ledger.clone(), storage.clone(), 1, 1).unwrap())
+        .unwrap();
+    let runner = worker(queue.clone(), registry);
+    let EnqueueOutcome::Created(once) = enqueue_local_quota_cleanup(&queue, When::now())
+        .await
+        .unwrap()
+    else {
+        panic!("new quota cleanup invocation");
+    };
+    assert!(runner.run_once().await.unwrap());
+    assert_eq!(queue.get(once).await.unwrap().status, JobStatus::Succeeded);
+    let quota = ledger.owner_quota(owner).await.unwrap().unwrap();
+    assert_eq!(quota.reserved_files, 1);
+    assert_eq!(quota.reserved_bytes, 4);
+    assert!(storage.exists(owner, staged.id).await.unwrap());
+    drop(runner);
     drop(queue);
     drop(ledger);
     db.close().await.unwrap();

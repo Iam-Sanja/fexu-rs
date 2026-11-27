@@ -32,7 +32,8 @@ pub use schema::{
     render_migration_status, table_ready, JOBS, JOB_HISTORY,
 };
 pub use storage::{
-    enqueue_storage_cleanup, StorageCleanup, StorageCleanupHandler, STORAGE_CLEANUP_HANDLER,
+    enqueue_local_quota_cleanup, enqueue_storage_cleanup, LocalQuotaCleanupHandler, StorageCleanup,
+    StorageCleanupHandler, LOCAL_QUOTA_CLEANUP_HANDLER, STORAGE_CLEANUP_HANDLER,
 };
 pub use worker::{stop_flag, Worker};
 

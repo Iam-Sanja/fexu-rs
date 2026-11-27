@@ -35,6 +35,22 @@ pub struct CleanupBatch {
     pub scan_error: Option<StorageError>,
 }
 
+/// Bounded local quota sweep progress. False means no new charge was released.
+#[derive(Debug)]
+pub struct LocalQuotaCleanupBatch {
+    pub items: Vec<LocalQuotaCleanupItem>,
+    pub next_after: Option<MediaRef>,
+    pub reached_end: bool,
+    pub scan_error: Option<StorageError>,
+}
+
+/// One attempted local reservation release.
+#[derive(Debug)]
+pub struct LocalQuotaCleanupItem {
+    pub media: MediaRef,
+    pub outcome: Result<bool, StorageError>,
+}
+
 /// Recorded backend result, not evidence of physical erasure or backup removal.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CleanupReceipt {
@@ -1082,6 +1098,86 @@ impl ReferenceLedger {
             .collect()
     }
 
+    async fn local_quota_candidates(
+        &self,
+        after: Option<MediaRef>,
+        limit: u32,
+    ) -> Result<Vec<MediaRef>, StorageError> {
+        if !(1..=1000).contains(&limit) {
+            return Err(StorageError::Failed);
+        }
+        let backend = self.db.get_database_backend();
+        let (sql, values) = match (backend, after) {
+            (DatabaseBackend::Sqlite, None) => (
+                "SELECT r.owner, r.file_id FROM _fexu_media_references r
+                 JOIN _fexu_media_uploads u ON u.owner = r.owner AND u.file_id = r.file_id
+                 WHERE r.refs = 0 AND u.state = 3
+                 AND EXISTS (SELECT 1 FROM _fexu_media_quota_charges q
+                     WHERE q.owner = r.owner AND q.file_id = r.file_id AND q.released = 0)
+                 AND NOT EXISTS (SELECT 1 FROM _fexu_media_upload_fences f
+                     WHERE f.owner = r.owner AND f.file_id = r.file_id) ORDER BY r.owner, r.file_id LIMIT ?",
+                vec![Value::from(i64::from(limit))],
+            ),
+            (DatabaseBackend::Postgres, None) => (
+                "SELECT r.owner, r.file_id FROM _fexu_media_references r
+                 JOIN _fexu_media_uploads u ON u.owner = r.owner AND u.file_id = r.file_id
+                 WHERE r.refs = 0 AND u.state = 3
+                 AND EXISTS (SELECT 1 FROM _fexu_media_quota_charges q
+                     WHERE q.owner = r.owner AND q.file_id = r.file_id AND q.released = 0)
+                 AND NOT EXISTS (SELECT 1 FROM _fexu_media_upload_fences f
+                     WHERE f.owner = r.owner AND f.file_id = r.file_id) ORDER BY r.owner, r.file_id LIMIT $1",
+                vec![Value::from(i64::from(limit))],
+            ),
+            (DatabaseBackend::Sqlite, Some(cursor)) => (
+                "SELECT r.owner, r.file_id FROM _fexu_media_references r
+                 JOIN _fexu_media_uploads u ON u.owner = r.owner AND u.file_id = r.file_id
+                 WHERE r.refs = 0 AND u.state = 3
+                 AND EXISTS (SELECT 1 FROM _fexu_media_quota_charges q
+                     WHERE q.owner = r.owner AND q.file_id = r.file_id AND q.released = 0)
+                 AND NOT EXISTS (SELECT 1 FROM _fexu_media_upload_fences f
+                     WHERE f.owner = r.owner AND f.file_id = r.file_id) AND (r.owner, r.file_id) > (?, ?)
+                 ORDER BY r.owner, r.file_id LIMIT ?",
+                vec![
+                    Value::from(cursor.owner.to_string()),
+                    Value::from(cursor.id.to_string()),
+                    Value::from(i64::from(limit)),
+                ],
+            ),
+            (DatabaseBackend::Postgres, Some(cursor)) => (
+                "SELECT r.owner, r.file_id FROM _fexu_media_references r
+                 JOIN _fexu_media_uploads u ON u.owner = r.owner AND u.file_id = r.file_id
+                 WHERE r.refs = 0 AND u.state = 3
+                 AND EXISTS (SELECT 1 FROM _fexu_media_quota_charges q
+                     WHERE q.owner = r.owner AND q.file_id = r.file_id AND q.released = 0)
+                 AND NOT EXISTS (SELECT 1 FROM _fexu_media_upload_fences f
+                     WHERE f.owner = r.owner AND f.file_id = r.file_id) AND (r.owner, r.file_id) > ($1, $2)
+                 ORDER BY r.owner, r.file_id LIMIT $3",
+                vec![
+                    Value::from(cursor.owner.to_string()),
+                    Value::from(cursor.id.to_string()),
+                    Value::from(i64::from(limit)),
+                ],
+            ),
+            _ => return Err(StorageError::Failed),
+        };
+        let rows = self
+            .db
+            .query_all(Statement::from_sql_and_values(backend, sql, values))
+            .await
+            .map_err(|_| StorageError::Failed)?;
+        rows.into_iter()
+            .map(|row| {
+                let owner: String = row.try_get("", "owner").map_err(|_| StorageError::Failed)?;
+                let id: String = row
+                    .try_get("", "file_id")
+                    .map_err(|_| StorageError::Failed)?;
+                let owner = uuid::Uuid::parse_str(&owner).map_err(|_| StorageError::Failed)?;
+                let id = uuid::Uuid::parse_str(&id).map_err(|_| StorageError::Failed)?;
+                Ok(MediaRef { owner, id })
+            })
+            .collect()
+    }
+
     /// Discover unresolved uploads, including writes still in progress.
     /// Results are observations only; neither age nor absence authorizes cleanup.
     pub async fn unresolved_uploads(
@@ -1209,6 +1305,57 @@ impl ReferenceLedger {
                 batch.next_after = Some(last.media);
             }
             batch.items.extend(page);
+            if short {
+                batch.reached_end = true;
+                batch.next_after = None;
+                break;
+            }
+        }
+        Ok(batch)
+    }
+
+    /// Sweep only unreleased, journaled, explicitly abandoned reservations.
+    /// The entire ledger must belong to the supplied original local namespace.
+    /// Never use this with a mixed-backend or mixed-root ledger.
+    /// Existing receipts do not exclude candidates; a crash before release
+    /// remains retryable. At most 16 pages and 1,000 IDs are attempted.
+    /// Restart from None after reaching the end to revisit failed items.
+    pub async fn cleanup_local_quota_batch(
+        &self,
+        storage: &crate::LocalStorage,
+        after: Option<MediaRef>,
+        page_size: u32,
+        max_pages: u32,
+    ) -> Result<LocalQuotaCleanupBatch, StorageError> {
+        if !(1..=16).contains(&max_pages)
+            || !(1..=1000).contains(&page_size)
+            || page_size * max_pages > 1000
+        {
+            return Err(StorageError::Failed);
+        }
+        let mut batch = LocalQuotaCleanupBatch {
+            items: Vec::new(),
+            next_after: after,
+            reached_end: false,
+            scan_error: None,
+        };
+        for _ in 0..max_pages {
+            let candidates = match self
+                .local_quota_candidates(batch.next_after, page_size)
+                .await
+            {
+                Ok(candidates) => candidates,
+                Err(error) => {
+                    batch.scan_error = Some(error);
+                    break;
+                }
+            };
+            let short = candidates.len() < page_size as usize;
+            for media in candidates {
+                let outcome = self.cleanup_and_release_local_quota(storage, media).await;
+                batch.items.push(LocalQuotaCleanupItem { media, outcome });
+                batch.next_after = Some(media);
+            }
             if short {
                 batch.reached_end = true;
                 batch.next_after = None;
