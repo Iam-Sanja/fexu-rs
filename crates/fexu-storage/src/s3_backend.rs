@@ -652,6 +652,65 @@ mod tests {
 
     #[tokio::test]
     #[ignore = "requires isolated TLS S3 fixture"]
+    async fn s3_cleanup_abandoned_fence_contract() {
+        let first = recovery_fixture();
+        let second = recovery_fixture();
+        let db = fexu_db::connect("sqlite::memory:").await.unwrap();
+        let ledger = crate::ReferenceLedger::new(db.clone());
+        ledger.initialize().await.unwrap();
+        let owner = Uuid::new_v4();
+        let unknown = crate::MediaRef {
+            owner,
+            id: Uuid::new_v4(),
+        };
+        assert!(!ledger.fence_abandoned_s3(&first, unknown).await.unwrap());
+        for present in [true, false] {
+            let file = ledger
+                .stage_reserved(&first, owner, "note.txt", b"data", now() + 300)
+                .await
+                .unwrap();
+            let media = crate::MediaRef { owner, id: file.id };
+            assert!(!ledger.fence_abandoned_s3(&first, media).await.unwrap());
+            assert!(!ledger.upload_fence_requested(media).await.unwrap());
+            ledger.abandon_upload(media).await.unwrap();
+            if !present {
+                ledger
+                    .cleanup_abandoned_page(&first, None, 10)
+                    .await
+                    .unwrap();
+            }
+            assert!(ledger.fence_abandoned_s3(&first, media).await.unwrap());
+            let reopened = crate::ReferenceLedger::new(db.clone());
+            assert!(reopened.fence_abandoned_s3(&second, media).await.unwrap());
+            assert!(reopened.upload_fence_requested(media).await.unwrap());
+            assert_eq!(
+                second.load_raw(owner, media.id).await.unwrap().0,
+                upload_fence(owner, media.id)
+            );
+            let quota = reopened.owner_quota(owner).await.unwrap().unwrap();
+            assert_eq!(quota.reserved_files, 1);
+            assert_eq!(quota.reserved_bytes, 4);
+            assert!(second
+                .save_reserved(media, "note.txt", b"late", now() + 300)
+                .await
+                .is_err());
+            assert!(reopened
+                .release_fenced_s3_quota(&second, media)
+                .await
+                .unwrap());
+            assert!(!reopened
+                .release_fenced_s3_quota(&second, media)
+                .await
+                .unwrap());
+        }
+        let quota = ledger.owner_quota(owner).await.unwrap().unwrap();
+        assert_eq!(quota.reserved_files, 0);
+        assert_eq!(quota.reserved_bytes, 0);
+        db.close().await.unwrap();
+    }
+
+    #[tokio::test]
+    #[ignore = "requires isolated TLS S3 fixture"]
     async fn s3_cleanup_reserved_collision_contract() {
         let first = recovery_fixture();
         let second = recovery_fixture();
