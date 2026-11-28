@@ -1474,6 +1474,81 @@ impl ReferenceLedger {
             .collect()
     }
 
+    /// List referenced legacy adoption candidates for one authorized owner.
+    /// This is a bounded, read-only keyset page, not a migration snapshot.
+    /// Missing accounting records do not prove that an ID was never charged.
+    /// Verify each candidate independently before calling adopt_legacy_quota.
+    /// Resume with the last file ID and repeat from None to revisit changes.
+    pub async fn legacy_quota_candidates(
+        &self,
+        owner: uuid::Uuid,
+        after: Option<uuid::Uuid>,
+        limit: u32,
+    ) -> Result<Vec<MediaRef>, StorageError> {
+        if !(1..=1000).contains(&limit) {
+            return Err(StorageError::Failed);
+        }
+        let backend = self.db.get_database_backend();
+        let (predicate, values) = match (backend, after) {
+            (DatabaseBackend::Sqlite, None) => (
+                "r.owner = ? ORDER BY r.file_id LIMIT ?",
+                vec![Value::from(owner.to_string()), Value::from(i64::from(limit))],
+            ),
+            (DatabaseBackend::Postgres, None) => (
+                "r.owner = $1 ORDER BY r.file_id LIMIT $2",
+                vec![Value::from(owner.to_string()), Value::from(i64::from(limit))],
+            ),
+            (DatabaseBackend::Sqlite, Some(cursor)) => (
+                "r.owner = ? AND r.file_id > ? ORDER BY r.file_id LIMIT ?",
+                vec![
+                    Value::from(owner.to_string()),
+                    Value::from(cursor.to_string()),
+                    Value::from(i64::from(limit)),
+                ],
+            ),
+            (DatabaseBackend::Postgres, Some(cursor)) => (
+                "r.owner = $1 AND r.file_id > $2 ORDER BY r.file_id LIMIT $3",
+                vec![
+                    Value::from(owner.to_string()),
+                    Value::from(cursor.to_string()),
+                    Value::from(i64::from(limit)),
+                ],
+            ),
+            _ => return Err(StorageError::Failed),
+        };
+        let sql = format!(
+            "SELECT r.file_id FROM _fexu_media_references r
+             WHERE r.refs > 0 AND r.retired = 0
+             AND NOT EXISTS (SELECT 1 FROM _fexu_media_uploads u
+                 WHERE u.owner = r.owner AND u.file_id = r.file_id)
+             AND NOT EXISTS (SELECT 1 FROM _fexu_media_quota_charges q
+                 WHERE q.owner = r.owner AND q.file_id = r.file_id)
+             AND NOT EXISTS (SELECT 1 FROM _fexu_media_upload_intents i
+                 WHERE i.owner = r.owner AND i.file_id = r.file_id)
+             AND NOT EXISTS (SELECT 1 FROM _fexu_media_cleanup_receipts c
+                 WHERE c.owner = r.owner AND c.file_id = r.file_id)
+             AND NOT EXISTS (SELECT 1 FROM _fexu_media_upload_fences f
+                 WHERE f.owner = r.owner AND f.file_id = r.file_id)
+             AND NOT EXISTS (SELECT 1 FROM _fexu_media_local_fences f
+                 WHERE f.owner = r.owner AND f.file_id = r.file_id)
+             AND {predicate}"
+        );
+        let rows = self
+            .db
+            .query_all(Statement::from_sql_and_values(backend, sql, values))
+            .await
+            .map_err(|_| StorageError::Failed)?;
+        rows.into_iter()
+            .map(|row| {
+                let id: String = row
+                    .try_get("", "file_id")
+                    .map_err(|_| StorageError::Failed)?;
+                let id = uuid::Uuid::parse_str(&id).map_err(|_| StorageError::Failed)?;
+                Ok(MediaRef { owner, id })
+            })
+            .collect()
+    }
+
     /// Discover unresolved uploads, including writes still in progress.
     /// Results are observations only; neither age nor absence authorizes cleanup.
     pub async fn unresolved_uploads(
@@ -2814,6 +2889,60 @@ mod tests {
         assert!(audit.counters_match_journal());
         assert_eq!(audit.quota.reserved_files, 1);
         assert_eq!(audit.quota.reserved_bytes, 1);
+        // Discovery is owner-scoped, bounded and excludes adopted records.
+        let discovery_owner = Uuid::new_v4();
+        let mut candidates = Vec::new();
+        for _ in 0..3 {
+            let media = MediaRef {
+                owner: discovery_owner,
+                id: Uuid::new_v4(),
+            };
+            ledger.register(media).await.unwrap();
+            let tx = db.begin().await.unwrap();
+            ReferenceLedger::attach(&tx, media).await.unwrap();
+            tx.commit().await.unwrap();
+            candidates.push(media);
+        }
+        candidates.sort_by_key(|media| media.id);
+        let page = ledger
+            .legacy_quota_candidates(discovery_owner, None, 2)
+            .await
+            .unwrap();
+        assert_eq!(page, candidates[..2]);
+        let page = ledger
+            .legacy_quota_candidates(discovery_owner, Some(page[1].id), 2)
+            .await
+            .unwrap();
+        assert_eq!(page, candidates[2..]);
+        assert!(ledger
+            .legacy_quota_candidates(discovery_owner, Some(page[0].id), 2)
+            .await
+            .unwrap()
+            .is_empty());
+        assert!(ledger
+            .legacy_quota_candidates(discovery_owner, None, 0)
+            .await
+            .is_err());
+        assert!(ledger
+            .legacy_quota_candidates(discovery_owner, None, 1001)
+            .await
+            .is_err());
+        assert!(ledger
+            .legacy_quota_candidates(legacy_owner, None, 10)
+            .await
+            .unwrap()
+            .is_empty());
+        assert_eq!(ledger.owner_quota(discovery_owner).await.unwrap(), None);
+        let tx = db.begin().await.unwrap();
+        ReferenceLedger::detach(&tx, candidates[0]).await.unwrap();
+        tx.commit().await.unwrap();
+        assert_eq!(
+            ledger
+                .legacy_quota_candidates(discovery_owner, None, 10)
+                .await
+                .unwrap(),
+            candidates[1..]
+        );
         let zero = Uuid::new_v4();
         ledger.configure_owner_quota(zero, 0, 0).await.unwrap();
         assert_eq!(
