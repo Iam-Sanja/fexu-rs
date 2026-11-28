@@ -2,6 +2,7 @@
 
 ## Unreleased — toward v0.3.0
 
+- Add explicit journaling of independently verified historical quota reservations without changing owner counters.
 - Add read-only owner quota auditing of reservation counters, active and released charge journals, and historical enrollment gaps without changing accounting.
 - Add atomic resizing of existing logical owner quotas without changing reservations; reject limits below current usage and absent budgets.
 - Add explicit permanent fencing of already abandoned S3 media, including IDs with existing cleanup receipts; keep quota release separate from marker publication.
