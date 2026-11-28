@@ -669,6 +669,110 @@ impl ReferenceLedger {
         }))
     }
 
+    /// Adopt an existing, referenced legacy file into logical quota accounting.
+    /// Authorized operators must independently establish that this ID was
+    /// never charged, all writers have settled, all references are enrolled,
+    /// and the original trusted storage namespace is used. Keep legacy
+    /// writers, raw mutation and destructive operations offline during adoption.
+    /// Only retained, integrity-checked files with a live reference qualify.
+    /// No original upload intent is fabricated. No storage mutation occurs.
+    /// An existing upload or charge, retired ID or missing reference returns
+    /// false; insufficient capacity returns QuotaExceeded.
+    pub async fn adopt_legacy_quota<S: crate::Storage + ?Sized>(
+        &self,
+        storage: &S,
+        media: MediaRef,
+    ) -> Result<bool, StorageError> {
+        let (file, bytes) = storage.read(media.owner, media.id).await?;
+        let size = i64::try_from(bytes.len()).map_err(|_| StorageError::TooLarge)?;
+        if file.owner != media.owner
+            || file.id != media.id
+            || file.expires_at.is_some()
+            || file.size != bytes.len() as u64
+            || file.sha256 != crate::local::hex(Sha256::digest(&bytes))
+        {
+            return Err(StorageError::Failed);
+        }
+        let tx = self.db.begin().await.map_err(|_| StorageError::Failed)?;
+        Self::lock_owner_quota(&tx, media.owner).await?;
+        // Serialize with reference changes and retirement before checking
+        // enrollment in a separate statement.
+        let query = statement(
+            &tx,
+            "UPDATE _fexu_media_references SET refs = refs
+             WHERE owner = ? AND file_id = ? AND refs > 0 AND retired = 0",
+            "UPDATE _fexu_media_references SET refs = refs
+             WHERE owner = $1 AND file_id = $2 AND refs > 0 AND retired = 0",
+            media,
+        )?;
+        let changed = tx.execute(query).await.map_err(|_| StorageError::Failed)?;
+        if changed.rows_affected() != 1 {
+            tx.rollback().await.map_err(|_| StorageError::Failed)?;
+            return Ok(false);
+        }
+        let query = statement(
+            &tx,
+            "INSERT INTO _fexu_media_uploads (owner, file_id, state)
+             SELECT r.owner, r.file_id, 2 FROM _fexu_media_references r
+             WHERE r.owner = ? AND r.file_id = ?
+             AND NOT EXISTS (SELECT 1 FROM _fexu_media_quota_charges q
+                 WHERE q.owner = r.owner AND q.file_id = r.file_id)
+             AND NOT EXISTS (SELECT 1 FROM _fexu_media_upload_intents i
+                 WHERE i.owner = r.owner AND i.file_id = r.file_id)
+             AND NOT EXISTS (SELECT 1 FROM _fexu_media_cleanup_receipts c
+                 WHERE c.owner = r.owner AND c.file_id = r.file_id)
+             AND NOT EXISTS (SELECT 1 FROM _fexu_media_upload_fences f
+                 WHERE f.owner = r.owner AND f.file_id = r.file_id)
+             AND NOT EXISTS (SELECT 1 FROM _fexu_media_local_fences f
+                 WHERE f.owner = r.owner AND f.file_id = r.file_id)
+             ON CONFLICT (owner, file_id) DO NOTHING",
+            "INSERT INTO _fexu_media_uploads (owner, file_id, state)
+             SELECT r.owner, r.file_id, 2 FROM _fexu_media_references r
+             WHERE r.owner = $1 AND r.file_id = $2
+             AND NOT EXISTS (SELECT 1 FROM _fexu_media_quota_charges q
+                 WHERE q.owner = r.owner AND q.file_id = r.file_id)
+             AND NOT EXISTS (SELECT 1 FROM _fexu_media_upload_intents i
+                 WHERE i.owner = r.owner AND i.file_id = r.file_id)
+             AND NOT EXISTS (SELECT 1 FROM _fexu_media_cleanup_receipts c
+                 WHERE c.owner = r.owner AND c.file_id = r.file_id)
+             AND NOT EXISTS (SELECT 1 FROM _fexu_media_upload_fences f
+                 WHERE f.owner = r.owner AND f.file_id = r.file_id)
+             AND NOT EXISTS (SELECT 1 FROM _fexu_media_local_fences f
+                 WHERE f.owner = r.owner AND f.file_id = r.file_id)
+             ON CONFLICT (owner, file_id) DO NOTHING",
+            media,
+        )?;
+        let changed = tx.execute(query).await.map_err(|_| StorageError::Failed)?;
+        if changed.rows_affected() != 1 {
+            tx.rollback().await.map_err(|_| StorageError::Failed)?;
+            return Ok(false);
+        }
+        Self::reserve_quota(&tx, media.owner, size).await?;
+        let backend = tx.get_database_backend();
+        let sql = match backend {
+            DatabaseBackend::Sqlite => "INSERT INTO _fexu_media_quota_charges VALUES (?, ?, ?, 0)",
+            DatabaseBackend::Postgres => {
+                "INSERT INTO _fexu_media_quota_charges VALUES ($1, $2, $3, 0)"
+            }
+            _ => return Err(StorageError::Failed),
+        };
+        change_one(
+            &tx,
+            Statement::from_sql_and_values(
+                backend,
+                sql,
+                [
+                    Value::from(media.owner.to_string()),
+                    Value::from(media.id.to_string()),
+                    Value::from(size),
+                ],
+            ),
+        )
+        .await?;
+        tx.commit().await.map_err(|_| StorageError::Failed)?;
+        Ok(true)
+    }
+
     /// Journal one independently verified historical reservation.
     /// An authorized operator must prove this exact ID and original intent
     /// were already charged and never released. A counter gap alone is not
