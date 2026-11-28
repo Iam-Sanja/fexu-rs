@@ -2889,6 +2889,60 @@ mod tests {
         assert!(audit.counters_match_journal());
         assert_eq!(audit.quota.reserved_files, 1);
         assert_eq!(audit.quota.reserved_bytes, 1);
+        // Discovery is owner-scoped, bounded and excludes adopted records.
+        let discovery_owner = Uuid::new_v4();
+        let mut candidates = Vec::new();
+        for _ in 0..3 {
+            let media = MediaRef {
+                owner: discovery_owner,
+                id: Uuid::new_v4(),
+            };
+            ledger.register(media).await.unwrap();
+            let tx = db.begin().await.unwrap();
+            ReferenceLedger::attach(&tx, media).await.unwrap();
+            tx.commit().await.unwrap();
+            candidates.push(media);
+        }
+        candidates.sort_by_key(|media| media.id);
+        let page = ledger
+            .legacy_quota_candidates(discovery_owner, None, 2)
+            .await
+            .unwrap();
+        assert_eq!(page, candidates[..2]);
+        let page = ledger
+            .legacy_quota_candidates(discovery_owner, Some(page[1].id), 2)
+            .await
+            .unwrap();
+        assert_eq!(page, candidates[2..]);
+        assert!(ledger
+            .legacy_quota_candidates(discovery_owner, Some(page[0].id), 2)
+            .await
+            .unwrap()
+            .is_empty());
+        assert!(ledger
+            .legacy_quota_candidates(discovery_owner, None, 0)
+            .await
+            .is_err());
+        assert!(ledger
+            .legacy_quota_candidates(discovery_owner, None, 1001)
+            .await
+            .is_err());
+        assert!(ledger
+            .legacy_quota_candidates(legacy_owner, None, 10)
+            .await
+            .unwrap()
+            .is_empty());
+        assert_eq!(ledger.owner_quota(discovery_owner).await.unwrap(), None);
+        let tx = db.begin().await.unwrap();
+        ReferenceLedger::detach(&tx, candidates[0]).await.unwrap();
+        tx.commit().await.unwrap();
+        assert_eq!(
+            ledger
+                .legacy_quota_candidates(discovery_owner, None, 10)
+                .await
+                .unwrap(),
+            candidates[1..]
+        );
         let zero = Uuid::new_v4();
         ledger.configure_owner_quota(zero, 0, 0).await.unwrap();
         assert_eq!(
