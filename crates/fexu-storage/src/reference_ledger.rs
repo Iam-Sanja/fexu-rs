@@ -669,6 +669,67 @@ impl ReferenceLedger {
         }))
     }
 
+    /// Journal one independently verified historical reservation.
+    /// An authorized operator must prove this exact ID and original intent
+    /// were already charged and never released. A counter gap alone is not
+    /// evidence of that fact. Exclude legacy writers and raw database changes.
+    /// No quota counters are changed. Missing intent, mismatched size, existing
+    /// journals (including released ones) and insufficient gaps return false.
+    pub async fn journal_historical_quota(
+        &self,
+        media: MediaRef,
+        expected_size: i64,
+    ) -> Result<bool, StorageError> {
+        if expected_size < 0 {
+            return Err(StorageError::Failed);
+        }
+        let tx = self.db.begin().await.map_err(|_| StorageError::Failed)?;
+        Self::lock_owner_quota(&tx, media.owner).await?;
+        let backend = tx.get_database_backend();
+        let (owner, id, size) = match backend {
+            DatabaseBackend::Sqlite => ("?1", "?2", "?3"),
+            DatabaseBackend::Postgres => ("$1", "$2", "$3"),
+            _ => return Err(StorageError::Failed),
+        };
+        let sql = format!(
+            "INSERT INTO _fexu_media_quota_charges (owner, file_id, size, released)
+             SELECT u.owner, u.file_id, i.size, 0 FROM _fexu_media_uploads u
+             JOIN _fexu_media_upload_intents i ON i.owner = u.owner AND i.file_id = u.file_id
+             JOIN _fexu_media_references r ON r.owner = u.owner AND r.file_id = u.file_id
+             JOIN _fexu_media_owner_quotas b ON b.owner = u.owner
+             WHERE u.owner = {owner} AND u.file_id = {id} AND i.size = {size}
+             AND b.reserved_files > (SELECT COUNT(*) FROM _fexu_media_quota_charges q
+                 WHERE q.owner = b.owner AND q.released = 0)
+             AND b.reserved_bytes >= i.size
+             AND b.reserved_bytes - i.size >= (SELECT COALESCE(SUM(q.size), 0)
+                 FROM _fexu_media_quota_charges q WHERE q.owner = b.owner AND q.released = 0)
+             ON CONFLICT (owner, file_id) DO NOTHING"
+        );
+        let changed = tx
+            .execute(Statement::from_sql_and_values(
+                backend,
+                sql,
+                [
+                    Value::from(media.owner.to_string()),
+                    Value::from(media.id.to_string()),
+                    Value::from(expected_size),
+                ],
+            ))
+            .await
+            .map_err(|_| StorageError::Failed)?;
+        match changed.rows_affected() {
+            0 => {
+                tx.rollback().await.map_err(|_| StorageError::Failed)?;
+                Ok(false)
+            }
+            1 => {
+                tx.commit().await.map_err(|_| StorageError::Failed)?;
+                Ok(true)
+            }
+            _ => Err(StorageError::Failed),
+        }
+    }
+
     /// Release a journaled logical quota charge exactly once.
     /// Only an authorized operator may call this after confirming permanent
     /// abandonment, settlement of all writes and removal of storage residue
@@ -2540,6 +2601,41 @@ mod tests {
             assert_eq!(quota.reserved_files, 1);
             assert_eq!(quota.reserved_bytes, 3);
         }
+        // Historical journal repair never modifies existing counters.
+        assert!(!ledger
+            .journal_historical_quota(next_media, 2)
+            .await
+            .unwrap());
+        assert!(!ledger
+            .journal_historical_quota(winner_media, 5)
+            .await
+            .unwrap());
+        assert!(!ledger
+            .journal_historical_quota(failed_media, 3)
+            .await
+            .unwrap());
+        let (left, right) = tokio::join!(
+            ledger.journal_historical_quota(next_media, 3),
+            other.journal_historical_quota(next_media, 3)
+        );
+        assert_ne!(left.unwrap(), right.unwrap());
+        let audit = ledger.audit_owner_quota(limited).await.unwrap().unwrap();
+        assert!(audit.counters_match_journal());
+        assert_eq!(audit.quota.reserved_files, 2);
+        assert_eq!(audit.quota.reserved_bytes, 8);
+        assert_eq!(audit.unjournaled_uploads, 0);
+        assert!(ledger
+            .cleanup_and_release_local_quota(&storage, next_media)
+            .await
+            .unwrap());
+        assert!(!ledger
+            .journal_historical_quota(next_media, 3)
+            .await
+            .unwrap());
+        let audit = ledger.audit_owner_quota(limited).await.unwrap().unwrap();
+        assert!(audit.counters_match_journal());
+        assert_eq!(audit.quota.reserved_files, 1);
+        assert_eq!(audit.quota.reserved_bytes, 5);
         let zero = Uuid::new_v4();
         ledger.configure_owner_quota(zero, 0, 0).await.unwrap();
         assert_eq!(
