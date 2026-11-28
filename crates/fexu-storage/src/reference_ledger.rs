@@ -83,6 +83,25 @@ pub struct OwnerQuota {
     pub reserved_bytes: i64,
 }
 
+/// Read-only comparison of a logical budget with its charge journal.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct OwnerQuotaAudit {
+    pub quota: OwnerQuota,
+    pub journaled_files: i64,
+    pub journaled_bytes: i64,
+    pub released_files: i64,
+    pub unjournaled_uploads: i64,
+    pub legacy_references: i64,
+}
+
+impl OwnerQuotaAudit {
+    /// A positive gap is not proof of a releasable historical reservation.
+    pub fn counters_match_journal(&self) -> bool {
+        self.quota.reserved_files == self.journaled_files
+            && self.quota.reserved_bytes == self.journaled_bytes
+    }
+}
+
 /// Immutable expected upload properties, recorded before storage I/O.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UploadIntent {
@@ -583,6 +602,70 @@ impl ReferenceLedger {
             reserved_bytes: row
                 .try_get("", "reserved_bytes")
                 .map_err(|_| StorageError::Failed)?,
+        }))
+    }
+
+    /// Compare an existing owner's budget and journal in one read statement.
+    /// Only authorized operators may inspect owner accounting. None means
+    /// no budget row, not proof of absent media. Historical counts describe
+    /// missing enrollment records, not physical usage or releasable charges.
+    /// This never changes counters, creates rows, or accesses storage.
+    pub async fn audit_owner_quota(
+        &self,
+        owner: uuid::Uuid,
+    ) -> Result<Option<OwnerQuotaAudit>, StorageError> {
+        let backend = self.db.get_database_backend();
+        let predicate = match backend {
+            DatabaseBackend::Sqlite => "?",
+            DatabaseBackend::Postgres => "$1",
+            _ => return Err(StorageError::Failed),
+        };
+        let sql = format!(
+            "SELECT b.max_files, b.max_bytes, b.reserved_files, b.reserved_bytes,
+                (SELECT COUNT(*) FROM _fexu_media_quota_charges q
+                 WHERE q.owner = b.owner AND q.released = 0) AS journaled_files,
+                (SELECT CAST(COALESCE(SUM(q.size), 0) AS BIGINT)
+                 FROM _fexu_media_quota_charges q
+                 WHERE q.owner = b.owner AND q.released = 0) AS journaled_bytes,
+                (SELECT COUNT(*) FROM _fexu_media_quota_charges q
+                 WHERE q.owner = b.owner AND q.released = 1) AS released_files,
+                (SELECT COUNT(*) FROM _fexu_media_uploads u
+                 WHERE u.owner = b.owner AND NOT EXISTS (
+                     SELECT 1 FROM _fexu_media_quota_charges q
+                     WHERE q.owner = u.owner AND q.file_id = u.file_id)) AS unjournaled_uploads,
+                (SELECT COUNT(*) FROM _fexu_media_references r
+                 WHERE r.owner = b.owner AND NOT EXISTS (
+                     SELECT 1 FROM _fexu_media_uploads u
+                     WHERE u.owner = r.owner AND u.file_id = r.file_id)) AS legacy_references
+             FROM _fexu_media_owner_quotas b WHERE b.owner = {predicate}"
+        );
+        let row = self
+            .db
+            .query_one(Statement::from_sql_and_values(
+                backend,
+                sql,
+                [Value::from(owner.to_string())],
+            ))
+            .await
+            .map_err(|_| StorageError::Failed)?;
+        let Some(row) = row else {
+            return Ok(None);
+        };
+        let get = |name: &str| -> Result<i64, StorageError> {
+            row.try_get("", name).map_err(|_| StorageError::Failed)
+        };
+        Ok(Some(OwnerQuotaAudit {
+            quota: OwnerQuota {
+                max_files: get("max_files")?,
+                max_bytes: get("max_bytes")?,
+                reserved_files: get("reserved_files")?,
+                reserved_bytes: get("reserved_bytes")?,
+            },
+            journaled_files: get("journaled_files")?,
+            journaled_bytes: get("journaled_bytes")?,
+            released_files: get("released_files")?,
+            unjournaled_uploads: get("unjournaled_uploads")?,
+            legacy_references: get("legacy_references")?,
         }))
     }
 
@@ -2374,6 +2457,46 @@ mod tests {
             .cleanup_and_release_local_quota(&storage, next_media)
             .await
             .unwrap());
+        // A missing journal must remain visible without changing the budget.
+        let audit = ledger.audit_owner_quota(limited).await.unwrap().unwrap();
+        assert_eq!(audit.quota.reserved_files, 2);
+        assert_eq!(audit.quota.reserved_bytes, 8);
+        assert_eq!(audit.journaled_files, 1);
+        assert_eq!(audit.journaled_bytes, 5);
+        assert_eq!(audit.released_files, 1);
+        assert_eq!(audit.unjournaled_uploads, 1);
+        assert_eq!(audit.legacy_references, 0);
+        assert!(!audit.counters_match_journal());
+        assert_eq!(
+            ledger.owner_quota(limited).await.unwrap(),
+            Some(audit.quota)
+        );
+
+        let audit = ledger
+            .audit_owner_quota(local_owner)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(audit.counters_match_journal());
+        assert_eq!(audit.journaled_files, 0);
+        assert_eq!(audit.journaled_bytes, 0);
+        assert_eq!(audit.released_files, 1);
+        let legacy = MediaRef {
+            owner: local_owner,
+            id: Uuid::new_v4(),
+        };
+        ledger.register(legacy).await.unwrap();
+        let audit = ledger
+            .audit_owner_quota(local_owner)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(audit.legacy_references, 1);
+        assert!(audit.counters_match_journal());
+        let absent = Uuid::new_v4();
+        assert_eq!(ledger.audit_owner_quota(absent).await.unwrap(), None);
+        assert_eq!(ledger.owner_quota(absent).await.unwrap(), None);
+
         // Resize preserves even the historical unjournaled charge.
         assert!(!ledger.resize_owner_quota(limited, 1, 8).await.unwrap());
         assert!(!ledger.resize_owner_quota(limited, 2, 7).await.unwrap());
