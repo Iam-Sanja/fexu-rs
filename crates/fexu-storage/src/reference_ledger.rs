@@ -2778,10 +2778,7 @@ mod tests {
         assert_eq!(audit.quota.reserved_files, 1);
         assert_eq!(audit.quota.reserved_bytes, 4);
         assert_eq!(audit.legacy_references, 0);
-        let extra = storage
-            .save(legacy_owner, "extra.txt", b"x")
-            .await
-            .unwrap();
+        let extra = storage.save(legacy_owner, "extra.txt", b"x").await.unwrap();
         let extra_media = MediaRef {
             owner: legacy_owner,
             id: extra.id,
