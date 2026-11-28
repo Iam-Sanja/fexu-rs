@@ -2740,6 +2740,83 @@ mod tests {
         assert!(audit.counters_match_journal());
         assert_eq!(audit.quota.reserved_files, 1);
         assert_eq!(audit.quota.reserved_bytes, 5);
+        // Legacy adoption charges a verified retained file exactly once.
+        let legacy_owner = Uuid::new_v4();
+        ledger
+            .configure_owner_quota(legacy_owner, 1, 4)
+            .await
+            .unwrap();
+        let file = storage
+            .save(legacy_owner, "legacy.txt", b"data")
+            .await
+            .unwrap();
+        let media = MediaRef {
+            owner: legacy_owner,
+            id: file.id,
+        };
+        ledger.register(media).await.unwrap();
+        assert!(!ledger.adopt_legacy_quota(&storage, media).await.unwrap());
+        let tx = db.begin().await.unwrap();
+        ReferenceLedger::attach(&tx, media).await.unwrap();
+        tx.commit().await.unwrap();
+        let (left, right) = tokio::join!(
+            ledger.adopt_legacy_quota(&storage, media),
+            other.adopt_legacy_quota(&storage, media)
+        );
+        assert_ne!(left.unwrap(), right.unwrap());
+        assert_eq!(
+            ledger.upload_state(media).await.unwrap(),
+            Some(UploadState::Committed)
+        );
+        assert_eq!(ledger.upload_intent(media).await.unwrap(), None);
+        let audit = ledger
+            .audit_owner_quota(legacy_owner)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(audit.counters_match_journal());
+        assert_eq!(audit.quota.reserved_files, 1);
+        assert_eq!(audit.quota.reserved_bytes, 4);
+        assert_eq!(audit.legacy_references, 0);
+        let extra = storage
+            .save(legacy_owner, "extra.txt", b"x")
+            .await
+            .unwrap();
+        let extra_media = MediaRef {
+            owner: legacy_owner,
+            id: extra.id,
+        };
+        ledger.register(extra_media).await.unwrap();
+        let tx = db.begin().await.unwrap();
+        ReferenceLedger::attach(&tx, extra_media).await.unwrap();
+        tx.commit().await.unwrap();
+        assert_eq!(
+            ledger.adopt_legacy_quota(&storage, extra_media).await,
+            Err(StorageError::QuotaExceeded)
+        );
+        assert_eq!(ledger.upload_state(extra_media).await.unwrap(), None);
+        let tx = db.begin().await.unwrap();
+        ReferenceLedger::detach(&tx, media).await.unwrap();
+        assert!(ReferenceLedger::admit_detached_cleanup(&tx, media)
+            .await
+            .unwrap());
+        tx.commit().await.unwrap();
+        assert!(ledger
+            .cleanup_and_release_local_quota(&storage, media)
+            .await
+            .unwrap());
+        assert!(ledger
+            .adopt_legacy_quota(&storage, extra_media)
+            .await
+            .unwrap());
+        let audit = ledger
+            .audit_owner_quota(legacy_owner)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(audit.counters_match_journal());
+        assert_eq!(audit.quota.reserved_files, 1);
+        assert_eq!(audit.quota.reserved_bytes, 1);
         let zero = Uuid::new_v4();
         ledger.configure_owner_quota(zero, 0, 0).await.unwrap();
         assert_eq!(
